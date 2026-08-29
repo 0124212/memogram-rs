@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{Local, NaiveDate, Duration};
+use chrono::{Local, Duration, Datelike};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -319,7 +319,7 @@ async fn fetch_tasks(url: &str, tok: &str) -> Result<String> {
         let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
         let name = m.get("name").and_then(|x| x.as_str()).unwrap_or("");
         let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
-        let time = ts.get(..10).unwrap_or("");
+        let _time = ts.get(..10).unwrap_or("");
         out.push_str(&format!("{}. [ ] {} — _{}_\n", i + 1, name, chars(c, 80)));
     }
     out.push_str("\n#tasks");
