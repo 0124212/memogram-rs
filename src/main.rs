@@ -45,8 +45,8 @@ enum Command {
     Containers,
     #[command(description = "GitHub trending repos")]
     Trending,
-    #[command(description = "reddit <sub> top posts")]
-    Reddit(String),
+    #[command(description = "lobsters <tag> tech news")]
+    Lobsters(String),
     #[command(description = "stock <ticker> e.g. AAPL")]
     Stock(String),
     #[command(description = "crypto <coin> e.g. bitcoin")]
@@ -207,7 +207,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
         Command::Trending => { let txt = fetch_trending().await.unwrap_or_else(|e| format!("trending err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
-        Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
+        Command::Lobsters(tag) => { let txt = fetch_lobsters(&tag).await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
         Command::Poem => { let txt = fetch_poem().await.unwrap_or_else(|e| format!("poem err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
@@ -604,23 +604,35 @@ async fn fetch_trending() -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_reddit(sub: &str) -> Result<String> {
-    let sub = if sub.trim().is_empty() { "technology" } else { sub.trim() };
-    let url = format!("https://www.reddit.com/r/{}/hot.json?limit=5", sub);
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs/0.1").send().await?.json().await?;
-    let posts = v["data"]["children"].as_array().ok_or_else(|| anyhow::anyhow!("no posts"))?;
-    if posts.is_empty() { return Ok(format!("*📡 r/{sub}*\n\n_No posts found._")); }
-    let mut out = format!("*📡 r/{sub} — Hot*\n\n");
-    for (i, p) in posts.iter().enumerate() {
-        let d = &p["data"];
-        let title = d["title"].as_str().unwrap_or("?");
-        let permalink = d["permalink"].as_str().unwrap_or("");
-        let score = d["score"].as_u64().unwrap_or(0);
-        let comments = d["num_comments"].as_u64().unwrap_or(0);
-        let author = d["author"].as_str().unwrap_or("?");
-        out.push_str(&format!("*{}.* [{}]({})\n   ⬆ {score} · 💬 {comments} · u/{author}\n\n", i + 1, esc(title), format!("https://reddit.com{permalink}")));
+async fn fetch_lobsters(tag: &str) -> Result<String> {
+    let url = "https://lobste.rs/hottest.json";
+    let v: serde_json::Value = HTTP.get(url).header("Accept", "application/json").send().await?.json().await?;
+    let stories = v.as_array().ok_or_else(|| anyhow::anyhow!("no stories"))?;
+    let filtered: Vec<&serde_json::Value> = if tag.trim().is_empty() {
+        stories.iter().take(7).collect()
+    } else {
+        let t = tag.trim().to_lowercase();
+        stories.iter().filter(|s| {
+            s["tags"].as_array().map(|tags| tags.iter().any(|tag| tag.as_str().unwrap_or("").to_lowercase() == t)).unwrap_or(false)
+        }).take(7).collect()
+    };
+    if filtered.is_empty() { return Ok(format!("*🦞 Lobste.rs*\n\n_No stories found for `{tag}`._")); }
+    let mut out = format!("*🦞 Lobste.rs*");
+    if !tag.trim().is_empty() { out.push_str(&format!(" — `{tag}`")); }
+    out.push_str("\n\n");
+    for (i, s) in filtered.iter().enumerate() {
+        let title = s["title"].as_str().unwrap_or("?");
+        let url = s["url"].as_str().unwrap_or("");
+        let comments_url = s["comments_url"].as_str().unwrap_or("");
+        let score = s["score"].as_u64().unwrap_or(0);
+        let comments = s["comment_count"].as_u64().unwrap_or(0);
+        let author = s["submitter_user"]["username"].as_str().unwrap_or("?");
+        let tags: Vec<&str> = s["tags"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
+        let tag_str = tags.iter().map(|t| format!("`{t}`")).collect::<Vec<_>>().join(" ");
+        let display_url = if url.is_empty() { comments_url } else { url };
+        out.push_str(&format!("*{}.* [{}]({})\n   ⬆ {score} · 💬 {comments} · {author}\n   {tag_str}\n\n", i + 1, esc(title), display_url));
     }
-    out.push_str(&format!("> [r/{sub}](https://reddit.com/r/{sub}) · #reddit", sub = sub));
+    out.push_str("> [lobste.rs](https://lobste.rs) · #lobsters");
     Ok(out)
 }
 
