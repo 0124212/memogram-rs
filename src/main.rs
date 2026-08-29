@@ -55,6 +55,18 @@ enum Command {
     Poem,
     #[command(description = "deepresearch <query>")]
     Deepresearch(String),
+    #[command(description = "latest XKCD comic")]
+    Xkcd,
+    #[command(description = "translate <text> or /translate ja → en <text>")]
+    Translate(String),
+    #[command(description = "random fun fact")]
+    Facts,
+    #[command(description = "color <hex> e.g. #FF5733 or FF5733")]
+    Color(String),
+    #[command(description = "morning briefing: health + news + weather")]
+    All,
+    #[command(description = "shah <query> halal web search")]
+    Shah(String),
     #[command(description = "help")]
     Help,
 }
@@ -212,6 +224,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
         Command::Poem => { let txt = fetch_poem().await.unwrap_or_else(|e| format!("poem err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
         Command::Deepresearch(q) => { let t = if q.trim().is_empty() { "deepresearch".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "deepresearch", &t, tid).await?; }
+        Command::Xkcd => { let txt = fetch_xkcd().await.unwrap_or_else(|e| format!("xkcd err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
+        Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
+        Command::Facts => { let txt = fetch_facts().await.unwrap_or_else(|e| format!("facts err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
+        Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
+        Command::All => { let txt = fetch_all(&app.memos_url).await.unwrap_or_else(|e| format!("all err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
+        Command::Shah(q) => { let txt = fetch_shah(&q).await.unwrap_or_else(|e| format!("shah err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -687,5 +705,177 @@ async fn fetch_poem() -> Result<String> {
     }
     if lines.len() > 20 { out.push_str("\n_...truncated_"); }
     out.push_str("\n\n> [Poetry DB](https://poetrydb.org) · #poem");
+    Ok(out)
+}
+
+async fn fetch_xkcd() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://xkcd.com/info.0.json").send().await?.json().await?;
+    let num = v["num"].as_u64().unwrap_or(0);
+    let title = v["title"].as_str().unwrap_or("?");
+    let alt = v["alt"].as_str().unwrap_or("");
+    let img = v["img"].as_str().unwrap_or("");
+    let date = format!("{}/{}", v["month"].as_str().unwrap_or("?"), v["year"].as_str().unwrap_or("?"));
+    Ok(format!(
+        "*#{num} — {title}*\n\n![XKCD]({img})\n\n>||{alt}||\n\n_[{date}](https://xkcd.com/{num}/) · #xkcd_"
+    ))
+}
+
+async fn fetch_translate(args: &str) -> Result<String> {
+    let (langpair, text) = if args.contains("→") {
+        let parts: Vec<&str> = args.splitn(2, "→").collect();
+        let lang = parts[0].trim();
+        let rest = parts.get(1).unwrap_or(&"").trim();
+        let (target, body) = if let Some(sp) = rest.find(' ') {
+            (&rest[..sp], &rest[sp+1..])
+        } else {
+            ("en", rest)
+        };
+        (format!("{}|{}", lang, target), body.to_string())
+    } else {
+        ("auto|en".to_string(), args.to_string())
+    };
+    if text.trim().is_empty() { return Ok("usage: `/translate <text>` or `/translate ja → en <text>`".into()); }
+    let url = format!("https://api.mymemory.translated.net/get?q={}&langpair={}", urlencoding::encode(&text), urlencoding::encode(&langpair));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let translated = v["responseData"]["translatedText"].as_str().unwrap_or("(no result)");
+    let detected = v["responseData"]["match"].as_f64().unwrap_or(0.0);
+    let src = langpair.split('|').next().unwrap_or("auto");
+    let tgt = langpair.split('|').last().unwrap_or("en");
+    Ok(format!(
+        "*🌐 Translation*\n\n`{src}` → `{tgt}` (confidence: {detected:.0}%)\n\n*Original:* {text}\n\n*Translated:* {translated}\n\n> [MyMemory](https://mymemory.translated.net) · #translate"
+    ))
+}
+
+async fn fetch_facts() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://uselessfacts.jsph.pl/random.json?language=en").send().await?.json().await?;
+    let fact = v["text"].as_str().unwrap_or("(no fact)");
+    let source = v["source"].as_str().unwrap_or("uselessfacts.jsph.pl");
+    Ok(format!(
+        "*💡 Random Fact*\n\n>||{fact}||\n\n> _Source:_ {source} · #facts"
+    ))
+}
+
+fn fetch_color(hex: &str) -> String {
+    let h = hex.trim().trim_start_matches('#');
+    if h.len() != 6 { return "usage: `/color #FF5733` or `/color FF5733`".into(); }
+    let r = u8::from_str_radix(&h[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&h[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&h[4..6], 16).unwrap_or(0);
+    let lum = 0.299 * r as f64 + 0.587 * g as f64 + 0.114 * b as f64;
+    let brightness = if lum > 128.0 { "Light" } else { "Dark" };
+    let hsl_h = {
+        let rf = r as f64 / 255.0; let gf = g as f64 / 255.0; let bf = b as f64 / 255.0;
+        let max = rf.max(gf).max(bf); let min = rf.min(gf).min(bf);
+        let d = max - min;
+        if d == 0.0 { 0.0 }
+        else if max == rf { ((gf - bf) / d % 6.0) * 60.0 }
+        else if max == gf { ((bf - rf) / d + 2.0) * 60.0 }
+        else { ((rf - gf) / d + 4.0) * 60.0 }
+    };
+    let hsl_h = if hsl_h < 0.0 { hsl_h + 360.0 } else { hsl_h };
+    let hsl_l = (maxf(r, g, b) + minf(r, g, b)) / 2.0 / 255.0 * 100.0;
+    let hsl_s = if hsl_l == 0.0 || hsl_l == 100.0 { 0.0 } else { ((maxf(r, g, b) - minf(r, g, b)) / (1.0 - (2.0 * hsl_l - 1.0).abs()) / 255.0 * 100.0) };
+    format!(
+        "*🎨 Color {hex}*\n\n■■■■■■■■■■■■■■■\n\n`HEX:` #{h}\n`RGB:` {r}, {g}, {b}\n`HSL:` {hsl_h:.0}°, {hsl_s:.0}%, {hsl_l:.0}%\n`Brightness:` {brightness}\n\n#color"
+    )
+}
+
+fn maxf(r: u8, g: u8, b: u8) -> f64 { r.max(g).max(b) as f64 }
+fn minf(r: u8, g: u8, b: u8) -> f64 { r.min(g).min(b) as f64 }
+
+async fn fetch_all(memos_url: &str) -> Result<String> {
+    let mut out = String::from("*🌅 Morning Briefing*\n\n");
+    // 1. Containers
+    out.push_str("*🐳 Services*\n\n");
+    let services = vec![
+        ("Memos", format!("{memos_url}/api/v1/status")),
+        ("Vikunja", "http://vikunja:3456/health".to_string()),
+        ("Radicale", "http://radicale:5232".to_string()),
+        ("Gotify", "http://gotify:8080/health".to_string()),
+    ];
+    let mut all_ok = true;
+    for (name, url) in services {
+        let status = match HTTP.get(&url).timeout(std::time::Duration::from_secs(5)).send().await {
+            Ok(r) => { let c = r.status().as_u16(); if c == 200 { "✅".to_string() } else { all_ok = false; format!("⚠️{c}") } }
+            Err(_) => { all_ok = false; "❌".to_string() }
+        };
+        out.push_str(&format!("  {status} {name}\n"));
+    }
+    out.push('\n');
+    // 2. Weather
+    if let Ok(v) = HTTP.get("http://wttr.in/Seoul?format=j1").send().await?.json::<serde_json::Value>().await {
+        let c = &v["current_condition"][0];
+        let temp = c["temp_C"].as_str().unwrap_or("?");
+        let desc = c["weatherDesc"][0]["value"].as_str().unwrap_or("");
+        out.push_str(&format!("*🌤️ Seoul*\n\n  `{temp}°C` — {desc}\n\n"));
+    }
+    // 3. FX
+    if let Ok(v) = HTTP.get("https://open.er-api.com/v6/latest/USD").send().await?.json::<serde_json::Value>().await {
+        let krw = v["rates"]["KRW"].as_f64().unwrap_or(0.0);
+        let eur = v["rates"]["EUR"].as_f64().unwrap_or(0.0);
+        out.push_str(&format!("*💱 FX*\n\n  `1 USD = {krw:.2} KRW`\n  `1 USD = {eur:.4f} EUR`\n\n"));
+    }
+    // 4. Trending
+    if let Ok(v) = HTTP.get("https://api.github.com/search/repositories?q=stars:>1000+pushed:>2026-08-01&sort=stars&order=desc&per_page=3")
+        .header("Accept", "application/vnd.github.v3+json").header("User-Agent", "memogram-rs")
+        .send().await?.json::<serde_json::Value>().await {
+        if let Some(items) = v["items"].as_array() {
+            out.push_str("*🔥 Trending*\n\n");
+            for (i, it) in items.iter().enumerate() {
+                let name = it["full_name"].as_str().unwrap_or("?");
+                let stars = it["stargazers_count"].as_u64().unwrap_or(0);
+                out.push_str(&format!("  *{}.* {name} ⭐{stars}\n", i + 1));
+            }
+        }
+    }
+    out.push_str(&format!("\n`{}` · #all", Local::now().format("%Y-%m-%d %H:%M")));
+    Ok(out)
+}
+
+async fn fetch_shah(q: &str) -> Result<String> {
+    if q.trim().is_empty() { return Ok("usage: `/shah <query>`".into()); }
+    let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding::encode(q));
+    let html = HTTP.get(&url).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36").send().await?.text().await?;
+    let mut out = format!("*🔍 Shah — `{q}`*\n\n");
+    let mut results = Vec::new();
+    let mut remaining = html.as_str();
+    while let Some(s) = remaining.find("class=\"result__a\"") {
+        remaining = &remaining[s..];
+        if let Some(start) = remaining.find('>') {
+            remaining = &remaining[start+1..];
+            if let Some(end) = remaining.find("</a>") {
+                let title = remaining[..end].chars().filter(|c| !c.is_html_entity()).take(80).collect::<String>();
+                remaining = &remaining[end+4..];
+                let snippet = if let Some(s2) = remaining.find("class=\"result__snippet\"") {
+                    let s2 = &remaining[s2..];
+                    if let Some(s3) = s2.find('>') {
+                        let s2 = &s2[s3+1..];
+                        if let Some(e2) = s2.find("</span>") {
+                            Some(s2[..e2].chars().filter(|c| !c.is_html_entity()).take(120).collect::<String>())
+                        } else { None }
+                    } else { None }
+                } else { None };
+                let link = if let Some(s2) = remaining.find("class=\"result__url\"") {
+                    let s2 = &remaining[s2..];
+                    if let Some(s3) = s2.find('>') {
+                        let s2 = &s2[s3+1..];
+                        if let Some(e2) = s2.find("</") {
+                            Some(s2[..e2].trim().to_string())
+                        } else { None }
+                    } else { None }
+                } else { None };
+                results.push((title, snippet, link));
+                if results.len() >= 5 { break; }
+            }
+        }
+    }
+    if results.is_empty() { out.push_str("_No results found._\n\n"); }
+    for (i, (title, snippet, link)) in results.iter().enumerate() {
+        out.push_str(&format!("*{}.* {}", i + 1, esc(title)));
+        if let Some(l) = link { out.push_str(&format!("\n   {l}")); }
+        if let Some(s) = snippet { out.push_str(&format!("\n   _{}_", esc(s))); }
+        out.push_str("\n\n");
+    }
+    out.push_str(&format!("> [DuckDuckGo](https://duckduckgo.com/?q={}) · #shah", urlencoding::encode(q)));
     Ok(out)
 }
