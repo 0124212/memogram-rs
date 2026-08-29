@@ -747,7 +747,7 @@ async fn fetch_translate(args: &str) -> Result<String> {
 }
 
 async fn fetch_facts() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://uselessfacts.jsph.pl/random.json?language=en").send().await?.json().await?;
+    let v: serde_json::Value = HTTP.get("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en").send().await?.json().await?;
     let fact = v["text"].as_str().unwrap_or("(no fact)");
     let source = v["source"].as_str().unwrap_or("uselessfacts.jsph.pl");
     Ok(format!(
@@ -834,48 +834,36 @@ async fn fetch_all(memos_url: &str) -> Result<String> {
 
 async fn fetch_shah(q: &str) -> Result<String> {
     if q.trim().is_empty() { return Ok("usage: `/shah <query>`".into()); }
-    let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding::encode(q));
-    let html = HTTP.get(&url).header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36").send().await?.text().await?;
+    let url = format!("https://api.duckduckgo.com/?q={}&format=json", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let heading = v["Heading"].as_str().unwrap_or("");
+    let abstract_text = v["AbstractText"].as_str().unwrap_or("");
+    let abstract_url = v["AbstractURL"].as_str().unwrap_or("");
+    let source = v["AbstractSource"].as_str().unwrap_or("");
     let mut out = format!("*🔍 Shah — `{q}`*\n\n");
-    let mut results = Vec::new();
-    let mut remaining = html.as_str();
-    while let Some(s) = remaining.find("class=\"result__a\"") {
-        remaining = &remaining[s..];
-        if let Some(start) = remaining.find('>') {
-            remaining = &remaining[start+1..];
-            if let Some(end) = remaining.find("</a>") {
-                let title = remaining[..end].chars().filter(|c| *c != '&' && *c != ';').take(80).collect::<String>();
-                remaining = &remaining[end+4..];
-                let snippet = if let Some(s2) = remaining.find("class=\"result__snippet\"") {
-                    let s2 = &remaining[s2..];
-                    if let Some(s3) = s2.find('>') {
-                        let s2 = &s2[s3+1..];
-                        if let Some(e2) = s2.find("</span>") {
-                            Some(s2[..e2].chars().filter(|c| *c != '&' && *c != ';').take(120).collect::<String>())
-                        } else { None }
-                    } else { None }
-                } else { None };
-                let link = if let Some(s2) = remaining.find("class=\"result__url\"") {
-                    let s2 = &remaining[s2..];
-                    if let Some(s3) = s2.find('>') {
-                        let s2 = &s2[s3+1..];
-                        if let Some(e2) = s2.find("</") {
-                            Some(s2[..e2].trim().to_string())
-                        } else { None }
-                    } else { None }
-                } else { None };
-                results.push((title, snippet, link));
-                if results.len() >= 5 { break; }
-            }
+    if !heading.is_empty() {
+        out.push_str(&format!("*{heading}*\n\n"));
+    }
+    if !abstract_text.is_empty() {
+        out.push_str(&format!("{abstract_text}\n\n"));
+        if !abstract_url.is_empty() {
+            out.push_str(&format!("> [{source}]({abstract_url})\n\n"));
         }
     }
-    if results.is_empty() { out.push_str("_No results found._\n\n"); }
-    for (i, (title, snippet, link)) in results.iter().enumerate() {
-        out.push_str(&format!("*{}.* {}", i + 1, esc(title)));
-        if let Some(l) = link { out.push_str(&format!("\n   {l}")); }
-        if let Some(s) = snippet { out.push_str(&format!("\n   _{}_", esc(s))); }
-        out.push_str("\n\n");
+    let topics: Vec<&serde_json::Value> = v["RelatedTopics"].as_array()
+        .map(|a| a.iter().filter(|t| t.is_object() && t.get("Text").is_some()).take(5).collect())
+        .unwrap_or_default();
+    if !topics.is_empty() {
+        out.push_str("*Related:*\n");
+        for t in topics {
+            let text = t["Text"].as_str().unwrap_or("");
+            let first_url = t["FirstURL"].as_str().unwrap_or("");
+            out.push_str(&format!("  • [{}]({})\n", esc(&text.chars().take(80).collect::<String>()), first_url));
+        }
     }
-    out.push_str(&format!("> [DuckDuckGo](https://duckduckgo.com/?q={}) · #shah", urlencoding::encode(q)));
+    if heading.is_empty() && abstract_text.is_empty() && topics.is_empty() {
+        out.push_str("_No results found._\n\n");
+    }
+    out.push_str(&format!("\n> [DuckDuckGo](https://duckduckgo.com/?q={}) · #shah", urlencoding::encode(q)));
     Ok(out)
 }
