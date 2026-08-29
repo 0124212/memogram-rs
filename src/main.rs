@@ -295,9 +295,31 @@ async fn fetch_weather(city: &str) -> Result<String> {
     let hum = cur["humidity"].as_str().unwrap_or("?");
     let wind = cur["windspeedKmph"].as_str().unwrap_or("?");
     let winddir = cur["winddir16Point"].as_str().unwrap_or("");
-    Ok(format!(
-        "## Weather — {city}\n\n| Metric | Value |\n|---|---|\n| **Temp** | {temp}°C (feels {feels}°C) |\n| **Condition** | {desc} |\n| **Humidity** | {hum}% |\n| **Wind** | {wind} km/h {winddir} |\n\n#weather"
-    ))
+    let mut out = format!(
+        "## Weather — {city}\n\n**Now:** {temp}°C (feels {feels}°C) — {desc} · 💧 {hum}% · 💨 {wind} km/h {winddir}\n\n"
+    );
+    // intraday hourly for today (detailed within day)
+    if let Some(today) = v["weather"].as_array().and_then(|a| a.first()) {
+        let date = today["date"].as_str().unwrap_or("");
+        let maxt = today["maxtempC"].as_str().unwrap_or("?");
+        let mint = today["mintempC"].as_str().unwrap_or("?");
+        out.push_str(&format!("**{date}** — ↑{maxt}°C ↓{mint}°C\n\n| Time | Temp | Condition | Rain | Humidity | Wind |\n|---|---|---|---|---|---|\n"));
+        if let Some(hours) = today["hourly"].as_array() {
+            for h in hours {
+                let t = h["time"].as_str().unwrap_or("0");
+                let hh = format!("{:0>4}", t);
+                let hm = format!("{}:{}", &hh[0..2], &hh[2..4]);
+                let tc = h["tempC"].as_str().unwrap_or("?");
+                let d = h["weatherDesc"][0]["value"].as_str().unwrap_or("");
+                let rain = h["chanceofrain"].as_str().unwrap_or("?");
+                let hu = h["humidity"].as_str().unwrap_or("?");
+                let wi = h["windspeedKmph"].as_str().unwrap_or("?");
+                out.push_str(&format!("| {hm} | {tc}°C | {d} | {rain}% | {hu}% | {wi} km/h |\n"));
+            }
+        }
+    }
+    out.push_str("\n#weather");
+    Ok(out)
 }
 async fn fetch_define(word: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word)).send().await?.json().await?;
