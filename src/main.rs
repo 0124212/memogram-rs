@@ -237,7 +237,7 @@ async fn verify_token(url: &str, tok: &str) -> Result<()> {
 async fn create_memo(url: &str, tok: &str, content: &str) -> Result<String> {
     #[derive(Serialize)] struct Req { content: String, visibility: String }
     #[derive(Deserialize)] struct Resp { name: String }
-    let r = HTTP.post(format!("{url}/api/v1/memos")).bearer_auth(tok).json(&Req{ content: content.to_string(), visibility: "PRIVATE".into() }).send().await?;
+    let r = HTTP.post(format!("{url}/api/v1/memos")).bearer_auth(tok).json(&Req{ content: content.to_string(), visibility: "PROTECTED".into() }).send().await?;
     let st = r.status();
     let txt = r.text().await?;
     if !st.is_success() { anyhow::bail!("{st} {txt}") }
