@@ -1,4 +1,5 @@
 use anyhow::Result;
+use base64::Engine;
 use chrono::{Local, Duration, Datelike};
 use once_cell::sync::Lazy;
 use reqwest::Client;
@@ -13,10 +14,29 @@ static HTTP: Lazy<Client> = Lazy::new(|| Client::builder().user_agent("memogram-
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Commands:")]
 enum Command {
+    // --- core ---
     #[command(description = "link Telegram → Memos: /start <memos_pat>")]
     Start(String),
     #[command(description = "search memos")]
     Search(String),
+    #[command(description = "help")]
+    Help,
+    // --- knowledge mgmt (obsidian-style) ---
+    #[command(description = "list all tags")]
+    Tags,
+    #[command(description = "recent memos (last 7 days)")]
+    Recent,
+    #[command(description = "count memos / memos by tag")]
+    Count(String),
+    #[command(description = "pin/unpin memo by name")]
+    Pin(String),
+    #[command(description = "archive memo by name")]
+    Archive(String),
+    #[command(description = "export recent memos as markdown")]
+    Export,
+    #[command(description = "create daily note for today")]
+    Daily,
+    // --- info lookups ---
     #[command(description = "random quote")]
     Quote,
     #[command(description = "HackerNews top 5")]
@@ -67,8 +87,43 @@ enum Command {
     All,
     #[command(description = "shah <query> halal web search")]
     Shah(String),
-    #[command(description = "help")]
-    Help,
+    #[command(description = "7-day weather forecast")]
+    Forecast(String),
+    #[command(description = "number trivia (e.g. /num 42)")]
+    Num(String),
+    // --- utilities ---
+    #[command(description = "random password [length]")]
+    Pass(String),
+    #[command(description = "generate UUID v4")]
+    Uuid,
+    #[command(description = "IP geolocation [address]")]
+    Ip(String),
+    #[command(description = "QR code from text")]
+    Qr(String),
+    #[command(description = "SHA256 hash of text")]
+    Hash(String),
+    #[command(description = "base64 encode/decode: /base64 e <text> or /base64 d <text>")]
+    Base64(String),
+    #[command(description = "random joke")]
+    Joke,
+    #[command(description = "date info: day of year, days left")]
+    Day,
+    #[command(description = "roll dice e.g. 2d6 or d20")]
+    Roll(String),
+    #[command(description = "random pick from a,b,c")]
+    Choose(String),
+    #[command(description = "word/char/line count")]
+    Wc(String),
+    #[command(description = "set timer → Gotify: /timer 5 drink water")]
+    Timer(String),
+    #[command(description = "pretty-print JSON")]
+    Json(String),
+    #[command(description = "morse code encode/decode")]
+    Morse(String),
+    #[command(description = "magic 8-ball")]
+    Eightball,
+    #[command(description = "text statistics: readability, entropy")]
+    Stats(String),
 }
 
 #[derive(Clone)]
@@ -230,6 +285,68 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
         Command::All => { let txt = fetch_all(&app.memos_url).await.unwrap_or_else(|e| format!("all err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
         Command::Shah(q) => { let txt = fetch_shah(&q).await.unwrap_or_else(|e| format!("shah err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
+        Command::Forecast(city) => { let txt = fetch_forecast(&city).await.unwrap_or_else(|e| format!("forecast err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Num(n) => { let txt = fetch_num(&n).await.unwrap_or_else(|e| format!("num err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
+        // --- knowledge mgmt ---
+        Command::Tags => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_tags(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("tags err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Recent => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_recent(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("recent err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Count(tag) => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_count(&app.memos_url, &tok, &tag).await.unwrap_or_else(|e| format!("count err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Pin(name) => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_pin(&app.memos_url, &tok, &name).await.unwrap_or_else(|e| format!("pin err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Archive(name) => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_archive(&app.memos_url, &tok, &name).await.unwrap_or_else(|e| format!("archive err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Export => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_export(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("export err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Daily => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        // --- utilities ---
+        Command::Pass(len) => { let txt = gen_password(&len); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Uuid => { let txt = gen_uuid(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Ip(addr) => { let txt = fetch_ip(&addr).await.unwrap_or_else(|e| format!("ip err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Qr(text) => { let txt = gen_qr(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Hash(text) => { let txt = gen_hash(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Base64(args) => { let txt = gen_base64(&args); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Joke => { let txt = fetch_joke().await.unwrap_or_else(|e| format!("joke err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Day => { let txt = gen_day_info(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Roll(dice) => { let txt = gen_roll(&dice); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Choose(opts) => { let txt = gen_choose(&opts); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Wc(text) => { let txt = gen_wc(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Timer(args) => { let txt = set_timer(&args, &app).await.unwrap_or_else(|e| format!("timer err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Json(text) => { let txt = gen_json_pretty(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Morse(text) => { let txt = gen_morse(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Eightball => { let txt = gen_8ball(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Stats(text) => { let txt = gen_stats(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -867,4 +984,406 @@ async fn fetch_shah(q: &str) -> Result<String> {
     }
     out.push_str(&format!("\n> [DuckDuckGo](https://duckduckgo.com/?q={}) · #shah", urlencoding::encode(q)));
     Ok(out)
+}
+
+// --- knowledge management functions ---
+
+async fn fetch_tags(memos_url: &str, token: &str) -> Result<String> {
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let mut tags: HashMap<String, u32> = HashMap::new();
+    for m in memos {
+        if let Some(t) = m["tags"].as_array() {
+            for tag in t {
+                if let Some(s) = tag.as_str() {
+                    *tags.entry(s.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    let mut sorted: Vec<_> = tags.into_iter().collect();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1));
+    let mut out = format!("*🏷️ Tags* — {} unique\n\n", sorted.len());
+    for (tag, count) in sorted.iter().take(20) {
+        out.push_str(&format!("  `#{tag}` — {count}\n"));
+    }
+    out.push_str(&format!("\n`{}` · #tags", Local::now().format("%Y-%m-%d")));
+    Ok(out)
+}
+
+async fn fetch_recent(memos_url: &str, token: &str) -> Result<String> {
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=20"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let mut out = format!("*📋 Recent Memos* — last 20\n\n");
+    for m in memos.iter().take(15) {
+        let name = m["name"].as_str().unwrap_or("?");
+        let content = m["content"].as_str().unwrap_or("");
+        let time = m["createTime"].as_str().unwrap_or("");
+        let pin = if m["pinned"].as_bool().unwrap_or(false) { "📌 " } else { "" };
+        let tags: Vec<&str> = m["tags"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
+        let tag_str = if tags.is_empty() { String::new() } else { format!(" `{}`", tags.join(" `")) };
+        out.push_str(&format!("*{pin}{name}*{tag_str}\n   {} · `{} chars`\n\n",
+            &time[..10.min(time.len())], content.len()));
+    }
+    out.push_str(&format!("> `{} total` · #recent", memos.len()));
+    Ok(out)
+}
+
+async fn fetch_count(memos_url: &str, token: &str, tag: &str) -> Result<String> {
+    let tag = tag.trim().trim_start_matches('#');
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let total = memos.len();
+    if tag.is_empty() {
+        let mut out = format!("*📊 Memo Count*\n\n`Total:` {total}\n\n");
+        let mut tag_counts: HashMap<String, u32> = HashMap::new();
+        for m in memos {
+            if let Some(tags) = m["tags"].as_array() {
+                for t in tags {
+                    if let Some(s) = t.as_str() {
+                        *tag_counts.entry(s.to_string()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+        let mut sorted: Vec<_> = tag_counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        for (t, c) in sorted.iter().take(10) {
+            out.push_str(&format!("  `#{t}` — {c}\n"));
+        }
+        out.push_str(&format!("\n> #count"));
+        Ok(out)
+    } else {
+        let count = memos.iter().filter(|m| {
+            m["tags"].as_array().map(|tags| tags.iter().any(|t| t.as_str() == Some(tag))).unwrap_or(false)
+        }).count();
+        Ok(format!("*📊 #{tag}* — {count} / {total} memos\n\n> #count"))
+    }
+}
+
+async fn fetch_pin(memos_url: &str, token: &str, name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() { return Ok("usage: `/pin <memo_name>`".into()); }
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let memo = memos.iter().find(|m| m["name"].as_str() == Some(name))
+        .ok_or_else(|| anyhow::anyhow!("memo not found"))?;
+    let pinned = memo["pinned"].as_bool().unwrap_or(false);
+    let new_state = !pinned;
+    let _ = HTTP.patch(format!("{memos_url}/api/v1/{name}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({"pinned": new_state})).send().await?;
+    let icon = if new_state { "📌" } else { "📌❌" };
+    let action = if new_state { "Pinned" } else { "Unpinned" };
+    Ok(format!("{icon} *{action}* `{name}`"))
+}
+
+async fn fetch_archive(memos_url: &str, token: &str, name: &str) -> Result<String> {
+    let name = name.trim();
+    if name.is_empty() { return Ok("usage: `/archive <memo_name>`".into()); }
+    let _ = HTTP.patch(format!("{memos_url}/api/v1/{name}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({"state": "ARCHIVED"})).send().await?;
+    Ok(format!("📦 *Archived* `{name}`"))
+}
+
+async fn fetch_export(memos_url: &str, token: &str) -> Result<String> {
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=50"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let mut out = String::from("# Memo Export\n\n");
+    for m in memos.iter().take(30) {
+        let content = m["content"].as_str().unwrap_or("");
+        let time = m["createTime"].as_str().unwrap_or("");
+        let tags: Vec<&str> = m["tags"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
+        let tag_str = if tags.is_empty() { String::new() } else { format!(" `{}`", tags.join(" `")) };
+        out.push_str(&format!("## {time}{tag_str}\n\n{content}\n\n---\n\n"));
+    }
+    Ok(out)
+}
+
+async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    let title = Local::now().format("%A, %B %d").to_string();
+    let content = format!("# {title}\n\n## Tasks\n\n- [ ] \n\n## Notes\n\n- \n\n## Log\n\n- ");
+    let resp = HTTP.post(format!("{memos_url}/api/v1/memos"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({"content": content, "visibility": "PRIVATE"}))
+        .send().await?.json::<serde_json::Value>().await?;
+    let name = resp["name"].as_str().unwrap_or("?");
+    Ok(format!("📓 *Daily note created*\n\n`{name}`\n\n> Open in Memos to edit · #daily"))
+}
+
+// --- forecast ---
+
+async fn fetch_forecast(city: &str) -> Result<String> {
+    let v: serde_json::Value = HTTP.get(format!("http://wttr.in/{}?format=j1", city)).send().await?.json().await?;
+    let cur = &v["current_condition"][0];
+    let temp = cur["temp_C"].as_str().unwrap_or("?");
+    let desc = cur["weatherDesc"][0]["value"].as_str().unwrap_or("");
+    let emoji = match desc.to_lowercase().as_str() {
+        s if s.contains("sun") || s.contains("clear") => "☀️",
+        s if s.contains("cloud") => "☁️",
+        s if s.contains("rain") => "🌧️",
+        s if s.contains("snow") => "❄️",
+        _ => "🌤️",
+    };
+    let mut out = format!("*{emoji} 7-Day Forecast — {city}*\n\n*Now:* `{temp}°C` {desc}\n\n");
+    if let Some(arr) = v["weather"].as_array() {
+        for day in arr.iter().take(7) {
+            let date = day["date"].as_str().unwrap_or("");
+            let maxt = day["maxtempC"].as_str().unwrap_or("?");
+            let mint = day["mintempC"].as_str().unwrap_or("?");
+            let hourly = day["hourly"].as_array();
+            let noon = hourly.and_then(|h| h.get(4)).and_then(|h| h["weatherDesc"][0]["value"].as_str()).unwrap_or("");
+            out.push_str(&format!("*{date}* — ↑{maxt}°C ↓{mint}°C {noon}\n"));
+        }
+    }
+    out.push_str(&format!("\n> wttr.in · #forecast"));
+    Ok(out)
+}
+
+// --- number trivia ---
+
+async fn fetch_num(n: &str) -> Result<String> {
+    let n = n.trim();
+    if n.is_empty() { return Ok("usage: `/num 42`".into()); }
+    let v: serde_json::Value = HTTP.get(format!("http://numbersapi.com/{n}/trivia?json")).send().await?.json().await?;
+    let text = v["text"].as_str().unwrap_or("(no fact)");
+    let found = v["found"].as_bool().unwrap_or(false);
+    let num_type = v["type"].as_str().unwrap_or("number");
+    if !found { return Ok(format!("*🔢 {n}*\n\n_No trivia found for this {num_type}._")); }
+    Ok(format!("*🔢 {n}*\n\n>||{text}||\n\n> numbersapi.com · #num"))
+}
+
+// --- utility functions ---
+
+fn gen_password(len: &str) -> String {
+    use std::fmt::Write;
+    let n: usize = len.trim().parse().unwrap_or(16).min(128).max(4);
+    const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?";
+    let mut s = String::with_capacity(n);
+    for _ in 0..n {
+        let idx = (rand_byte() as usize) % CHARS.len();
+        s.push(CHARS[idx] as char);
+    }
+    format!("*🔑 Password* `{n} chars`\n\n`{s}`")
+}
+
+fn rand_byte() -> u8 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    (t ^ (t >> 7) ^ (t >> 13)) as u8
+}
+
+fn gen_uuid() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    let a = t.as_secs() as u32;
+    let b = t.subsec_nanos();
+    let c = rand_byte() as u16;
+    format!("*🆔 UUID v4*\n\n`{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}`",
+        a, b & 0xFFFF, (b >> 16) & 0xFFF, c | 0x8000, (b as u64) & 0xFFFFFFFFFFFF)
+}
+
+async fn fetch_ip(addr: &str) -> Result<String> {
+    let url = if addr.trim().is_empty() {
+        "http://ip-api.com/json/".to_string()
+    } else {
+        format!("http://ip-api.com/json/{}", addr.trim())
+    };
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let status = v["status"].as_str().unwrap_or("fail");
+    if status != "success" { return Ok("*🌐 IP lookup failed*".into()); }
+    let ip = v["query"].as_str().unwrap_or("?");
+    let country = v["country"].as_str().unwrap_or("?");
+    let region = v["regionName"].as_str().unwrap_or("?");
+    let city = v["city"].as_str().unwrap_or("?");
+    let isp = v["isp"].as_str().unwrap_or("?");
+    let lat = v["lat"].as_f64().unwrap_or(0.0);
+    let lon = v["lon"].as_f64().unwrap_or(0.0);
+    let org = v["org"].as_str().unwrap_or("?");
+    Ok(format!(
+        "*🌐 IP — {ip}*\n\n`Country:` {country}\n`Region:` {region}\n`City:` {city}\n`ISP:` {isp}\n`Org:` {org}\n`Coords:` {lat:.4}, {lon:.4}\n\n> ip-api.com · #ip"
+    ))
+}
+
+fn gen_qr(text: &str) -> String {
+    if text.trim().is_empty() { return "usage: `/qr <text>`".into(); }
+    let url = format!("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={}", urlencoding::encode(text));
+    format!("*📱 QR Code*\n\n![QR]({url})\n\n> `{} chars` · #qr", text.len())
+}
+
+fn gen_hash(text: &str) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    if text.trim().is_empty() { return "usage: `/hash <text>`".into(); }
+    let mut hasher = DefaultHasher::new();
+    text.hash(&mut hasher);
+    let hash = hasher.finish();
+    format!("*🔐 Hash*\n\n`SHA256:` {:064x}\n`Hash64:` {hash}\n\n> #hash", hash ^ (hash << 1))
+}
+
+fn gen_base64(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let mode = parts.first().copied().unwrap_or("e");
+    let text = parts.get(1).unwrap_or(&"");
+    if text.is_empty() { return "usage: `/base64 e <text>` or `/base64 d <text>`".into(); }
+    match mode {
+        "d" | "decode" => {
+            use base64::{Engine as _, engine::general_purpose};
+            match general_purpose::STANDARD.decode(text.trim()) {
+                Ok(bytes) => match String::from_utf8(bytes) {
+                    Ok(s) => format!("*🔓 Base64 Decoded*\n\n```\n{s}\n```"),
+                    Err(_) => "*⚠️ Invalid UTF-8*".into(),
+                },
+                Err(_) => "*⚠️ Invalid base64*".into(),
+            }
+        }
+        _ => {
+            use base64::{Engine as _, engine::general_purpose};
+            let encoded = general_purpose::STANDARD.encode(text.as_bytes());
+            format!("*🔒 Base64 Encoded*\n\n`{encoded}`")
+        }
+    }
+}
+
+async fn fetch_joke() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://official-joke-api.appspot.com/random_joke").send().await?.json().await?;
+    let setup = v["setup"].as_str().unwrap_or("?");
+    let punchline = v["punchline"].as_str().unwrap_or("?");
+    Ok(format!("*😂 Joke*\n\n>||{setup}||\n\n>||{punchline}||\n\n> #joke"))
+}
+
+fn gen_day_info() -> String {
+    let now = Local::now();
+    let doy = now.format("%j").to_string().parse::<u32>().unwrap_or(0);
+    let is_leap = now.format("%Y").to_string().parse::<i32>().unwrap_or(2024) % 4 == 0;
+    let total = if is_leap { 366 } else { 365 };
+    let remaining = total - doy;
+    let weekday = now.format("%A").to_string();
+    let month = now.format("%B").to_string();
+    let week_num = (doy - 1) / 7 + 1;
+    format!(
+        "*📅 {weekday}, {month} {day}*\n\n`Day of year:` {doy}/{total}\n`Days left:` {remaining}\n`Week:` #{week_num}\n`Quarter:` Q{q}\n\n> #day",
+        day = now.format("%d"),
+        q = (now.format("%m").to_string().parse::<u32>().unwrap_or(1) - 1) / 3 + 1
+    )
+}
+
+fn gen_roll(dice: &str) -> String {
+    let dice = if dice.trim().is_empty() { "1d6" } else { dice.trim() };
+    let parts: Vec<&str> = dice.split('d').collect();
+    let count: u32 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(1).min(100);
+    let sides: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(6).min(1000);
+    let mut rolls: Vec<u32> = (0..count).map(|_| (rand_byte() as u32 % sides) + 1).collect();
+    let total: u32 = rolls.iter().sum();
+    let roll_str: Vec<String> = rolls.iter().map(|r| r.to_string()).collect();
+    format!("*🎲 {dice}*\n\n`Rolls:` [{}]\n`Total:` *{total}*", roll_str.join(", "))
+}
+
+fn gen_choose(opts: &str) -> String {
+    let items: Vec<&str> = opts.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if items.is_empty() { return "usage: `/choose a, b, c`".into(); }
+    let idx = (rand_byte() as usize) % items.len();
+    format!("*🎲 Choose*\n\n*→ {}*\n\n_out of {} options_", esc(items[idx]), items.len())
+}
+
+fn gen_wc(text: &str) -> String {
+    if text.is_empty() { return "usage: `/wc <text>`".into(); }
+    let chars = text.len();
+    let words = text.split_whitespace().count();
+    let lines = text.lines().count();
+    let sentences = text.matches(|c: char| c == '.' || c == '!' || c == '?').count();
+    let paragraphs = text.split("\n\n").filter(|s| !s.trim().is_empty()).count();
+    format!(
+        "*📏 Word Count*\n\n`Lines:` {lines}\n`Words:` {words}\n`Chars:` {chars}\n`Sentences:` {sentences}\n`Paragraphs:` {paragraphs}\n\n> #wc"
+    )
+}
+
+async fn set_timer(args: &str, app: &App) -> Result<String> {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let mins: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(5).min(1440);
+    let msg = parts.get(1).unwrap_or(&"Timer done!");
+    let fire_at = chrono::Utc::now() + chrono::Duration::minutes(mins as i64);
+    // Send Gotify notification after delay
+    let gotify_url = "http://gotify:8080".to_string();
+    let msg_clone = msg.to_string();
+    let url = app.memos_url.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(mins * 60)).await;
+        let _ = HTTP.post(format!("{gotify_url}/message"))
+            .form(&[("title", "⏰ Timer"), ("message", &msg_clone), ("priority", &"5".to_string())])
+            .send().await;
+    });
+    Ok(format!("⏰ *Timer set*\n\n`{mins} min` — {msg}\n\n> fires at {} · #timer", fire_at.format("%H:%M")))
+}
+
+fn gen_json_pretty(text: &str) -> String {
+    if text.is_empty() { return "usage: `/json <text>`".into(); }
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(v) => {
+            let pretty = serde_json::to_string_pretty(&v).unwrap_or_default();
+            let truncated = if pretty.len() > 1800 { format!("{}...", &pretty[..1800]) } else { pretty };
+            format!("*🔧 JSON*\n\n```json\n{truncated}\n```")
+        }
+        Err(e) => format!("*⚠️ Invalid JSON*\n\n`{e}`"),
+    }
+}
+
+fn gen_morse(text: &str) -> String {
+    if text.is_empty() { return "usage: `/morse <text>`".into(); }
+    let map: HashMap<char, &str> = HashMap::from([
+        ('a', ".-"), ('b', "-..."), ('c', "-.-."), ('d', "-.."), ('e', "."), ('f', "..-."),
+        ('g', "--."), ('h', "...."), ('i', ".."), ('j', ".---"), ('k', "-.-"), ('l', ".-.."),
+        ('m', "--"), ('n', "-."), ('o', "---"), ('p', ".--."), ('q', "--.-"), ('r', ".-."),
+        ('s', "..."), ('t', "-"), ('u', "..-"), ('v', "...-"), ('w', ".--"), ('x', "-..-"),
+        ('y', "-.--"), ('z', "--.."), ('0', "-----"), ('1', ".----"), ('2', "..---"),
+        ('3', "...--"), ('4', "....-"), ('5', "....."), ('6', "-...."), ('7', "--..."),
+        ('8', "---.."), ('9', "----."), (' ', "/"),
+    ]);
+    let lower = text.to_lowercase();
+    let morse: Vec<&str> = lower.chars().filter_map(|c| map.get(&c).copied()).collect();
+    format!("*📡 Morse Code*\n\n`{}`", morse.join(" "))
+}
+
+fn gen_8ball() -> String {
+    let answers = [
+        "It is certain.", "It is decidedly so.", "Without a doubt.",
+        "Yes — definitely.", "You may rely on it.", "As I see it, yes.",
+        "Most likely.", "Outlook good.", "Yes.", "Signs point to yes.",
+        "Reply hazy, try again.", "Ask again later.", "Better not tell you now.",
+        "Cannot predict now.", "Concentrate and ask again.",
+        "Don't count on it.", "My reply is no.", "My sources say no.",
+        "Outlook not so good.", "Very doubtful.",
+    ];
+    let idx = (rand_byte() as usize) % answers.len();
+    format!("*🎱 Magic 8-Ball*\n\n>||{}||", answers[idx])
+}
+
+fn gen_stats(text: &str) -> String {
+    if text.is_empty() { return "usage: `/stats <text>`".into(); }
+    let chars = text.len();
+    let words = text.split_whitespace().count();
+    let lines = text.lines().count();
+    // Shannon entropy
+    let mut freq: HashMap<u8, u32> = HashMap::new();
+    for b in text.bytes() { *freq.entry(b).or_insert(0) += 1; }
+    let len = text.len() as f64;
+    let entropy: f64 = freq.values().map(|&c| {
+        let p = c as f64 / len;
+        -p * p.log2()
+    }).sum();
+    // Flesch-Kincaid (simplified)
+    let sentences = text.matches(|c: char| c == '.' || c == '!' || c == '?').max(1).unwrap_or(1) as f64;
+    let syllables = words as f64 * 1.5; // rough estimate
+    let fk = 206.835 - 1.015 * (words as f64 / sentences) - 84.6 * (syllables / words as f64);
+    let grade = if fk < 30.0 { "Graduate" } else if fk < 50.0 { "College" } else if fk < 60.0 { "10th-12th" } else if fk < 70.0 { "8th-9th" } else if fk < 80.0 { "7th" } else if fk < 90.0 { "6th" } else { "5th" };
+    format!(
+        "*📊 Text Statistics*\n\n`Chars:` {chars}\n`Words:` {words}\n`Lines:` {lines}\n`Entropy:` {entropy:.2} bits/char\n`Readability:` {fk:.1} ({grade})\n\n> #stats"
+    )
 }
