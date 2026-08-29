@@ -41,6 +41,12 @@ enum Command {
     Read(String),
     #[command(description = "list task memos")]
     Tasks,
+    #[command(description = "check service health")]
+    Containers,
+    #[command(description = "GitHub trending repos")]
+    Trending,
+    #[command(description = "reddit <sub> top posts")]
+    Reddit(String),
     #[command(description = "deepresearch <query>")]
     Deepresearch(String),
     #[command(description = "help")]
@@ -105,6 +111,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair> USD-KRW".into() },
         teloxide::types::BotCommand { command: "read".into(), description: "read <url> summarize".into() },
         teloxide::types::BotCommand { command: "tasks".into(), description: "list task memos".into() },
+        teloxide::types::BotCommand { command: "containers".into(), description: "check service health".into() },
+        teloxide::types::BotCommand { command: "trending".into(), description: "GitHub trending".into() },
+        teloxide::types::BotCommand { command: "reddit".into(), description: "reddit <sub>".into() },
         teloxide::types::BotCommand { command: "deepresearch".into(), description: "deepresearch <query>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
     ]).await;
@@ -187,6 +196,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = fetch_tasks(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("tasks err: {e}"));
             create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?;
         }
+        Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
+        Command::Trending => { let txt = fetch_trending().await.unwrap_or_else(|e| format!("trending err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
+        Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
         Command::Deepresearch(q) => { let t = if q.trim().is_empty() { "deepresearch".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "deepresearch", &t, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
@@ -512,5 +524,68 @@ async fn fetch_read(url: &str) -> Result<String> {
     let mut out = format!("## 📰 Read — `{url}`\n\n");
     if !title.is_empty() { out.push_str(&format!("**{title}**\n\n")); }
     out.push_str(&format!("{body}\n\n> Summarized via [jina.ai](https://jina.ai/reader/) · #read"));
+    Ok(out)
+}
+
+async fn fetch_containers(memos_url: &str) -> Result<String> {
+    let services = vec![
+        ("Memos", format!("{memos_url}/api/v1/status")),
+        ("Vikunja", "https://vikunja.junilab.xyz".to_string()),
+        ("Radicale", "https://radicale.junilab.xyz".to_string()),
+        ("Gotify", "http://172.20.0.1:8080/health".to_string()),
+    ];
+    let mut out = String::from("## 🐳 Service Health\n\n| Service | Status | Latency |\n|---|---|---|\n");
+    for (name, url) in services {
+        let start = std::time::Instant::now();
+        let status = match HTTP.get(&url).timeout(std::time::Duration::from_secs(5)).send().await {
+            Ok(r) => {
+                let code = r.status().as_u16();
+                if code == 200 { "✅ OK".to_string() } else { format!("⚠️ {code}") }
+            }
+            Err(_) => "❌ DOWN".to_string(),
+        };
+        let ms = start.elapsed().as_millis();
+        out.push_str(&format!("| {name} | {status} | {ms}ms |\n"));
+    }
+    out.push_str(&format!("\n`{}` · #containers", Local::now().format("%Y-%m-%d %H:%M")));
+    Ok(out)
+}
+
+async fn fetch_trending() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://api.github.com/search/repositories?q=stars:>1000+pushed:>2026-08-01&sort=stars&order=desc&per_page=10")
+        .header("Accept", "application/vnd.github.v3+json")
+        .header("User-Agent", "memogram-rs")
+        .send().await?.json().await?;
+    let items = v["items"].as_array().ok_or_else(|| anyhow::anyhow!("no items"))?;
+    let mut out = String::from("## 🔥 GitHub Trending — Top 10\n\n| # | Repo | ⭐ Stars | Language | Description |\n|---|---|---|---|---|\n");
+    for (i, it) in items.iter().enumerate() {
+        let name = it["full_name"].as_str().unwrap_or("?");
+        let html = it["html_url"].as_str().unwrap_or("");
+        let stars = it["stargazers_count"].as_u64().unwrap_or(0);
+        let lang = it["language"].as_str().unwrap_or("-");
+        let desc = it["description"].as_str().unwrap_or("").replace('|', "\\|").chars().take(50).collect::<String>();
+        out.push_str(&format!("| {} | [{}]({}) | {} | {} | {} |\n", i + 1, name, html, stars, lang, desc));
+    }
+    out.push_str("\n> [GitHub Trending](https://github.com/trending) · #trending");
+    Ok(out)
+}
+
+async fn fetch_reddit(sub: &str) -> Result<String> {
+    let sub = if sub.trim().is_empty() { "technology" } else { sub.trim() };
+    let url = format!("https://www.reddit.com/r/{}/hot.json?limit=5", sub);
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs/0.1").send().await?.json().await?;
+    let posts = v["data"]["children"].as_array().ok_or_else(|| anyhow::anyhow!("no posts"))?;
+    if posts.is_empty() { return Ok(format!("## 📡 r/{sub}\n\n_No posts found._")); }
+    let mut out = format!("## 📡 r/{sub} — Hot\n\n| # | Title | ⬆ | 💬 | By |\n|---|---|---|---|---|\n");
+    for (i, p) in posts.iter().enumerate() {
+        let d = &p["data"];
+        let title = d["title"].as_str().unwrap_or("?").replace('|', "\\|").chars().take(60).collect::<String>();
+        let permalink = d["permalink"].as_str().unwrap_or("");
+        let score = d["score"].as_u64().unwrap_or(0);
+        let comments = d["num_comments"].as_u64().unwrap_or(0);
+        let author = d["author"].as_str().unwrap_or("?");
+        out.push_str(&format!("| {} | [{}]({}) | {} | {} | {} |\n", i + 1, title, format!("https://reddit.com{permalink}"), score, comments, author));
+    }
+    out.push_str(&format!("\n> [r/{sub}](https://reddit.com/r/{sub}) · #reddit", sub = sub));
     Ok(out)
 }
