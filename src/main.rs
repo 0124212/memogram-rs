@@ -42,6 +42,7 @@ enum Command {
     Hash(String),
     Base64(String),
     Json(String),
+    Remind(String),
 }
 
 #[derive(Clone)]
@@ -90,25 +91,32 @@ async fn main() -> Result<()> {
     let _ = bot.set_my_commands(vec![
         teloxide::types::BotCommand { command: "start".into(), description: "link Telegram → Memos".into() },
         teloxide::types::BotCommand { command: "search".into(), description: "search memos".into() },
-        teloxide::types::BotCommand { command: "quote".into(), description: "random quote".into() },
         teloxide::types::BotCommand { command: "hn".into(), description: "HackerNews top 5".into() },
+        teloxide::types::BotCommand { command: "lobsters".into(), description: "Lobste.rs stories".into() },
         teloxide::types::BotCommand { command: "weather".into(), description: "weather <city>".into() },
+        teloxide::types::BotCommand { command: "forecast".into(), description: "7-day forecast".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
         teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
         teloxide::types::BotCommand { command: "cheat".into(), description: "cheat <query>".into() },
-        teloxide::types::BotCommand { command: "today".into(), description: "daily memo digest".into() },
-        teloxide::types::BotCommand { command: "week".into(), description: "weekly memo digest".into() },
         teloxide::types::BotCommand { command: "gh".into(), description: "GitHub search".into() },
-        teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair> USD-KRW".into() },
-        teloxide::types::BotCommand { command: "read".into(), description: "read <url> summarize".into() },
-        teloxide::types::BotCommand { command: "tasks".into(), description: "list task memos".into() },
-        teloxide::types::BotCommand { command: "containers".into(), description: "check service health".into() },
-        teloxide::types::BotCommand { command: "trending".into(), description: "GitHub trending".into() },
-        teloxide::types::BotCommand { command: "reddit".into(), description: "reddit <sub>".into() },
+        teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair>".into() },
         teloxide::types::BotCommand { command: "stock".into(), description: "stock <ticker>".into() },
         teloxide::types::BotCommand { command: "crypto".into(), description: "crypto <coin>".into() },
-        teloxide::types::BotCommand { command: "poem".into(), description: "random poem".into() },
-        teloxide::types::BotCommand { command: "deepresearch".into(), description: "deepresearch <query>".into() },
+        teloxide::types::BotCommand { command: "translate".into(), description: "translate text".into() },
+        teloxide::types::BotCommand { command: "color".into(), description: "color <hex>".into() },
+        teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
+        teloxide::types::BotCommand { command: "tags".into(), description: "list all tags".into() },
+        teloxide::types::BotCommand { command: "recent".into(), description: "last 20 memos".into() },
+        teloxide::types::BotCommand { command: "count".into(), description: "count memos".into() },
+        teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
+        teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
+        teloxide::types::BotCommand { command: "password".into(), description: "generate password".into() },
+        teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
+        teloxide::types::BotCommand { command: "ip".into(), description: "IP lookup".into() },
+        teloxide::types::BotCommand { command: "qr".into(), description: "QR code".into() },
+        teloxide::types::BotCommand { command: "hash".into(), description: "SHA-256 hash".into() },
+        teloxide::types::BotCommand { command: "base64".into(), description: "encode/decode".into() },
+        teloxide::types::BotCommand { command: "json".into(), description: "pretty JSON".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
     ]).await;
 
@@ -153,7 +161,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let res = search_memos(&app.memos_url, &tok, &q).await.unwrap_or_else(|e| format!("search err: {e}"));
             bot.send_message(msg.chat.id, res).await?;
         }
-        Command::Hn => { let txt = fetch_hn().await.unwrap_or_else(|e| format!("hn err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
+        Command::Hn => { let txt = fetch_hn().await.unwrap_or_else(|e| format!("hn err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Weather(city) => {
             let c = if city.trim().is_empty() { "Los Angeles".to_string() } else { city };
             let txt = fetch_weather(&c).await.unwrap_or_else(|e| format!("weather err: {e}"));
@@ -163,11 +171,11 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "wiki", &txt, tid).await?; }
         Command::Cheat(q) => { let txt = fetch_cheat(&q).await.unwrap_or_else(|e| format!("cheat err: {e}")); create_as_bot(&bot, &msg, &app, "cheat", &txt, tid).await?; }
         Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
-        Command::Fx(pair) => { let txt = fetch_fx(&pair).await.unwrap_or_else(|e| format!("fx err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
+        Command::Fx(pair) => { let txt = fetch_fx(&pair).await.unwrap_or_else(|e| format!("fx err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
-        Command::Lobsters(tag) => { let txt = fetch_lobsters(&tag).await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
-        Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
-        Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
+        Command::Lobsters(tag) => { let txt = fetch_lobsters(&tag).await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
         Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
         Command::Forecast(city) => { let txt = fetch_forecast(&city).await.unwrap_or_else(|e| format!("forecast err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
@@ -202,6 +210,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Hash(text) => { let txt = gen_hash(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Base64(args) => { let txt = gen_base64(&args); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Json(text) => { let txt = gen_json_pretty(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Remind(args) => { let txt = set_reminder(&args, &app).await; bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -284,7 +293,8 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
 
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
-    let content = format!("@{}\n\n{}\n\n— _via {} · asher_", app.admin_username, body, bot_name);
+    let tag = format!("#{bot_name}");
+    let content = format!("@{}\n\n{}\n\n— _via {} · asher_\n\n{tag}", app.admin_username, body, bot_name);
     let tok = if let Some(t) = bot_tok { t } else {
         let fallback = { app.store.read().await.get(&telegram_id).cloned() };
         let Some(f) = fallback else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -362,80 +372,6 @@ async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
     Ok(out)
 }
 
-// --- memo digests ---
-
-async fn list_memos_filtered(url: &str, tok: &str, filter: &str) -> Result<Vec<serde_json::Value>> {
-    let req_url = format!("{url}/api/v1/memos?filter={}&pageSize=50&orderBy=update_time desc", urlencoding::encode(filter));
-    let r = HTTP.get(&req_url).bearer_auth(tok).send().await?;
-    let v: serde_json::Value = r.json().await?;
-    Ok(v.get("memos").and_then(|x| x.as_array()).cloned().unwrap_or_default())
-}
-
-async fn fetch_daily_digest(url: &str, tok: &str, date: &str) -> Result<String> {
-    let filter = format!("created_ts >= timestamp(\"{}T00:00:00Z\") && created_ts <= timestamp(\"{}T23:59:59Z\")", date, date);
-    let memos = list_memos_filtered(url, tok, &filter).await?;
-    if memos.is_empty() { return Ok(format!("## 📋 Daily Digest — {date}\n\n_No memos today._")); }
-    let mut out = format!("## 📋 Daily Digest — {date}\n\n**{} memo(s)**\n\n", memos.len());
-    for (i, m) in memos.iter().enumerate() {
-        let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
-        let name = m.get("name").and_then(|x| x.as_str()).unwrap_or("");
-        let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
-        let time = ts.get(11..16).unwrap_or("");
-        out.push_str(&format!("{}. `{time}` {} — _{}_\n", i + 1, name, chars(c, 80)));
-    }
-    out.push_str("\n#dailydigest");
-    Ok(out)
-}
-
-async fn fetch_weekly_digest(url: &str, tok: &str, start: &str, end: &str) -> Result<String> {
-    let filter = format!("created_ts >= timestamp(\"{start}T00:00:00Z\") && created_ts <= timestamp(\"{end}T23:59:59Z\")");
-    let memos = list_memos_filtered(url, tok, &filter).await?;
-    if memos.is_empty() { return Ok(format!("## 📋 Weekly Digest — {start} → {end}\n\n_No memos this week._")); }
-    let mut by_date: HashMap<String, Vec<&serde_json::Value>> = HashMap::new();
-    for m in &memos {
-        let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
-        let day = ts.get(..10).unwrap_or("unknown").to_string();
-        by_date.entry(day).or_default().push(m);
-    }
-    let mut out = format!("## 📋 Weekly Digest — {start} → {end}\n\n**{} memo(s)**\n\n", memos.len());
-    let mut days: Vec<&String> = by_date.keys().collect();
-    days.sort();
-    for day in days {
-        let day_memos = &by_date[day];
-        out.push_str(&format!("### {} ({})\n", day, day_memos.len()));
-        for m in day_memos {
-            let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
-            let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
-            let time = ts.get(11..16).unwrap_or("");
-            out.push_str(&format!("- `{time}` {}\n", chars(c, 80)));
-        }
-        out.push('\n');
-    }
-    out.push_str("#weeklydigest");
-    Ok(out)
-}
-
-async fn fetch_tasks(url: &str, tok: &str) -> Result<String> {
-    let filter = "content.contains(\"#tasks\")";
-    let memos = list_memos_filtered(url, tok, filter).await?;
-    if memos.is_empty() { return Ok("## ✅ Tasks\n\n_No task memos found (tagged with #tasks)._".into()); }
-    let mut out = format!("## ✅ Tasks\n\n**{} task(s)**\n\n", memos.len());
-    for (i, m) in memos.iter().enumerate() {
-        let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
-        let name = m.get("name").and_then(|x| x.as_str()).unwrap_or("");
-        let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
-        let _time = ts.get(..10).unwrap_or("");
-        out.push_str(&format!("{}. [ ] {} — _{}_\n", i + 1, name, chars(c, 80)));
-    }
-    out.push_str("\n#tasks");
-    Ok(out)
-}
-
-fn chars(s: &str, n: usize) -> String {
-    let clean: String = s.chars().filter(|c| *c != '\n').collect();
-    if clean.len() <= n { clean } else { format!("{}…", &clean[..n]) }
-}
-
 // --- Telegram-optimized markdown fetchers ---
 // Telegram doesn't render tables. Use: bullet lists, code blocks for aligned data, bold/italic for structure.
 
@@ -452,21 +388,6 @@ fn esc(s: &str) -> String {
      .replace('=', "\\=")
      .replace('{', "\\{").replace('}', "\\}")
      .replace('.', "\\.").replace('!', "\\!")
-}
-
-async fn fetch_quote() -> Result<String> {
-    let v: serde_json::Value = if let Ok(j) = HTTP.get("https://dummyjson.com/quotes/random").send().await?.json::<serde_json::Value>().await {
-        j
-    } else {
-        HTTP.get("https://api.quotable.io/random").send().await?.json().await?
-    };
-    let q = v["quote"].as_str().or(v["content"].as_str()).unwrap_or("");
-    let a = v["author"].as_str().unwrap_or("Unknown");
-    let id = v["id"].as_u64().map(|i| format!(" #{i}")).unwrap_or_default();
-    Ok(format!(
-        "*✨ Quote{id}*\n\n>||\"{}\"||\n>\n>— _{a}_\n\n`{} chars` · [Goodreads](https://www.goodreads.com/search?q={}) · #quote",
-        esc(q), q.len(), urlencoding::encode(a)
-    ))
 }
 
 async fn fetch_hn() -> Result<String> {
@@ -625,19 +546,6 @@ async fn fetch_fx(pair: &str) -> Result<String> {
     ))
 }
 
-async fn fetch_read(url: &str) -> Result<String> {
-    if url.trim().is_empty() { return Ok("usage: /read <url>".into()); }
-    let jina_url = format!("https://r.jina.ai/{}", url);
-    let txt = HTTP.get(&jina_url).header("Accept", "text/markdown").send().await?.text().await?;
-    let clean = txt.chars().take(3800).collect::<String>();
-    let title = clean.lines().find(|l| l.starts_with("# ")).unwrap_or("").trim_start_matches("# ");
-    let body = clean.lines().skip_while(|l| l.starts_with("# ") || l.is_empty()).take(50).collect::<Vec<_>>().join("\n");
-    let mut out = format!("*📰 Read*\n\n");
-    if !title.is_empty() { out.push_str(&format!("**{title}**\n\n")); }
-    out.push_str(&format!("{body}\n\n> [jina.ai](https://jina.ai/reader/) · #read"));
-    Ok(out)
-}
-
 async fn fetch_containers(memos_url: &str) -> Result<String> {
     let services = vec![
         ("Memos", format!("{memos_url}/api/v1/status")),
@@ -663,25 +571,6 @@ async fn fetch_containers(memos_url: &str) -> Result<String> {
     table.push_str("```\n");
     out.push_str(&table);
     out.push_str(&format!("\n`{}` · #containers", Local::now().format("%Y-%m-%d %H:%M")));
-    Ok(out)
-}
-
-async fn fetch_trending() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://api.github.com/search/repositories?q=stars:>1000+pushed:>2026-08-01&sort=stars&order=desc&per_page=10")
-        .header("Accept", "application/vnd.github.v3+json")
-        .header("User-Agent", "memogram-rs")
-        .send().await?.json().await?;
-    let items = v["items"].as_array().ok_or_else(|| anyhow::anyhow!("no items"))?;
-    let mut out = String::from("*🔥 GitHub Trending — Top 10*\n\n");
-    for (i, it) in items.iter().enumerate() {
-        let name = it["full_name"].as_str().unwrap_or("?");
-        let html = it["html_url"].as_str().unwrap_or("");
-        let stars = it["stargazers_count"].as_u64().unwrap_or(0);
-        let lang = it["language"].as_str().unwrap_or("-");
-        let desc = it["description"].as_str().unwrap_or("").chars().take(50).collect::<String>();
-        out.push_str(&format!("*{}.* [{name}]({html})\n   ⭐ {stars} · `{lang}`\n   _{}_\n\n", i + 1, esc(&desc)));
-    }
-    out.push_str("> [GitHub Trending](https://github.com/trending) · #trending");
     Ok(out)
 }
 
@@ -755,34 +644,6 @@ async fn fetch_crypto(coin: &str) -> Result<String> {
     ))
 }
 
-async fn fetch_poem() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://poetrydb.org/random").send().await?.json().await?;
-    let poem = v.get(0).ok_or_else(|| anyhow::anyhow!("no poem"))?;
-    let title = poem["title"].as_str().unwrap_or("Untitled");
-    let author = poem["author"].as_str().unwrap_or("Unknown");
-    let lines: Vec<&str> = poem["lines"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
-    let body: Vec<&str> = lines.iter().take(20).copied().collect();
-    let mut out = format!("*📜 {title}*\n\n_{author}_\n\n");
-    for line in &body {
-        if line.is_empty() { out.push('\n'); } else { out.push_str(line); out.push('\n'); }
-    }
-    if lines.len() > 20 { out.push_str("\n_...truncated_"); }
-    out.push_str("\n\n> [Poetry DB](https://poetrydb.org) · #poem");
-    Ok(out)
-}
-
-async fn fetch_xkcd() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://xkcd.com/info.0.json").send().await?.json().await?;
-    let num = v["num"].as_u64().unwrap_or(0);
-    let title = v["title"].as_str().unwrap_or("?");
-    let alt = v["alt"].as_str().unwrap_or("");
-    let img = v["img"].as_str().unwrap_or("");
-    let date = format!("{}/{}", v["month"].as_str().unwrap_or("?"), v["year"].as_str().unwrap_or("?"));
-    Ok(format!(
-        "*#{num} — {title}*\n\n![XKCD]({img})\n\n>||{alt}||\n\n_[{date}](https://xkcd.com/{num}/) · #xkcd_"
-    ))
-}
-
 async fn fetch_translate(args: &str) -> Result<String> {
     let (langpair, text) = if args.contains("→") {
         let parts: Vec<&str> = args.splitn(2, "→").collect();
@@ -806,15 +667,6 @@ async fn fetch_translate(args: &str) -> Result<String> {
     let tgt = langpair.split('|').last().unwrap_or("en");
     Ok(format!(
         "*🌐 Translation*\n\n`{src}` → `{tgt}` (confidence: {detected:.0}%)\n\n*Original:* {text}\n\n*Translated:* {translated}\n\n> [MyMemory](https://mymemory.translated.net) · #translate"
-    ))
-}
-
-async fn fetch_facts() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en").send().await?.json().await?;
-    let fact = v["text"].as_str().unwrap_or("(no fact)");
-    let source = v["source"].as_str().unwrap_or("uselessfacts.jsph.pl");
-    Ok(format!(
-        "*💡 Random Fact*\n\n>||{fact}||\n\n> _Source:_ {source} · #facts"
     ))
 }
 
@@ -845,92 +697,6 @@ fn fetch_color(hex: &str) -> String {
 
 fn maxf(r: u8, g: u8, b: u8) -> f64 { r.max(g).max(b) as f64 }
 fn minf(r: u8, g: u8, b: u8) -> f64 { r.min(g).min(b) as f64 }
-
-async fn fetch_all(memos_url: &str) -> Result<String> {
-    let mut out = String::from("*🌅 Morning Briefing*\n\n");
-    // 1. Containers
-    out.push_str("*🐳 Services*\n\n");
-    let services = vec![
-        ("Memos", format!("{memos_url}/api/v1/status")),
-        ("Vikunja", "http://vikunja:3456/health".to_string()),
-        ("Radicale", "http://radicale:5232".to_string()),
-        ("Gotify", "http://gotify:8080/health".to_string()),
-    ];
-    let mut all_ok = true;
-    for (name, url) in services {
-        let status = match HTTP.get(&url).timeout(std::time::Duration::from_secs(5)).send().await {
-            Ok(r) => { let c = r.status().as_u16(); if c == 200 { "✅".to_string() } else { all_ok = false; format!("⚠️{c}") } }
-            Err(_) => { all_ok = false; "❌".to_string() }
-        };
-        out.push_str(&format!("  {status} {name}\n"));
-    }
-    out.push('\n');
-    // 2. Weather
-    if let Ok(v) = HTTP.get("http://wttr.in/Seoul?format=j1").send().await?.json::<serde_json::Value>().await {
-        let c = &v["current_condition"][0];
-        let temp = c["temp_C"].as_str().unwrap_or("?");
-        let desc = c["weatherDesc"][0]["value"].as_str().unwrap_or("");
-        out.push_str(&format!("*🌤️ Seoul*\n\n  `{temp}°C` — {desc}\n\n"));
-    }
-    // 3. FX
-    if let Ok(v) = HTTP.get("https://open.er-api.com/v6/latest/USD").send().await?.json::<serde_json::Value>().await {
-        let krw = v["rates"]["KRW"].as_f64().unwrap_or(0.0);
-        let eur = v["rates"]["EUR"].as_f64().unwrap_or(0.0);
-        out.push_str(&format!("*💱 FX*\n\n  `1 USD = {krw:.2} KRW`\n  `1 USD = {eur:.4} EUR`\n\n"));
-    }
-    // 4. Trending
-    if let Ok(v) = HTTP.get("https://api.github.com/search/repositories?q=stars:>1000+pushed:>2026-08-01&sort=stars&order=desc&per_page=3")
-        .header("Accept", "application/vnd.github.v3+json").header("User-Agent", "memogram-rs")
-        .send().await?.json::<serde_json::Value>().await {
-        if let Some(items) = v["items"].as_array() {
-            out.push_str("*🔥 Trending*\n\n");
-            for (i, it) in items.iter().enumerate() {
-                let name = it["full_name"].as_str().unwrap_or("?");
-                let stars = it["stargazers_count"].as_u64().unwrap_or(0);
-                out.push_str(&format!("  *{}.* {name} ⭐{stars}\n", i + 1));
-            }
-        }
-    }
-    out.push_str(&format!("\n`{}` · #all", Local::now().format("%Y-%m-%d %H:%M")));
-    Ok(out)
-}
-
-async fn fetch_shah(q: &str) -> Result<String> {
-    if q.trim().is_empty() { return Ok("usage: `/shah <query>`".into()); }
-    let url = format!("https://api.duckduckgo.com/?q={}&format=json", urlencoding::encode(q));
-    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
-    let heading = v["Heading"].as_str().unwrap_or("");
-    let abstract_text = v["AbstractText"].as_str().unwrap_or("");
-    let abstract_url = v["AbstractURL"].as_str().unwrap_or("");
-    let source = v["AbstractSource"].as_str().unwrap_or("");
-    let mut out = format!("*🔍 Shah — `{q}`*\n\n");
-    if !heading.is_empty() {
-        out.push_str(&format!("*{heading}*\n\n"));
-    }
-    if !abstract_text.is_empty() {
-        out.push_str(&format!("{abstract_text}\n\n"));
-        if !abstract_url.is_empty() {
-            out.push_str(&format!("> [{source}]({abstract_url})\n\n"));
-        }
-    }
-    let topics: Vec<&serde_json::Value> = v["RelatedTopics"].as_array()
-        .map(|a| a.iter().filter(|t| t.is_object() && t.get("Text").is_some()).take(5).collect())
-        .unwrap_or_default();
-    let has_topics = !topics.is_empty();
-    if has_topics {
-        out.push_str("*Related:*\n");
-        for t in topics {
-            let text = t["Text"].as_str().unwrap_or("");
-            let first_url = t["FirstURL"].as_str().unwrap_or("");
-            out.push_str(&format!("  • [{}]({})\n", esc(&text.chars().take(80).collect::<String>()), first_url));
-        }
-    }
-    if heading.is_empty() && abstract_text.is_empty() && !has_topics {
-        out.push_str("_No results found._\n\n");
-    }
-    out.push_str(&format!("\n> [DuckDuckGo](https://duckduckgo.com/?q={}) · #shah", urlencoding::encode(q)));
-    Ok(out)
-}
 
 // --- knowledge management functions ---
 
@@ -1010,52 +776,26 @@ async fn fetch_count(memos_url: &str, token: &str, tag: &str) -> Result<String> 
     }
 }
 
-async fn fetch_pin(memos_url: &str, token: &str, name: &str) -> Result<String> {
-    let name = name.trim();
-    if name.is_empty() { return Ok("usage: `/pin <memo_name>`".into()); }
-    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
-        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
-    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
-    let memo = memos.iter().find(|m| m["name"].as_str() == Some(name))
-        .ok_or_else(|| anyhow::anyhow!("memo not found"))?;
-    let pinned = memo["pinned"].as_bool().unwrap_or(false);
-    let new_state = !pinned;
-    let _ = HTTP.patch(format!("{memos_url}/api/v1/{name}"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&serde_json::json!({"pinned": new_state})).send().await?;
-    let icon = if new_state { "📌" } else { "📌❌" };
-    let action = if new_state { "Pinned" } else { "Unpinned" };
-    Ok(format!("{icon} *{action}* `{name}`"))
-}
-
-async fn fetch_archive(memos_url: &str, token: &str, name: &str) -> Result<String> {
-    let name = name.trim();
-    if name.is_empty() { return Ok("usage: `/archive <memo_name>`".into()); }
-    let _ = HTTP.patch(format!("{memos_url}/api/v1/{name}"))
-        .header("Authorization", format!("Bearer {token}"))
-        .json(&serde_json::json!({"state": "ARCHIVED"})).send().await?;
-    Ok(format!("📦 *Archived* `{name}`"))
-}
-
-async fn fetch_export(memos_url: &str, token: &str) -> Result<String> {
-    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=50"))
-        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
-    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
-    let mut out = String::from("# Memo Export\n\n");
-    for m in memos.iter().take(30) {
-        let content = m["content"].as_str().unwrap_or("");
-        let time = m["createTime"].as_str().unwrap_or("");
-        let tags: Vec<&str> = m["tags"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
-        let tag_str = if tags.is_empty() { String::new() } else { format!(" `{}`", tags.join(" `")) };
-        out.push_str(&format!("## {time}{tag_str}\n\n{content}\n\n---\n\n"));
-    }
-    Ok(out)
-}
-
 async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
-    let today = Local::now().format("%Y-%m-%d").to_string();
     let title = Local::now().format("%A, %B %d").to_string();
-    let content = format!("# {title}\n\n## Tasks\n\n- [ ] \n\n## Notes\n\n- \n\n## Log\n\n- ");
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let content = format!(
+        "# {title}\n\n\
+         ## 🎯 Today's Goals\n\n\
+         - [ ] \n\n\
+         ## 📝 Notes\n\n\
+         - \n\n\
+         ## ✅ Completed\n\n\
+         - \n\n\
+         ## 💡 Ideas\n\n\
+         - \n\n\
+         ## 🌙 Evening Reflection\n\n\
+         - What went well?\n\
+         - What could improve?\n\
+         - What did I learn?\n\n\
+         ---\n\
+         #daily #journal {date}"
+    );
     let resp = HTTP.post(format!("{memos_url}/api/v1/memos"))
         .header("Authorization", format!("Bearer {token}"))
         .json(&serde_json::json!({"content": content, "visibility": "PRIVATE"}))
@@ -1094,17 +834,6 @@ async fn fetch_forecast(city: &str) -> Result<String> {
 }
 
 // --- number trivia ---
-
-async fn fetch_num(n: &str) -> Result<String> {
-    let n = n.trim();
-    if n.is_empty() { return Ok("usage: `/num 42`".into()); }
-    let v: serde_json::Value = HTTP.get(format!("http://numbersapi.com/{n}/trivia?json")).send().await?.json().await?;
-    let text = v["text"].as_str().unwrap_or("(no fact)");
-    let found = v["found"].as_bool().unwrap_or(false);
-    let num_type = v["type"].as_str().unwrap_or("number");
-    if !found { return Ok(format!("*🔢 {n}*\n\n_No trivia found for this {num_type}._")); }
-    Ok(format!("*🔢 {n}*\n\n>||{text}||\n\n> numbersapi.com · #num"))
-}
 
 // --- utility functions ---
 
@@ -1198,77 +927,6 @@ fn gen_base64(args: &str) -> String {
     }
 }
 
-async fn fetch_joke() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://official-joke-api.appspot.com/random_joke").send().await?.json().await?;
-    let setup = v["setup"].as_str().unwrap_or("?");
-    let punchline = v["punchline"].as_str().unwrap_or("?");
-    Ok(format!("*😂 Joke*\n\n>||{setup}||\n\n>||{punchline}||\n\n> #joke"))
-}
-
-fn gen_day_info() -> String {
-    let now = Local::now();
-    let doy = now.format("%j").to_string().parse::<u32>().unwrap_or(0);
-    let is_leap = now.format("%Y").to_string().parse::<i32>().unwrap_or(2024) % 4 == 0;
-    let total = if is_leap { 366 } else { 365 };
-    let remaining = total - doy;
-    let weekday = now.format("%A").to_string();
-    let month = now.format("%B").to_string();
-    let week_num = (doy - 1) / 7 + 1;
-    format!(
-        "*📅 {weekday}, {month} {day}*\n\n`Day of year:` {doy}/{total}\n`Days left:` {remaining}\n`Week:` #{week_num}\n`Quarter:` Q{q}\n\n> #day",
-        day = now.format("%d"),
-        q = (now.format("%m").to_string().parse::<u32>().unwrap_or(1) - 1) / 3 + 1
-    )
-}
-
-fn gen_roll(dice: &str) -> String {
-    let dice = if dice.trim().is_empty() { "1d6" } else { dice.trim() };
-    let parts: Vec<&str> = dice.split('d').collect();
-    let count: u32 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(1).min(100);
-    let sides: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(6).min(1000);
-    let mut rolls: Vec<u32> = (0..count).map(|_| (rand_byte() as u32 % sides) + 1).collect();
-    let total: u32 = rolls.iter().sum();
-    let roll_str: Vec<String> = rolls.iter().map(|r| r.to_string()).collect();
-    format!("*🎲 {dice}*\n\n`Rolls:` [{}]\n`Total:` *{total}*", roll_str.join(", "))
-}
-
-fn gen_choose(opts: &str) -> String {
-    let items: Vec<&str> = opts.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-    if items.is_empty() { return "usage: `/choose a, b, c`".into(); }
-    let idx = (rand_byte() as usize) % items.len();
-    format!("*🎲 Choose*\n\n*→ {}*\n\n_out of {} options_", esc(items[idx]), items.len())
-}
-
-fn gen_wc(text: &str) -> String {
-    if text.is_empty() { return "usage: `/wc <text>`".into(); }
-    let chars = text.len();
-    let words = text.split_whitespace().count();
-    let lines = text.lines().count();
-    let sentences = text.matches(|c: char| c == '.' || c == '!' || c == '?').count();
-    let paragraphs = text.split("\n\n").filter(|s| !s.trim().is_empty()).count();
-    format!(
-        "*📏 Word Count*\n\n`Lines:` {lines}\n`Words:` {words}\n`Chars:` {chars}\n`Sentences:` {sentences}\n`Paragraphs:` {paragraphs}\n\n> #wc"
-    )
-}
-
-async fn set_timer(args: &str, app: &App) -> Result<String> {
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let mins: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(5).min(1440);
-    let msg = parts.get(1).unwrap_or(&"Timer done!");
-    let fire_at = chrono::Utc::now() + chrono::Duration::minutes(mins as i64);
-    // Send Gotify notification after delay
-    let gotify_url = "http://gotify:8080".to_string();
-    let msg_clone = msg.to_string();
-    let url = app.memos_url.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(mins * 60)).await;
-        let _ = HTTP.post(format!("{gotify_url}/message"))
-            .form(&[("title", "⏰ Timer"), ("message", &msg_clone), ("priority", &"5".to_string())])
-            .send().await;
-    });
-    Ok(format!("⏰ *Timer set*\n\n`{mins} min` — {msg}\n\n> fires at {} · #timer", fire_at.format("%H:%M")))
-}
-
 fn gen_json_pretty(text: &str) -> String {
     if text.is_empty() { return "usage: `/json <text>`".into(); }
     match serde_json::from_str::<serde_json::Value>(text) {
@@ -1281,34 +939,23 @@ fn gen_json_pretty(text: &str) -> String {
     }
 }
 
-fn gen_morse(text: &str) -> String {
-    if text.is_empty() { return "usage: `/morse <text>`".into(); }
-    let map: HashMap<char, &str> = HashMap::from([
-        ('a', ".-"), ('b', "-..."), ('c', "-.-."), ('d', "-.."), ('e', "."), ('f', "..-."),
-        ('g', "--."), ('h', "...."), ('i', ".."), ('j', ".---"), ('k', "-.-"), ('l', ".-.."),
-        ('m', "--"), ('n', "-."), ('o', "---"), ('p', ".--."), ('q', "--.-"), ('r', ".-."),
-        ('s', "..."), ('t', "-"), ('u', "..-"), ('v', "...-"), ('w', ".--"), ('x', "-..-"),
-        ('y', "-.--"), ('z', "--.."), ('0', "-----"), ('1', ".----"), ('2', "..---"),
-        ('3', "...--"), ('4', "....-"), ('5', "....."), ('6', "-...."), ('7', "--..."),
-        ('8', "---.."), ('9', "----."), (' ', "/"),
-    ]);
-    let lower = text.to_lowercase();
-    let morse: Vec<&str> = lower.chars().filter_map(|c| map.get(&c).copied()).collect();
-    format!("*📡 Morse Code*\n\n`{}`", morse.join(" "))
+async fn set_reminder(args: &str, app: &App) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let mins: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(5).min(1440);
+    let msg_text = parts.get(1).unwrap_or(&"Reminder!");
+    let gotify_url = "http://gotify:8080";
+    let msg_clone = msg_text.to_string();
+    let title = format!("⏰ Reminder in {mins}min");
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(mins * 60)).await;
+        let _ = HTTP.post(format!("{gotify_url}/message"))
+            .form(&[("title", title.as_str()), ("message", &msg_clone), ("priority", &"5")])
+            .send().await;
+    });
+    let fire_at = Local::now() + chrono::Duration::minutes(mins as i64);
+    format!("⏰ *Reminder set*\n\n`{mins} min` — {msg_text}\n\n> fires at {} · #reminder", fire_at.format("%H:%M"))
 }
 
-fn gen_8ball() -> String {
-    let answers = [
-        "It is certain.", "It is decidedly so.", "Without a doubt.",
-        "Yes — definitely.", "You may rely on it.", "As I see it, yes.",
-        "Most likely.", "Outlook good.", "Yes.", "Signs point to yes.",
-        "Reply hazy, try again.", "Ask again later.", "Better not tell you now.",
-        "Cannot predict now.", "Concentrate and ask again.",
-        "Don't count on it.", "My reply is no.", "My sources say no.",
-        "Outlook not so good.", "Very doubtful.",
-    ];
-    let idx = (rand_byte() as usize) % answers.len();
-    format!("*🎱 Magic 8-Ball*\n\n>||{}||", answers[idx])
-}
+
 
 
