@@ -183,7 +183,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = format!("**Week {}**\n{}", Local::now().format("%V"), Local::now().format("%Y-%m-%d"));
             create_as_bot(&bot, &msg, &app, "week", &txt, tid).await?;
         }
-        Command::Gh(q) => { let t = if q.trim().is_empty() { "gh".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "gh", &t, tid).await?; }
+        Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
         Command::Fx(q) => { let t = if q.trim().is_empty() { "fx".to_string() } else { format!("fx {q}") }; create_as_bot(&bot, &msg, &app, "fx", &t, tid).await?; }
         Command::Read(q) => { let t = if q.trim().is_empty() { "read".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "read", &t, tid).await?; }
         Command::Tasks(q) => { let t = if q.trim().is_empty() { "tasks".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "tasks", &t, tid).await?; }
@@ -261,7 +261,7 @@ async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
     Ok(out)
 }
 
-// --- markdown-friendly external fetchers (no API keys) — inspired by popular Rust markdown bots (md tables, blockquotes, headings) ---
+// --- beautiful markdown fetchers — GitHub-style (headings, blockquotes, tables, badges, details) ---
 async fn fetch_quote() -> Result<String> {
     let v: serde_json::Value = if let Ok(j) = HTTP.get("https://dummyjson.com/quotes/random").send().await?.json::<serde_json::Value>().await {
         j
@@ -270,19 +270,31 @@ async fn fetch_quote() -> Result<String> {
     };
     let q = v["quote"].as_str().or(v["content"].as_str()).unwrap_or("");
     let a = v["author"].as_str().unwrap_or("Unknown");
-    Ok(format!("> \"{q}\"\n>\n> — *{a}*\n\n#quote"))
+    let id = v["id"].as_u64().map(|i| format!(" #{i}")).unwrap_or_default();
+    Ok(format!(
+        "## ✨ Quote{id}\n\n> \"{q}\"\n>\n> — *{a}*\n\n`{} chars` · [Goodreads](https://www.goodreads.com/search?q={}) · #quote",
+        q.len(),
+        urlencoding::encode(a)
+    ))
 }
 async fn fetch_hn() -> Result<String> {
     let ids: Vec<u64> = HTTP.get("https://hacker-news.firebaseio.com/v0/topstories.json").send().await?.json().await?;
-    let mut out = String::from("# Hacker News — Top 5\n\n");
+    let mut out = String::from("# 🔥 Hacker News — Top 5\n\n| # | Title | Points | Comments | By |\n|---|---|---|---|---|\n");
     for (i, id) in ids.iter().take(5).enumerate() {
         let item: serde_json::Value = HTTP.get(format!("https://hacker-news.firebaseio.com/v0/item/{id}.json")).send().await?.json().await?;
-        let title = item["title"].as_str().unwrap_or("(no title)");
+        let title = item["title"].as_str().unwrap_or("(no title)").replace('|', "\\|");
         let url = item["url"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("https://news.ycombinator.com/item?id={id}"));
         let score = item["score"].as_u64().unwrap_or(0);
-        out.push_str(&format!("{}. [{title}]({url}) `↑{score}`\n", i + 1));
+        let comments = item["descendants"].as_u64().unwrap_or(0);
+        let by = item["by"].as_str().unwrap_or("?");
+        let time = item["time"].as_i64().unwrap_or(0);
+        let ago = if time > 0 {
+            let hrs = (chrono::Utc::now().timestamp() - time) / 3600;
+            if hrs < 1 { "now".into() } else if hrs == 1 { "1h ago".into() } else { format!("{hrs}h ago") }
+        } else { "".into() };
+        out.push_str(&format!("| {} | [{title}]({url}) | ↑{score} | 💬{comments} | {by} · {ago} |\n", i + 1));
     }
-    out.push_str("\n#hn");
+    out.push_str("\n> [View on HN](https://news.ycombinator.com) · #hn");
     Ok(out)
 }
 async fn fetch_weather(city: &str) -> Result<String> {
@@ -295,53 +307,106 @@ async fn fetch_weather(city: &str) -> Result<String> {
     let hum = cur["humidity"].as_str().unwrap_or("?");
     let wind = cur["windspeedKmph"].as_str().unwrap_or("?");
     let winddir = cur["winddir16Point"].as_str().unwrap_or("");
+    let emoji = match desc.to_lowercase().as_str() {
+        s if s.contains("sun") || s.contains("clear") => "☀️",
+        s if s.contains("cloud") => "☁️",
+        s if s.contains("rain") => "🌧️",
+        s if s.contains("snow") => "❄️",
+        _ => "🌤️",
+    };
     let mut out = format!(
-        "## Weather — {city}\n\n**Now:** {temp}°C (feels {feels}°C) — {desc} · 💧 {hum}% · 💨 {wind} km/h {winddir}\n\n"
+        "## {emoji} Weather — {city}\n\n**Now:** {temp}°C (feels {feels}°C) — *{desc}* · 💧 {hum}% · 💨 {wind} km/h {winddir}\n\n"
     );
-    // intraday hourly for today (detailed within day)
-    if let Some(today) = v["weather"].as_array().and_then(|a| a.first()) {
-        let date = today["date"].as_str().unwrap_or("");
-        let maxt = today["maxtempC"].as_str().unwrap_or("?");
-        let mint = today["mintempC"].as_str().unwrap_or("?");
-        out.push_str(&format!("**{date}** — ↑{maxt}°C ↓{mint}°C\n\n| Time | Temp | Condition | Rain | Humidity | Wind |\n|---|---|---|---|---|---|\n"));
-        if let Some(hours) = today["hourly"].as_array() {
-            for h in hours {
-                let t = h["time"].as_str().unwrap_or("0");
-                let hh = format!("{:0>4}", t);
-                let hm = format!("{}:{}", &hh[0..2], &hh[2..4]);
-                let tc = h["tempC"].as_str().unwrap_or("?");
-                let d = h["weatherDesc"][0]["value"].as_str().unwrap_or("");
-                let rain = h["chanceofrain"].as_str().unwrap_or("?");
-                let hu = h["humidity"].as_str().unwrap_or("?");
-                let wi = h["windspeedKmph"].as_str().unwrap_or("?");
-                out.push_str(&format!("| {hm} | {tc}°C | {d} | {rain}% | {hu}% | {wi} km/h |\n"));
+    if let Some(arr) = v["weather"].as_array() {
+        for day in arr.iter().take(3) {
+            let date = day["date"].as_str().unwrap_or("");
+            let maxt = day["maxtempC"].as_str().unwrap_or("?");
+            let mint = day["mintempC"].as_str().unwrap_or("?");
+            out.push_str(&format!("### {date} — ↑{maxt}°C ↓{mint}°C\n\n| Time | Temp | Condition | Rain | Humidity | Wind |\n|---|---|---|---|---|---|\n"));
+            if let Some(hours) = day["hourly"].as_array() {
+                for h in hours.iter().step_by(2) {
+                    let t = h["time"].as_str().unwrap_or("0");
+                    let hh = format!("{:0>4}", t);
+                    let hm = format!("{}:{}", &hh[0..2], &hh[2..4]);
+                    let tc = h["tempC"].as_str().unwrap_or("?");
+                    let d = h["weatherDesc"][0]["value"].as_str().unwrap_or("");
+                    let rain = h["chanceofrain"].as_str().unwrap_or("?");
+                    let hu = h["humidity"].as_str().unwrap_or("?");
+                    let wi = h["windspeedKmph"].as_str().unwrap_or("?");
+                    out.push_str(&format!("| {hm} | {tc}°C | {d} | {rain}% | {hu}% | {wi} km/h |\n"));
+                }
             }
+            out.push('\n');
         }
     }
-    out.push_str("\n#weather");
+    out.push_str("#weather");
     Ok(out)
 }
 async fn fetch_define(word: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word)).send().await?.json().await?;
     let entry = &v[0];
     let phon = entry["phonetic"].as_str().or(entry["phonetics"][0]["text"].as_str()).unwrap_or("");
-    let meaning = &entry["meanings"][0];
-    let pos = meaning["partOfSpeech"].as_str().unwrap_or("");
-    let def = meaning["definitions"][0]["definition"].as_str().unwrap_or("no definition");
-    let ex = meaning["definitions"][0]["example"].as_str().unwrap_or("");
-    let ex_md = if ex.is_empty() { String::new() } else { format!("\n> *Example:* {ex}\n") };
-    let phon_md = if phon.is_empty() { String::new() } else { format!("*Phonetic:* `{phon}`\n\n") };
-    Ok(format!("## {word}\n\n{phon_md}**_{pos}_** — {def}{ex_md}\n#define"))
+    let audio = entry["phonetics"][0]["audio"].as_str().unwrap_or("");
+    let origin = entry["origin"].as_str().unwrap_or("");
+    let mut out = format!("## 📖 {word}\n\n");
+    if !phon.is_empty() {
+        out.push_str(&format!("*Phonetic:* `{phon}`"));
+        if !audio.is_empty() { out.push_str(&format!(" · [🔊]({audio})")); }
+        out.push_str("\n\n");
+    }
+    if !origin.is_empty() { out.push_str(&format!("> *Origin:* {origin}\n\n")); }
+    if let Some(meanings) = entry["meanings"].as_array() {
+        for m in meanings.iter().take(3) {
+            let pos = m["partOfSpeech"].as_str().unwrap_or("");
+            out.push_str(&format!("### _{pos}_\n\n"));
+            if let Some(defs) = m["definitions"].as_array() {
+                for (i, d) in defs.iter().take(3).enumerate() {
+                    let def = d["definition"].as_str().unwrap_or("");
+                    let ex = d["example"].as_str().unwrap_or("");
+                    let syn = d["synonyms"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                    out.push_str(&format!("{}. {def}\n", i + 1));
+                    if !ex.is_empty() { out.push_str(&format!("   > *Ex:* {ex}\n")); }
+                    if !syn.is_empty() { out.push_str(&format!("   > Syn: `{syn}`\n")); }
+                }
+            }
+            out.push('\n');
+        }
+    }
+    out.push_str("#define");
+    Ok(out)
 }
 async fn fetch_wiki(q: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", q)).send().await?.json().await?;
     let title = v["title"].as_str().unwrap_or(q);
     let extract = v["extract"].as_str().unwrap_or("no summary");
     let url = v["content_urls"]["desktop"]["page"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("https://en.wikipedia.org/wiki/{}", q));
-    Ok(format!("## {title}\n\n{extract}\n\n> [Read more on Wikipedia]({url})\n\n#wiki"))
+    let thumb = v["thumbnail"]["source"].as_str().unwrap_or("");
+    let mut out = format!("## 📚 {title}\n\n");
+    if !thumb.is_empty() { out.push_str(&format!("![{title}]({thumb})\n\n")); }
+    out.push_str(&format!("{extract}\n\n> [Read more on Wikipedia]({url})\n\n#wiki"));
+    Ok(out)
 }
 async fn fetch_cheat(q: &str) -> Result<String> {
     let txt = HTTP.get(format!("https://cheat.sh/{}?TQ", q)).send().await?.text().await?;
     let clean = txt.chars().take(1400).collect::<String>();
-    Ok(format!("## cheat — `{q}`\n\n```sh\n{clean}\n```\n\n#cheat"))
+    Ok(format!("## 💻 cheat — `{q}`\n\n```sh\n{clean}\n```\n\n> [cheat.sh/{q}](https://cheat.sh/{q}) · #cheat"))
+}
+async fn fetch_gh(q: &str) -> Result<String> {
+    let query = if q.trim().is_empty() { "stars:>50000" } else { q.trim() };
+    let url = format!("https://api.github.com/search/repositories?q={}&sort=stars&per_page=5", urlencoding::encode(query));
+    let v: serde_json::Value = HTTP.get(&url).header("Accept", "application/vnd.github.v3+json").header("User-Agent", "memogram-rs").send().await?.json().await?;
+    let items = v["items"].as_array().ok_or_else(|| anyhow::anyhow!("no items"))?;
+    let mut out = format!("## ⭐ GitHub — `{query}`\n\n| Repo | ⭐ Stars | 🍴 Forks | Language |\n|---|---|---|---|\n");
+    for it in items.iter().take(5) {
+        let name = it["full_name"].as_str().unwrap_or("?");
+        let html = it["html_url"].as_str().unwrap_or("");
+        let stars = it["stargazers_count"].as_u64().unwrap_or(0);
+        let forks = it["forks_count"].as_u64().unwrap_or(0);
+        let lang = it["language"].as_str().unwrap_or("-");
+        let desc = it["description"].as_str().unwrap_or("").replace('|', "\\|").chars().take(60).collect::<String>();
+        out.push_str(&format!("| [{name}]({html}) | {stars} | {forks} | {lang} |\n"));
+        if !desc.is_empty() { out.push_str(&format!("|  | *{desc}* | | |\n")); }
+    }
+    out.push_str("\n> [View on GitHub](https://github.com/search?q=) · #gh");
+    Ok(out)
 }
