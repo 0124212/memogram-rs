@@ -205,41 +205,41 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = fetch_weather(&c).await.unwrap_or_else(|e| format!("weather err: {e}"));
             create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?;
         }
-        Command::Define(w) => { let txt = fetch_define(&w).await.unwrap_or_else(|e| format!("define err: {e}")); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
-        Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "wiki", &txt, tid).await?; }
-        Command::Cheat(q) => { let txt = fetch_cheat(&q).await.unwrap_or_else(|e| format!("cheat err: {e}")); create_as_bot(&bot, &msg, &app, "cheat", &txt, tid).await?; }
-        Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
+        Command::Define(w) => { let txt = fetch_define(&w).await.unwrap_or_else(|e| format!("define err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Cheat(q) => { let txt = fetch_cheat(&q).await.unwrap_or_else(|e| format!("cheat err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Fx(pair) => { let txt = fetch_fx(&pair).await.unwrap_or_else(|e| format!("fx err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
-        Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
+        Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Lobsters(tag) => { let txt = fetch_lobsters(&tag).await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
-        Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
-        Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
+        Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Forecast(city) => { let txt = fetch_forecast(&city).await.unwrap_or_else(|e| format!("forecast err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Tags => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_tags(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("tags err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
         Command::Recent => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_recent(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("recent err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
         Command::Count(tag) => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_count(&app.memos_url, &tok, &tag).await.unwrap_or_else(|e| format!("count err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
         Command::Daily => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?;
         }
         Command::Pass(len) => { let txt = gen_password(&len); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Uuid => { let txt = gen_uuid(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
@@ -265,7 +265,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_inbox(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("inbox err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
         Command::Undo => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -285,15 +285,15 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = create_note(&app.memos_url, &tok, &content).await;
             bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
         }
-        Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Recipe(args) => { let txt = create_recipe(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Clip(args) => { let txt = create_clip(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Proscons(args) => { let txt = create_proscons(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
-        Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Recipe(args) => { let txt = create_recipe(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Clip(args) => { let txt = create_clip(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Proscons(args) => { let txt = create_proscons(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
