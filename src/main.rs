@@ -212,10 +212,11 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
     Ok(())
 }
 
-// create memo as bot user (impersonate) and ping admin via @admin mention — also echo body to Telegram
+// create memo as bot user (impersonate) and ping admin via @admin mention — also echo body to Telegram (markdown-friendly)
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
-    let content = format!("@{} {}\n\n_{} via {}_", app.admin_username, body, bot_name, msg.from.as_ref().and_then(|u| u.username.as_deref()).unwrap_or("telegram"));
+    // markdown-friendly: @admin on own line, body as markdown, footer as subtle italic
+    let content = format!("@{}\n\n{}\n\n— _via {} · {}_", app.admin_username, body, bot_name, msg.from.as_ref().and_then(|u| u.username.as_deref()).unwrap_or("telegram"));
     let tok = if let Some(t) = bot_tok { t } else {
         let fallback = { app.store.read().await.get(&telegram_id).cloned() };
         let Some(f) = fallback else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -260,42 +261,65 @@ async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
     Ok(out)
 }
 
-// --- minimal external fetchers (no API keys, 5s timeout) ---
+// --- markdown-friendly external fetchers (no API keys) — inspired by popular Rust markdown bots (md tables, blockquotes, headings) ---
 async fn fetch_quote() -> Result<String> {
-    // dummyjson works on Oracle DNS, quotable.io does not
-    if let Ok(v) = HTTP.get("https://dummyjson.com/quotes/random").send().await?.json::<serde_json::Value>().await {
-        if let (Some(q), Some(a)) = (v["quote"].as_str(), v["author"].as_str()) {
-            return Ok(format!("\"{q}\" — {a}"));
-        }
-    }
-    let v: serde_json::Value = HTTP.get("https://api.quotable.io/random").send().await?.json().await?;
-    Ok(format!("\"{}\" — {}", v["content"].as_str().unwrap_or(""), v["author"].as_str().unwrap_or("")))
+    let v: serde_json::Value = if let Ok(j) = HTTP.get("https://dummyjson.com/quotes/random").send().await?.json::<serde_json::Value>().await {
+        j
+    } else {
+        HTTP.get("https://api.quotable.io/random").send().await?.json().await?
+    };
+    let q = v["quote"].as_str().or(v["content"].as_str()).unwrap_or("");
+    let a = v["author"].as_str().unwrap_or("Unknown");
+    Ok(format!("> \"{q}\"\n>\n> — *{a}*\n\n#quote"))
 }
 async fn fetch_hn() -> Result<String> {
     let ids: Vec<u64> = HTTP.get("https://hacker-news.firebaseio.com/v0/topstories.json").send().await?.json().await?;
-    let mut out = String::from("**HN Top 5**\n");
-    for id in ids.iter().take(5) {
+    let mut out = String::from("# Hacker News — Top 5\n\n");
+    for (i, id) in ids.iter().take(5).enumerate() {
         let item: serde_json::Value = HTTP.get(format!("https://hacker-news.firebaseio.com/v0/item/{id}.json")).send().await?.json().await?;
-        out.push_str(&format!("- {} ({})\n", item["title"].as_str().unwrap_or(""), item["url"].as_str().unwrap_or(""))); 
+        let title = item["title"].as_str().unwrap_or("(no title)");
+        let url = item["url"].as_str().unwrap_or(&format!("https://news.ycombinator.com/item?id={id}"));
+        let score = item["score"].as_u64().unwrap_or(0);
+        out.push_str(&format!("{}. [{title}]({url}) `↑{score}`\n", i + 1));
     }
+    out.push_str("\n#hn");
     Ok(out)
 }
 async fn fetch_weather(city: &str) -> Result<String> {
     let url = format!("http://wttr.in/{}?format=j1", city);
     let v: serde_json::Value = HTTP.get(url).send().await?.json().await?;
     let cur = &v["current_condition"][0];
-    Ok(format!("**Weather {city}**: {}°C {} wind {}km/h", cur["temp_C"].as_str().unwrap_or("?"), cur["weatherDesc"][0]["value"].as_str().unwrap_or(""), cur["windspeedKmph"].as_str().unwrap_or("?")))
+    let temp = cur["temp_C"].as_str().unwrap_or("?");
+    let feels = cur["FeelsLikeC"].as_str().unwrap_or("?");
+    let desc = cur["weatherDesc"][0]["value"].as_str().unwrap_or("");
+    let hum = cur["humidity"].as_str().unwrap_or("?");
+    let wind = cur["windspeedKmph"].as_str().unwrap_or("?");
+    let winddir = cur["winddir16Point"].as_str().unwrap_or("");
+    Ok(format!(
+        "## Weather — {city}\n\n| Metric | Value |\n|---|---|\n| **Temp** | {temp}°C (feels {feels}°C) |\n| **Condition** | {desc} |\n| **Humidity** | {hum}% |\n| **Wind** | {wind} km/h {winddir} |\n\n#weather"
+    ))
 }
 async fn fetch_define(word: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word)).send().await?.json().await?;
-    let def = v[0]["meanings"][0]["definitions"][0]["definition"].as_str().unwrap_or("no def");
-    Ok(format!("**{word}**: {def}"))
+    let entry = &v[0];
+    let phon = entry["phonetic"].as_str().or(entry["phonetics"][0]["text"].as_str()).unwrap_or("");
+    let meaning = &entry["meanings"][0];
+    let pos = meaning["partOfSpeech"].as_str().unwrap_or("");
+    let def = meaning["definitions"][0]["definition"].as_str().unwrap_or("no definition");
+    let ex = meaning["definitions"][0]["example"].as_str().unwrap_or("");
+    let ex_md = if ex.is_empty() { String::new() } else { format!("\n> *Example:* {ex}\n") };
+    let phon_md = if phon.is_empty() { String::new() } else { format!("*Phonetic:* `{phon}`\n\n") };
+    Ok(format!("## {word}\n\n{phon_md}**_{pos}_** — {def}{ex_md}\n#define"))
 }
 async fn fetch_wiki(q: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", q)).send().await?.json().await?;
-    Ok(v["extract"].as_str().unwrap_or("no summary").to_string())
+    let title = v["title"].as_str().unwrap_or(q);
+    let extract = v["extract"].as_str().unwrap_or("no summary");
+    let url = v["content_urls"]["desktop"]["page"].as_str().unwrap_or(&format!("https://en.wikipedia.org/wiki/{}", q));
+    Ok(format!("## {title}\n\n{extract}\n\n> [Read more on Wikipedia]({url})\n\n#wiki"))
 }
 async fn fetch_cheat(q: &str) -> Result<String> {
-    let txt = HTTP.get(format!("https://cheat.sh/{}?T", q)).send().await?.text().await?;
-    Ok(txt.chars().take(1500).collect())
+    let txt = HTTP.get(format!("https://cheat.sh/{}?TQ", q)).send().await?.text().await?;
+    let clean = txt.chars().take(1400).collect::<String>();
+    Ok(format!("## cheat — `{q}`\n\n```sh\n{clean}\n```\n\n#cheat"))
 }
