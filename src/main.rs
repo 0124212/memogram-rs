@@ -813,7 +813,7 @@ async fn fetch_all(memos_url: &str) -> Result<String> {
     if let Ok(v) = HTTP.get("https://open.er-api.com/v6/latest/USD").send().await?.json::<serde_json::Value>().await {
         let krw = v["rates"]["KRW"].as_f64().unwrap_or(0.0);
         let eur = v["rates"]["EUR"].as_f64().unwrap_or(0.0);
-        out.push_str(&format!("*💱 FX*\n\n  `1 USD = {krw:.2} KRW`\n  `1 USD = {eur:.4f} EUR`\n\n"));
+        out.push_str(&format!("*💱 FX*\n\n  `1 USD = {krw:.2} KRW`\n  `1 USD = {eur:.4} EUR`\n\n"));
     }
     // 4. Trending
     if let Ok(v) = HTTP.get("https://api.github.com/search/repositories?q=stars:>1000+pushed:>2026-08-01&sort=stars&order=desc&per_page=3")
@@ -844,14 +844,14 @@ async fn fetch_shah(q: &str) -> Result<String> {
         if let Some(start) = remaining.find('>') {
             remaining = &remaining[start+1..];
             if let Some(end) = remaining.find("</a>") {
-                let title = remaining[..end].chars().filter(|c| !c.is_html_entity()).take(80).collect::<String>();
+                let title = remaining[..end].chars().filter(|c| *c != '&' && *c != ';').take(80).collect::<String>();
                 remaining = &remaining[end+4..];
                 let snippet = if let Some(s2) = remaining.find("class=\"result__snippet\"") {
                     let s2 = &remaining[s2..];
                     if let Some(s3) = s2.find('>') {
                         let s2 = &s2[s3+1..];
                         if let Some(e2) = s2.find("</span>") {
-                            Some(s2[..e2].chars().filter(|c| !c.is_html_entity()).take(120).collect::<String>())
+                            Some(s2[..e2].chars().filter(|c| *c != '&' && *c != ';').take(120).collect::<String>())
                         } else { None }
                     } else { None }
                 } else { None };
