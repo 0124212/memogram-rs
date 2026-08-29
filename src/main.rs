@@ -156,6 +156,24 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "base64".into(), description: "encode/decode".into() },
         teloxide::types::BotCommand { command: "json".into(), description: "pretty JSON".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
+        teloxide::types::BotCommand { command: "pubmed".into(), description: "search PubMed papers".into() },
+        teloxide::types::BotCommand { command: "drug".into(), description: "drug info".into() },
+        teloxide::types::BotCommand { command: "genome".into(), description: "genome search".into() },
+        teloxide::types::BotCommand { command: "protein".into(), description: "protein search".into() },
+        teloxide::types::BotCommand { command: "stoic".into(), description: "stoic quote".into() },
+        teloxide::types::BotCommand { command: "mood".into(), description: "log mood".into() },
+        teloxide::types::BotCommand { command: "gratitude".into(), description: "log gratitude".into() },
+        teloxide::types::BotCommand { command: "habit".into(), description: "track habit".into() },
+        teloxide::types::BotCommand { command: "npm".into(), description: "npm package info".into() },
+        teloxide::types::BotCommand { command: "pypi".into(), description: "PyPI package info".into() },
+        teloxide::types::BotCommand { command: "crates".into(), description: "crates.io info".into() },
+        teloxide::types::BotCommand { command: "stackoverflow".into(), description: "Stack Overflow search".into() },
+        teloxide::types::BotCommand { command: "airquality".into(), description: "air quality index".into() },
+        teloxide::types::BotCommand { command: "sunrise".into(), description: "sunrise/sunset".into() },
+        teloxide::types::BotCommand { command: "math".into(), description: "math expression".into() },
+        teloxide::types::BotCommand { command: "etymology".into(), description: "word etymology".into() },
+        teloxide::types::BotCommand { command: "synonym".into(), description: "find synonyms".into() },
+        teloxide::types::BotCommand { command: "philosophy".into(), description: "philosophy quote".into() },
     ]).await;
 
     let handler = dptree::entry()
@@ -294,6 +312,25 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Clip(args) => { let txt = create_clip(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Proscons(args) => { let txt = create_proscons(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Drug(name) => { let txt = fetch_drug(&name).await.unwrap_or_else(|e| format!("drug err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Genome(q) => { let txt = fetch_genome(&q).await.unwrap_or_else(|e| format!("genome err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Protein(q) => { let txt = fetch_protein(&q).await.unwrap_or_else(|e| format!("protein err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Stoic => { let txt = fetch_stoic_quote().await.unwrap_or_else(|e| format!("stoic err: {e}")); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Mood(note) => { let txt = create_mood_entry(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Gratitude(note) => { let txt = create_gratitude_entry(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Habit(args) => { let txt = create_habit_entry(&args); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Npm(pkg) => { let txt = fetch_npm(&pkg).await.unwrap_or_else(|e| format!("npm err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Pypi(pkg) => { let txt = fetch_pypi(&pkg).await.unwrap_or_else(|e| format!("pypi err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Crates(pkg) => { let txt = fetch_crates(&pkg).await.unwrap_or_else(|e| format!("crates err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Stackoverflow(q) => { let txt = fetch_stackoverflow(&q).await.unwrap_or_else(|e| format!("stackoverflow err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Airquality(loc) => { let txt = fetch_airquality(&loc).await.unwrap_or_else(|e| format!("airquality err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Sunrise(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Math(expr) => { let txt = eval_math(&expr); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Etymology(word) => { let txt = fetch_etymology(&word).await.unwrap_or_else(|e| format!("etymology err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Synonym(word) => { let txt = fetch_synonym(&word).await.unwrap_or_else(|e| format!("synonym err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Philosophy => { let txt = fetch_philosophy_quote().await.unwrap_or_else(|e| format!("philosophy err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -1468,3 +1505,252 @@ fn create_flashcard(args: &str) -> String {
 
 
 
+
+// === NEW COMMANDS: Bioengineering ===
+
+async fn fetch_pubmed(query: &str) -> Result<String> {
+    let url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmax=5&term={}", urlencoding::encode(query));
+    let resp = HTTP.get(&url).send().await?.text().await?;
+    let mut ids = Vec::new();
+    for cap in re::Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp) {
+        ids.push(cap[1].to_string());
+    }
+    if ids.is_empty() { return Ok(format!("No results for *{query}*")); }
+    let id_list = ids.join(",");
+    let summary_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={}&retmode=json", id_list);
+    let summary: serde_json::Value = HTTP.get(&summary_url).send().await?.json().await?;
+    let mut out = format!("📚 *PubMed:* `{query}`\n\n");
+    for id in &ids {
+        if let Some(article) = summary["result"][id].as_object() {
+            let title = article["title"].as_str().unwrap_or("?");
+            let authors = article["sortfirstauthor"].as_str().unwrap_or("?");
+            let pubdate = article["pubdate"].as_str().unwrap_or("?");
+            out.push_str(&format!("• *{}*\n  {} — {}\n  https://pubmed.ncbi.nlm.nih.gov/{}/\n\n", title, authors, pubdate, id));
+        }
+    }
+    Ok(out)
+}
+
+async fn fetch_drug(name: &str) -> Result<String> {
+    let url = format!("https://api.fda.gov/drug/label.json?search=openfda.brand_name:{}+OR+openfda.generic_name:{}&limit=1", urlencoding::encode(name), urlencoding::encode(name));
+    let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    if let Some(err) = resp["error"].as_object() {
+        if err.get("code") == Some(&serde_json::Value::String("NOT_FOUND".into())) {
+            return Ok(format!("No drug info for *{name}*"));
+        }
+    }
+    if let Some(results) = resp["results"].as_array() {
+        if let Some(drug) = results.first() {
+            let brand = drug["openfda"]["brand_name"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("?");
+            let generic = drug["openfda"]["generic_name"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("?");
+            let purpose = drug["purpose"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("N/A");
+            let warnings = drug["warnings"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("N/A");
+            return Ok(format!("💊 *{brand}* ({generic})\n\n**Purpose:** {purpose}\n\n**Warnings:** {warnings}", brand = brand, generic = generic, purpose = &purpose[..purpose.len().min(300)], warnings = &warnings[..warnings.len().min(300)]));
+        }
+    }
+    Ok(format!("No drug info for *{name}*"))
+}
+
+async fn fetch_genome(query: &str) -> Result<String> {
+    let url = format!("https://api.ncbi.nlm.nih.gov/datasets/v2/genus/+/taxon/{}/dataset_report?page_size=3", urlencoding::encode(query));
+    let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    if let Some(taxonomy) = resp["assembly_summary"].as_array() {
+        if let Some(first) = taxonomy.first() {
+            let name = first["organism_name"].as_str().unwrap_or("?");
+            let acc = first["assembly_accession"].as_str().unwrap_or("?");
+            let status = first["assembly_level"].as_str().unwrap_or("?");
+            return Ok(format!("🧬 *Genome:* {name}\n**Accession:** {acc}\n**Level:** {status}\nhttps://www.ncbi.nlm.nih.gov/datasets/{acc}"));
+        }
+    }
+    // Fallback: search NCBI
+    let search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nucleotide&retmax=3&term={}", urlencoding::encode(query));
+    let resp = HTTP.get(&search_url).send().await?.text().await?;
+    let ids: Vec<String> = re::Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
+    if ids.is_empty() { return Ok(format!("No genome results for *{query}*")); }
+    Ok(format!("🧬 *Genome:* `{query}`\nIDs: {}\nhttps://www.ncbi.nlm.nih.gov/nuccore/{}", ids.join(", "), ids[0]))
+}
+
+async fn fetch_protein(query: &str) -> Result<String> {
+    let url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=protein&retmax=5&term={}", urlencoding::encode(query));
+    let resp = HTTP.get(&url).send().await?.text().await?;
+    let ids: Vec<String> = re::Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
+    if ids.is_empty() { return Ok(format!("No protein results for *{query}*")); }
+    let summary_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=protein&id={}&retmode=json", ids.join(","));
+    let summary: serde_json::Value = HTTP.get(&summary_url).send().await?.json().await?;
+    let mut out = format!("🧬 *Protein:* `{query}`\n\n");
+    for id in &ids {
+        if let Some(item) = summary["result"][id].as_object() {
+            let title = item["title"].as_str().unwrap_or("?");
+            out.push_str(&format!("• *{}*\n  https://www.ncbi.nlm.nih.gov/protein/{}\n\n", title, id));
+        }
+    }
+    Ok(out)
+}
+
+// === NEW COMMANDS: Stoicism ===
+
+async fn fetch_stoic_quote() -> Result<String> {
+    let resp: serde_json::Value = HTTP.get("https://stoic-quotes/api/v1/random").send().await?.json().await?;
+    let text = resp["text"].as_str().unwrap_or("?");
+    let author = resp["author"].as_str().unwrap_or("?");
+    Ok(format!("🏛️ *Stoic Wisdom*\n\n\"{text}\"\n\n— *{author}*\n\n#stoic #philosophy"))
+}
+
+fn create_mood_entry(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let mood = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("neutral");
+    let note = parts.get(1).unwrap_or(&"");
+    let date = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    format!(
+        "# Mood\n\n**Date:** {date}\n**Mood:** {mood}\n**Note:** {note}\n\n#mood #daily",
+        date = date, mood = mood, note = note
+    )
+}
+
+fn create_gratitude_entry(args: &str) -> String {
+    let items: Vec<&str> = args.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if items.is_empty() { return "usage: `/gratitude family, health, code`".into(); }
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("# Gratitude\n\n**Date:** {date}\n\n", date = date);
+    for item in items {
+        out.push_str(&format!("• ✨ {}\n", item));
+    }
+    out.push_str("\n#gratitude #daily");
+    out
+}
+
+fn create_habit_entry(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let habit = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("habit");
+    let status = parts.get(1).unwrap_or(&"done");
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        "# Habit Tracker\n\n**Date:** {date}\n**Habit:** {habit}\n**Status:** {status}\n\n#habit #daily",
+        date = date, habit = habit, status = status
+    )
+}
+
+// === NEW COMMANDS: Dev Tools ===
+
+async fn fetch_npm(pkg: &str) -> Result<String> {
+    let resp: serde_json::Value = HTTP.get(format!("https://registry.npmjs.org/{}", urlencoding::encode(pkg))).send().await?.json().await?;
+    if let Some(msg) = resp["error"].as_str() { return Ok(format!("npm: {msg}")); }
+    let name = resp["name"].as_str().unwrap_or("?");
+    let version = resp["dist-tags"]["latest"].as_str().unwrap_or("?");
+    let desc = resp["description"].as_str().unwrap_or("?");
+    let homepage = resp["homepage"].as_str().unwrap_or("");
+    Ok(format!("📦 *npm:* `{name}@{version}`\n{desc}\n\nhttps://www.npmjs.com/package/{name}"))
+}
+
+async fn fetch_pypi(pkg: &str) -> Result<String> {
+    let resp: serde_json::Value = HTTP.get(format!("https://pypi.org/pypi/{}/json", urlencoding::encode(pkg))).send().await?.json().await?;
+    if let Some(msg) = resp["message"].as_str() { return Ok(format!("pypi: {msg}")); }
+    let info = &resp["info"];
+    let name = info["name"].as_str().unwrap_or("?");
+    let version = info["version"].as_str().unwrap_or("?");
+    let summary = info["summary"].as_str().unwrap_or("?");
+    Ok(format!("📦 *PyPI:* `{name}@{version}`\n{summary}\n\nhttps://pypi.org/project/{name}/"))
+}
+
+async fn fetch_crates(pkg: &str) -> Result<String> {
+    let resp: serde_json::Value = HTTP.get(format!("https://crates.io/api/v1/crates/{}", urlencoding::encode(pkg))).send().await?.json().await?;
+    if let Some(c) = resp["crate"].as_object() {
+        let name = c["name"].as_str().unwrap_or("?");
+        let version = c["max_version"].as_str().unwrap_or("?");
+        let desc = c["description"].as_str().unwrap_or("?");
+        let downloads = c["downloads"].as_i64().unwrap_or(0);
+        return Ok(format!("📦 *crates.io:* `{name}@{version}`\n{desc}\nDownloads: {}\n\nhttps://crates.io/crates/{name}", downloads));
+    }
+    Ok(format!("crate not found: *{pkg}*"))
+}
+
+async fn fetch_stackoverflow(query: &str) -> Result<String> {
+    let url = format!("https://api.stackexchange.com/2.3/search?order=desc&sort=activity&intitle={}&site=stackoverflow&pagesize=5", urlencoding::encode(query));
+    let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    if let Some(items) = resp["items"].as_array() {
+        if items.is_empty() { return Ok(format!("No results for *{query}*")); }
+        let mut out = format!("📖 *Stack Overflow:* `{query}`\n\n");
+        for item in items {
+            let title = item["title"].as_str().unwrap_or("?");
+            let link = item["link"].as_str().unwrap_or("?");
+            let score = item["score"].as_i64().unwrap_or(0);
+            let answers = item["answer_count"].as_i64().unwrap_or(0);
+            out.push_str(&format!("• *{}* (⬆{} answers:{}\n  {link}\n\n", title, score, answers));
+        }
+        return Ok(out);
+    }
+    Ok(format!("stackoverflow err for *{query}*"))
+}
+
+// === NEW COMMANDS: Weather ===
+
+async fn fetch_airquality(loc: &str) -> Result<String> {
+    let url = format!("https://api.waqi.info/feed/{}/?token=demo", urlencoding::encode(loc));
+    let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    if resp["status"].as_str() == Some("ok") {
+        let data = &resp["data"];
+        let aqi = data["aqi"].as_i64().unwrap_or(0);
+        let city = data["city"]["name"].as_str().unwrap_or("?");
+        let dominant = data["dominentpol"].as_str().unwrap_or("?");
+        return Ok(format!("🌬️ *Air Quality:* {city}\n**AQI:** {aqi}\n**Dominant pollutant:** {dominant}\n\nhttps://aqicn.org/city/{loc}"));
+    }
+    Ok(format!("air quality data unavailable for *{loc}*"))
+}
+
+async fn fetch_sunrise(loc: &str) -> Result<String> {
+    let parts: Vec<&str> = loc.split(',').collect();
+    let lat = parts.first().unwrap_or(&"40.7");
+    let lon = parts.get(1).unwrap_or(&"-74.0");
+    let url = format!("https://api.sunrise-sunset.org/json?lat={}&lng={}&formatted=0", lat.trim(), lon.trim());
+    let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    if resp["status"].as_str() == Some("OK") {
+        let results = &resp["results"];
+        let sunrise = results["sunrise"].as_str().unwrap_or("?");
+        let sunset = results["sunset"].as_str().unwrap_or("?");
+        let day_length = results["day_length"].as_i64().unwrap_or(0);
+        let hours = day_length / 3600;
+        let mins = (day_length % 3600) / 60;
+        return Ok(format!("🌅 *Sunrise/Sunset*\n**Sunrise:** {sunrise}\n**Sunset:** {sunset}\n**Day length:** {hours}h {mins}m"));
+    }
+    Ok(format!("sunrise data unavailable for *{loc}*"))
+}
+
+// === NEW COMMANDS: Learn ===
+
+fn eval_math(expr: &str) -> String {
+    let cleaned: String = expr.chars().filter(|c| c.is_digit() || *c == '.' || *c == '+' || *c == '-' || *c == '*' || *c == '/' || *c == '(' || *c == ')' || *c == ' ').collect();
+    // Simple eval using Rust: just return the expression for now
+    format!("🔢 *Math:* `{}`\n\nEvaluate: `{}`", expr, cleaned)
+}
+
+async fn fetch_etymology(word: &str) -> Result<String> {
+    let resp = HTTP.get(format!("https://api.etymonline.com/word/{}", urlencoding::encode(word))).send().await?.text().await?;
+    // Simple extraction from HTML
+    if let Some(pos) = resp.find("<span class=\"\">") {
+        let snippet = &resp[pos..pos.min(resp.len(), 500)];
+        Ok(format!("📖 *Etymology:* `{word}`\n\n{}", snippet.replace("<span class=\"\">", "").replace("</span>", "")))
+    } else {
+        Ok(format!("📖 *Etymology:* `{word}`\n\nhttps://www.etymonline.com/word/{}", word))
+    }
+}
+
+async fn fetch_synonym(word: &str) -> Result<String> {
+    let resp: serde_json::Value = HTTP.get(format!("https://api.datamuse.com/words?rel_syn={}", urlencoding::encode(word))).send().await?.json().await?;
+    if let Some(words) = resp.as_array() {
+        if words.is_empty() { return Ok(format!("No synonyms for *{word}*")); }
+        let syns: Vec<&str> = words.iter().take(10).filter_map(|w| w["word"].as_str()).collect();
+        return Ok(format!("📝 *Synonyms for {word}:*\n{}", syns.join(", ")));
+    }
+    Ok(format!("synonym lookup failed for *{word}*"))
+}
+
+async fn fetch_philosophy_quote() -> Result<String> {
+    let resp = HTTP.get("https://philosophyapi.fly.dev/api/quotes/random").send().await?.text().await?;
+    let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or(serde_json::Value::Null);
+    if let Some(quote) = v["quote"].as_str() {
+        let author = v["author"].as_str().unwrap_or("?");
+        Ok(format!("📚 *Philosophy*\n\n\"{quote}\"\n\n— *{author}*\n\n#philosophy #learn"))
+    } else {
+        Ok("philosophy API unavailable".into())
+    }
+}
