@@ -1176,7 +1176,7 @@ async fn fetch_markets() -> Result<String> {
                 let price_str = if price >= 1000.0 { format!("{:>12.0}", price) } else { format!("{:>12.2}", price) };
                 out.push_str(&format!("{name:<17} {price_str}   {sign}{pct:.2}%\n"));
             }
-            Err(_) => { out.push_str(&format!("{name:<17} {'>'}12   N/A\n")); }
+            Err(_) => { out.push_str(&format!("{name:<17} {:>12}   N/A\n", "N/A")); }
         }
     }
     out.push_str("```\n\n");
@@ -1284,7 +1284,6 @@ async fn fetch_inbox(memos_url: &str, token: &str) -> Result<String> {
     for m in untagged.iter().take(15) {
         let name = m["name"].as_str().unwrap_or("?");
         let content = m["content"].as_str().unwrap_or("").chars().take(80).collect::<String>();
-        let time = m["createTime"].as_str().unwrap_or("");
         out.push_str(&format!("*{name}* — `{} chars`\n   _{}_\n\n", content.len(), esc(&content)));
     }
     out.push_str("> tag memos with `/note #tag text` · #inbox");
