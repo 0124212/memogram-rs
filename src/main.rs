@@ -14,116 +14,34 @@ static HTTP: Lazy<Client> = Lazy::new(|| Client::builder().user_agent("memogram-
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Commands:")]
 enum Command {
-    // --- core ---
-    #[command(description = "link Telegram → Memos: /start <memos_pat>")]
     Start(String),
-    #[command(description = "search memos")]
     Search(String),
-    #[command(description = "help")]
     Help,
-    // --- knowledge mgmt (obsidian-style) ---
-    #[command(description = "list all tags")]
     Tags,
-    #[command(description = "recent memos (last 7 days)")]
     Recent,
-    #[command(description = "count memos / memos by tag")]
     Count(String),
-    #[command(description = "pin/unpin memo by name")]
-    Pin(String),
-    #[command(description = "archive memo by name")]
-    Archive(String),
-    #[command(description = "export recent memos as markdown")]
-    Export,
-    #[command(description = "create daily note for today")]
     Daily,
-    // --- info lookups ---
-    #[command(description = "random quote")]
-    Quote,
-    #[command(description = "HackerNews top 5")]
     Hn,
-    #[command(description = "weather <city> (wttr.in)")]
     Weather(String),
-    #[command(description = "define <word>")]
     Define(String),
-    #[command(description = "wiki <query>")]
     Wiki(String),
-    #[command(description = "cheat <query> (cheat.sh)")]
     Cheat(String),
-    #[command(description = "daily memo digest")]
-    Today,
-    #[command(description = "weekly memo digest")]
-    Week,
-    #[command(description = "GitHub search/explore")]
     Gh(String),
-    #[command(description = "fx <pair> e.g. USD-KRW")]
     Fx(String),
-    #[command(description = "read <url> summarize via jina.ai")]
-    Read(String),
-    #[command(description = "list task memos")]
-    Tasks,
-    #[command(description = "check service health")]
     Containers,
-    #[command(description = "GitHub trending repos")]
-    Trending,
-    #[command(description = "lobsters <tag> tech news")]
     Lobsters(String),
-    #[command(description = "stock <ticker> e.g. AAPL")]
     Stock(String),
-    #[command(description = "crypto <coin> e.g. bitcoin")]
     Crypto(String),
-    #[command(description = "random poem")]
-    Poem,
-    #[command(description = "deepresearch <query>")]
-    Deepresearch(String),
-    #[command(description = "latest XKCD comic")]
-    Xkcd,
-    #[command(description = "translate <text> or /translate ja → en <text>")]
     Translate(String),
-    #[command(description = "random fun fact")]
-    Facts,
-    #[command(description = "color <hex> e.g. #FF5733 or FF5733")]
     Color(String),
-    #[command(description = "morning briefing: health + news + weather")]
-    All,
-    #[command(description = "shah <query> halal web search")]
-    Shah(String),
-    #[command(description = "7-day weather forecast")]
     Forecast(String),
-    #[command(description = "number trivia (e.g. /num 42)")]
-    Num(String),
-    // --- utilities ---
-    #[command(description = "random password [length]")]
     Pass(String),
-    #[command(description = "generate UUID v4")]
     Uuid,
-    #[command(description = "IP geolocation [address]")]
     Ip(String),
-    #[command(description = "QR code from text")]
     Qr(String),
-    #[command(description = "SHA256 hash of text")]
     Hash(String),
-    #[command(description = "base64 encode/decode: /base64 e <text> or /base64 d <text>")]
     Base64(String),
-    #[command(description = "random joke")]
-    Joke,
-    #[command(description = "date info: day of year, days left")]
-    Day,
-    #[command(description = "roll dice e.g. 2d6 or d20")]
-    Roll(String),
-    #[command(description = "random pick from a,b,c")]
-    Choose(String),
-    #[command(description = "word/char/line count")]
-    Wc(String),
-    #[command(description = "set timer → Gotify: /timer 5 drink water")]
-    Timer(String),
-    #[command(description = "pretty-print JSON")]
     Json(String),
-    #[command(description = "morse code encode/decode")]
-    Morse(String),
-    #[command(description = "magic 8-ball")]
-    Eightball,
-    #[command(description = "text statistics: readability, entropy")]
-    Stats(String),
 }
 
 #[derive(Clone)]
@@ -235,7 +153,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let res = search_memos(&app.memos_url, &tok, &q).await.unwrap_or_else(|e| format!("search err: {e}"));
             bot.send_message(msg.chat.id, res).await?;
         }
-        Command::Quote => { let txt = fetch_quote().await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
         Command::Hn => { let txt = fetch_hn().await.unwrap_or_else(|e| format!("hn err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
         Command::Weather(city) => {
             let c = if city.trim().is_empty() { "Los Angeles".to_string() } else { city };
@@ -245,49 +162,15 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Define(w) => { let txt = fetch_define(&w).await.unwrap_or_else(|e| format!("define err: {e}")); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
         Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "wiki", &txt, tid).await?; }
         Command::Cheat(q) => { let txt = fetch_cheat(&q).await.unwrap_or_else(|e| format!("cheat err: {e}")); create_as_bot(&bot, &msg, &app, "cheat", &txt, tid).await?; }
-        Command::Today => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let today = Local::now().format("%Y-%m-%d").to_string();
-            let txt = fetch_daily_digest(&app.memos_url, &tok, &today).await.unwrap_or_else(|e| format!("digest err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
-        }
-        Command::Week => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let now = Local::now();
-            let monday = now.naive_local().date() - Duration::days(now.naive_local().weekday().num_days_from_monday() as i64);
-            let sunday = monday + Duration::days(6);
-            let start = monday.format("%Y-%m-%d").to_string();
-            let end = sunday.format("%Y-%m-%d").to_string();
-            let txt = fetch_weekly_digest(&app.memos_url, &tok, &start, &end).await.unwrap_or_else(|e| format!("digest err: {e}"));
-            create_as_bot(&bot, &msg, &app, "week", &txt, tid).await?;
-        }
         Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
         Command::Fx(pair) => { let txt = fetch_fx(&pair).await.unwrap_or_else(|e| format!("fx err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
-        Command::Read(url) => { let txt = fetch_read(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "read", &txt, tid).await?; }
-        Command::Tasks => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_tasks(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("tasks err: {e}"));
-            create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?;
-        }
         Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
-        Command::Trending => { let txt = fetch_trending().await.unwrap_or_else(|e| format!("trending err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
         Command::Lobsters(tag) => { let txt = fetch_lobsters(&tag).await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
-        Command::Poem => { let txt = fetch_poem().await.unwrap_or_else(|e| format!("poem err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
-        Command::Deepresearch(q) => { let t = if q.trim().is_empty() { "deepresearch".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "deepresearch", &t, tid).await?; }
-        Command::Xkcd => { let txt = fetch_xkcd().await.unwrap_or_else(|e| format!("xkcd err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
         Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
-        Command::Facts => { let txt = fetch_facts().await.unwrap_or_else(|e| format!("facts err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
         Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "define", &txt, tid).await?; }
-        Command::All => { let txt = fetch_all(&app.memos_url).await.unwrap_or_else(|e| format!("all err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
-        Command::Shah(q) => { let txt = fetch_shah(&q).await.unwrap_or_else(|e| format!("shah err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
         Command::Forecast(city) => { let txt = fetch_forecast(&city).await.unwrap_or_else(|e| format!("forecast err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Num(n) => { let txt = fetch_num(&n).await.unwrap_or_else(|e| format!("num err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
-        // --- knowledge mgmt ---
         Command::Tags => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -306,47 +189,19 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = fetch_count(&app.memos_url, &tok, &tag).await.unwrap_or_else(|e| format!("count err: {e}"));
             create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
         }
-        Command::Pin(name) => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_pin(&app.memos_url, &tok, &name).await.unwrap_or_else(|e| format!("pin err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
-        }
-        Command::Archive(name) => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_archive(&app.memos_url, &tok, &name).await.unwrap_or_else(|e| format!("archive err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
-        }
-        Command::Export => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_export(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("export err: {e}"));
-            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
-        }
         Command::Daily => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
+            let txt = fetch_daily(&app.memos_url, &tok).await;
             create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
         }
-        // --- utilities ---
         Command::Pass(len) => { let txt = gen_password(&len); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Uuid => { let txt = gen_uuid(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Ip(addr) => { let txt = fetch_ip(&addr).await.unwrap_or_else(|e| format!("ip err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Qr(text) => { let txt = gen_qr(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Hash(text) => { let txt = gen_hash(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Base64(args) => { let txt = gen_base64(&args); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Joke => { let txt = fetch_joke().await.unwrap_or_else(|e| format!("joke err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Day => { let txt = gen_day_info(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Roll(dice) => { let txt = gen_roll(&dice); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Choose(opts) => { let txt = gen_choose(&opts); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Wc(text) => { let txt = gen_wc(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Timer(args) => { let txt = set_timer(&args, &app).await.unwrap_or_else(|e| format!("timer err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Json(text) => { let txt = gen_json_pretty(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Morse(text) => { let txt = gen_morse(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Eightball => { let txt = gen_8ball(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Stats(text) => { let txt = gen_stats(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -1456,25 +1311,4 @@ fn gen_8ball() -> String {
     format!("*🎱 Magic 8-Ball*\n\n>||{}||", answers[idx])
 }
 
-fn gen_stats(text: &str) -> String {
-    if text.is_empty() { return "usage: `/stats <text>`".into(); }
-    let chars = text.len();
-    let words = text.split_whitespace().count();
-    let lines = text.lines().count();
-    // Shannon entropy
-    let mut freq: HashMap<u8, u32> = HashMap::new();
-    for b in text.bytes() { *freq.entry(b).or_insert(0) += 1; }
-    let len = text.len() as f64;
-    let entropy: f64 = freq.values().map(|&c| {
-        let p = c as f64 / len;
-        -p * p.log2()
-    }).sum();
-    // Flesch-Kincaid (simplified)
-    let sentences = text.matches(|c: char| c == '.' || c == '!' || c == '?').count().max(1) as f64;
-    let syllables = words as f64 * 1.5; // rough estimate
-    let fk = 206.835 - 1.015 * (words as f64 / sentences) - 84.6 * (syllables / words as f64);
-    let grade = if fk < 30.0 { "Graduate" } else if fk < 50.0 { "College" } else if fk < 60.0 { "10th-12th" } else if fk < 70.0 { "8th-9th" } else if fk < 80.0 { "7th" } else if fk < 90.0 { "6th" } else { "5th" };
-    format!(
-        "*📊 Text Statistics*\n\n`Chars:` {chars}\n`Words:` {words}\n`Lines:` {lines}\n`Entropy:` {entropy:.2} bits/char\n`Readability:` {fk:.1} ({grade})\n\n> #stats"
-    )
-}
+
