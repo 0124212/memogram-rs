@@ -1379,7 +1379,7 @@ fn gen_stats(text: &str) -> String {
         -p * p.log2()
     }).sum();
     // Flesch-Kincaid (simplified)
-    let sentences = text.matches(|c: char| c == '.' || c == '!' || c == '?').max(1).unwrap_or(1) as f64;
+    let sentences = text.matches(|c: char| c == '.' || c == '!' || c == '?').count().max(1) as f64;
     let syllables = words as f64 * 1.5; // rough estimate
     let fk = 206.835 - 1.015 * (words as f64 / sentences) - 84.6 * (syllables / words as f64);
     let grade = if fk < 30.0 { "Graduate" } else if fk < 50.0 { "College" } else if fk < 60.0 { "10th-12th" } else if fk < 70.0 { "8th-9th" } else if fk < 80.0 { "7th" } else if fk < 90.0 { "6th" } else { "5th" };
