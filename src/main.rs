@@ -1,11 +1,11 @@
 use anyhow::Result;
 use base64::Engine;
-use chrono::{Local, Duration, Datelike};
+use chrono::Local;
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, sync::Arc};
-use teloxide::{prelude::*, types::ParseMode, net::Download, utils::{command::BotCommands, markdown as md}};
+use teloxide::{prelude::*, types::ParseMode, net::Download, utils::command::BotCommands};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
@@ -200,7 +200,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Daily => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_daily(&app.memos_url, &tok).await;
+            let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
             create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
         }
         Command::Pass(len) => { let txt = gen_password(&len); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
@@ -689,7 +689,7 @@ fn fetch_color(hex: &str) -> String {
     };
     let hsl_h = if hsl_h < 0.0 { hsl_h + 360.0 } else { hsl_h };
     let hsl_l = (maxf(r, g, b) + minf(r, g, b)) / 2.0 / 255.0 * 100.0;
-    let hsl_s = if hsl_l == 0.0 || hsl_l == 100.0 { 0.0 } else { ((maxf(r, g, b) - minf(r, g, b)) / (1.0 - (2.0 * hsl_l - 1.0).abs()) / 255.0 * 100.0) };
+    let hsl_s = if hsl_l == 0.0 || hsl_l == 100.0 { 0.0 } else { (maxf(r, g, b) - minf(r, g, b)) / (1.0 - (2.0 * hsl_l - 1.0).abs()) / 255.0 * 100.0 };
     format!(
         "*🎨 Color {hex}*\n\n■■■■■■■■■■■■■■■\n\n`HEX:` #{h}\n`RGB:` {r}, {g}, {b}\n`HSL:` {hsl_h:.0}°, {hsl_s:.0}%, {hsl_l:.0}%\n`Brightness:` {brightness}\n\n#color"
     )
@@ -838,7 +838,6 @@ async fn fetch_forecast(city: &str) -> Result<String> {
 // --- utility functions ---
 
 fn gen_password(len: &str) -> String {
-    use std::fmt::Write;
     let n: usize = len.trim().parse().unwrap_or(16).min(128).max(4);
     const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?";
     let mut s = String::with_capacity(n);
@@ -939,7 +938,7 @@ fn gen_json_pretty(text: &str) -> String {
     }
 }
 
-async fn set_reminder(args: &str, app: &App) -> String {
+async fn set_reminder(args: &str, _app: &App) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let mins: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(5).min(1440);
     let msg_text = parts.get(1).unwrap_or(&"Reminder!");
