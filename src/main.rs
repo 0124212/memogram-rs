@@ -624,10 +624,10 @@ async fn fetch_stock(ticker: &str) -> Result<String> {
 }
 
 async fn fetch_crypto(coin: &str) -> Result<String> {
-    let coin = if coin.trim().is_empty() { "bitcoin" } else { coin.trim().to_lowercase() };
-    let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", coin);
+    let coin_id = if coin.trim().is_empty() { "bitcoin".to_string() } else { coin.trim().to_lowercase() };
+    let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", coin_id);
     let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
-    let data = v.get(&coin).ok_or_else(|| anyhow::anyhow!("coin not found"))?;
+    let data = v.get(&coin_id).ok_or_else(|| anyhow::anyhow!("coin not found"))?;
     let price = data["usd"].as_f64().unwrap_or(0.0);
     let change = data["usd_24h_change"].as_f64().unwrap_or(0.0);
     let mcap = data["usd_market_cap"].as_f64().unwrap_or(0.0);
@@ -636,7 +636,7 @@ async fn fetch_crypto(coin: &str) -> Result<String> {
     let mcap_str = if mcap >= 1e12 { format!("${:.2}T", mcap / 1e12) } else if mcap >= 1e9 { format!("${:.2}B", mcap / 1e9) } else if mcap >= 1e6 { format!("${:.2}M", mcap / 1e6) } else { format!("${:.0}", mcap) };
     let now = Local::now().format("%Y-%m-%d %H:%M");
     Ok(format!(
-        "## {emoji} {coin}\n\n**${price:.2}**\n\n{sign}{change:.2}% · MCap: {mcap_str}\n\n`{now}` · #crypto"
+        "## {emoji} {coin_id}\n\n**${price:.2}**\n\n{sign}{change:.2}% · MCap: {mcap_str}\n\n`{now}` · #crypto"
     ))
 }
 
