@@ -47,6 +47,12 @@ enum Command {
     Trending,
     #[command(description = "reddit <sub> top posts")]
     Reddit(String),
+    #[command(description = "stock <ticker> e.g. AAPL")]
+    Stock(String),
+    #[command(description = "crypto <coin> e.g. bitcoin")]
+    Crypto(String),
+    #[command(description = "random poem")]
+    Poem,
     #[command(description = "deepresearch <query>")]
     Deepresearch(String),
     #[command(description = "help")]
@@ -114,6 +120,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "containers".into(), description: "check service health".into() },
         teloxide::types::BotCommand { command: "trending".into(), description: "GitHub trending".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "reddit <sub>".into() },
+        teloxide::types::BotCommand { command: "stock".into(), description: "stock <ticker>".into() },
+        teloxide::types::BotCommand { command: "crypto".into(), description: "crypto <coin>".into() },
+        teloxide::types::BotCommand { command: "poem".into(), description: "random poem".into() },
         teloxide::types::BotCommand { command: "deepresearch".into(), description: "deepresearch <query>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
     ]).await;
@@ -199,6 +208,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "ops", &txt, tid).await?; }
         Command::Trending => { let txt = fetch_trending().await.unwrap_or_else(|e| format!("trending err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "hn", &txt, tid).await?; }
+        Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
+        Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
+        Command::Poem => { let txt = fetch_poem().await.unwrap_or_else(|e| format!("poem err: {e}")); create_as_bot(&bot, &msg, &app, "quote", &txt, tid).await?; }
         Command::Deepresearch(q) => { let t = if q.trim().is_empty() { "deepresearch".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "deepresearch", &t, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
@@ -587,5 +599,59 @@ async fn fetch_reddit(sub: &str) -> Result<String> {
         out.push_str(&format!("| {} | [{}]({}) | {} | {} | {} |\n", i + 1, title, format!("https://reddit.com{permalink}"), score, comments, author));
     }
     out.push_str(&format!("\n> [r/{sub}](https://reddit.com/r/{sub}) · #reddit", sub = sub));
+    Ok(out)
+}
+
+async fn fetch_stock(ticker: &str) -> Result<String> {
+    let ticker = ticker.trim().to_uppercase();
+    if ticker.is_empty() { return Ok("usage: /stock AAPL".into()); }
+    let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}?interval=1d&range=5d", ticker);
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "Mozilla/5.0").send().await?.json().await?;
+    let result = v["chart"]["result"].as_array().and_then(|a| a.first()).ok_or_else(|| anyhow::anyhow!("ticker not found"))?;
+    let meta = &result["meta"];
+    let price = meta["regularMarketPrice"].as_f64().unwrap_or(0.0);
+    let prev = meta["chartPreviousClose"].as_f64().unwrap_or(price);
+    let change = price - prev;
+    let pct = if prev != 0.0 { change / prev * 100.0 } else { 0.0 };
+    let emoji = if change >= 0.0 { "📈" } else { "📉" };
+    let sign = if change >= 0.0 { "+" } else { "" };
+    let name = meta["shortName"].as_str().unwrap_or(&ticker);
+    let currency = meta["currency"].as_str().unwrap_or("USD");
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    Ok(format!(
+        "## {emoji} {name} ({ticker})\n\n**{price:.2} {currency}**\n\n{sign}{change:.2} ({sign}{pct:.2}%)\n\n`{now}` · #stock"
+    ))
+}
+
+async fn fetch_crypto(coin: &str) -> Result<String> {
+    let coin = if coin.trim().is_empty() { "bitcoin" } else { coin.trim().to_lowercase() };
+    let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", coin);
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
+    let data = v.get(&coin).ok_or_else(|| anyhow::anyhow!("coin not found"))?;
+    let price = data["usd"].as_f64().unwrap_or(0.0);
+    let change = data["usd_24h_change"].as_f64().unwrap_or(0.0);
+    let mcap = data["usd_market_cap"].as_f64().unwrap_or(0.0);
+    let emoji = if change >= 0.0 { "📈" } else { "📉" };
+    let sign = if change >= 0.0 { "+" } else { "" };
+    let mcap_str = if mcap >= 1e12 { format!("${:.2}T", mcap / 1e12) } else if mcap >= 1e9 { format!("${:.2}B", mcap / 1e9) } else if mcap >= 1e6 { format!("${:.2}M", mcap / 1e6) } else { format!("${:.0}", mcap) };
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    Ok(format!(
+        "## {emoji} {coin}\n\n**${price:.2}**\n\n{sign}{change:.2}% · MCap: {mcap_str}\n\n`{now}` · #crypto"
+    ))
+}
+
+async fn fetch_poem() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://poetrydb.org/random").send().await?.json().await?;
+    let poem = v.get(0).ok_or_else(|| anyhow::anyhow!("no poem"))?;
+    let title = poem["title"].as_str().unwrap_or("Untitled");
+    let author = poem["author"].as_str().unwrap_or("Unknown");
+    let lines: Vec<&str> = poem["lines"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
+    let body: Vec<&str> = lines.iter().take(20).copied().collect();
+    let mut out = format!("## 📜 {title}\n\n*{author}*\n\n");
+    for line in &body {
+        if line.is_empty() { out.push('\n'); } else { out.push_str(line); out.push('\n'); }
+    }
+    if lines.len() > 20 { out.push_str("\n_...truncated_"); }
+    out.push_str("\n\n> [Poetry DB](https://poetrydb.org) · #poem");
     Ok(out)
 }
