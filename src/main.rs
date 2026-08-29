@@ -53,6 +53,15 @@ enum Command {
     Undo,
     Pin,
     Note(String),
+    Meeting(String),
+    Project(String),
+    Recipe(String),
+    Book(String),
+    Todo(String),
+    List(String),
+    Clip(String),
+    Proscons(String),
+    Flashcard(String),
 }
 
 #[derive(Clone)]
@@ -129,6 +138,15 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "undo".into(), description: "delete last memo".into() },
         teloxide::types::BotCommand { command: "pin".into(), description: "pin/unpin last memo".into() },
         teloxide::types::BotCommand { command: "note".into(), description: "note #tag text".into() },
+        teloxide::types::BotCommand { command: "meeting".into(), description: "meeting notes".into() },
+        teloxide::types::BotCommand { command: "project".into(), description: "project doc".into() },
+        teloxide::types::BotCommand { command: "recipe".into(), description: "recipe card".into() },
+        teloxide::types::BotCommand { command: "book".into(), description: "book card".into() },
+        teloxide::types::BotCommand { command: "todo".into(), description: "checklist".into() },
+        teloxide::types::BotCommand { command: "list".into(), description: "bulleted list".into() },
+        teloxide::types::BotCommand { command: "clip".into(), description: "save bookmark".into() },
+        teloxide::types::BotCommand { command: "proscons".into(), description: "pros vs cons".into() },
+        teloxide::types::BotCommand { command: "flashcard".into(), description: "Q | A".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "password".into(), description: "generate password".into() },
         teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
@@ -267,6 +285,15 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = create_note(&app.memos_url, &tok, &content).await;
             bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
         }
+        Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Recipe(args) => { let txt = create_recipe(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Clip(args) => { let txt = create_clip(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Proscons(args) => { let txt = create_proscons(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
+        Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -1340,6 +1367,100 @@ async fn create_note(memos_url: &str, token: &str, content: &str) -> String {
         Ok(name) => format!("✅ *Saved*\n\n`{name}`\n\n_{}_", esc(&content.chars().take(60).collect::<String>())),
         Err(e) => format!("❌ save err: {e}"),
     }
+}
+
+// --- markdown document generators ---
+
+fn create_meeting(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let topic = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
+    let notes = parts.get(1).unwrap_or(&"");
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        "# Meeting: {topic}\n\n**Date:** {date}\n\n## Attendees\n- \n\n## Agenda\n- \n\n## Discussion\n{notes}\n\n## Action Items\n- [ ] \n\n## Next Steps\n- ",
+        topic = esc(topic), date = date, notes = notes
+    )
+}
+
+fn create_project(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let name = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
+    let desc = parts.get(1).unwrap_or(&"");
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        "# Project: {name}\n\n**Created:** {date}\n**Status:** 🟡 In Progress\n\n## Goal\n{desc}\n\n## Tasks\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Timeline\n- **Week 1:** \n- **Week 2:** ",
+        name = esc(name), date = date, desc = desc
+    )
+}
+
+fn create_recipe(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let name = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
+    let tags = parts.get(1).unwrap_or(&"");
+    format!(
+        "# Recipe: {name}\n\n**Tags:** {tags}\n\n## Ingredients\n- \n- \n- \n\n## Instructions\n1. \n2. \n3. \n\n## Notes\n- \n\n## Nutrition\n- Calories: \n- Protein: ",
+        name = esc(name), tags = tags
+    )
+}
+
+fn create_book(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let title = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
+    let author = parts.get(1).unwrap_or(&"");
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        "# Book: {title}\n\n**Author:** {author}\n**Started:** {date}\n**Status:** 📖 Reading\n**Rating:** ⭐⭐⭐⭐⭐\n\n## Summary\n- \n\n## Key Takeaways\n1. \n2. \n3. \n\n## Favorite Quotes\n> \"\" \n\n## Notes\n- ",
+        title = esc(title), author = author, date = date
+    )
+}
+
+fn create_todo(args: &str) -> String {
+    let items: Vec<&str> = args.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if items.is_empty() { return "usage: `/todo buy milk, write report, call mom`".into(); }
+    let mut out = "# Todo List\n\n".to_string();
+    for item in items {
+        out.push_str(&format!("- [ ] {}\n", item));
+    }
+    out
+}
+
+fn create_list(args: &str) -> String {
+    let items: Vec<&str> = args.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if items.is_empty() { return "usage: `/list apples, bananas, oranges`".into(); }
+    let mut out = "# List\n\n".to_string();
+    for item in items {
+        out.push_str(&format!("- {}\n", item));
+    }
+    out
+}
+
+fn create_clip(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let url = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("");
+    let notes = parts.get(1).unwrap_or(&"");
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        "# Bookmark\n\n**URL:** {url}\n**Saved:** {date}\n\n## Notes\n{notes}\n\n## Tags\n#bookmark",
+        url = url, date = date, notes = notes
+    )
+}
+
+fn create_proscons(args: &str) -> String {
+    let topic = if args.trim().is_empty() { "Untitled" } else { args.trim() };
+    format!(
+        "# Pros & Cons: {topic}\n\n## ✅ Pros\n- \n- \n- \n\n## ❌ Cons\n- \n- \n- \n\n## Verdict\n- \n\n## Alternative Options\n1. ",
+        topic = esc(topic)
+    )
+}
+
+fn create_flashcard(args: &str) -> String {
+    let parts: Vec<&str> = args.splitn(2, " | ").collect();
+    let q = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Question?");
+    let a = parts.get(1).unwrap_or(&"Answer");
+    format!(
+        "# Flashcard\n\n**Topic:** #flashcard\n\n## ❓ Question\n{q}\n\n## 💡 Answer\n{a}",
+        q = q, a = a
+    )
 }
 
 
