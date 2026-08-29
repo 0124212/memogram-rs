@@ -278,7 +278,7 @@ async fn fetch_hn() -> Result<String> {
     for (i, id) in ids.iter().take(5).enumerate() {
         let item: serde_json::Value = HTTP.get(format!("https://hacker-news.firebaseio.com/v0/item/{id}.json")).send().await?.json().await?;
         let title = item["title"].as_str().unwrap_or("(no title)");
-        let url = item["url"].as_str().unwrap_or(&format!("https://news.ycombinator.com/item?id={id}"));
+        let url = item["url"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("https://news.ycombinator.com/item?id={id}"));
         let score = item["score"].as_u64().unwrap_or(0);
         out.push_str(&format!("{}. [{title}]({url}) `↑{score}`\n", i + 1));
     }
@@ -315,7 +315,7 @@ async fn fetch_wiki(q: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", q)).send().await?.json().await?;
     let title = v["title"].as_str().unwrap_or(q);
     let extract = v["extract"].as_str().unwrap_or("no summary");
-    let url = v["content_urls"]["desktop"]["page"].as_str().unwrap_or(&format!("https://en.wikipedia.org/wiki/{}", q));
+    let url = v["content_urls"]["desktop"]["page"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("https://en.wikipedia.org/wiki/{}", q));
     Ok(format!("## {title}\n\n{extract}\n\n> [Read more on Wikipedia]({url})\n\n#wiki"))
 }
 async fn fetch_cheat(q: &str) -> Result<String> {
