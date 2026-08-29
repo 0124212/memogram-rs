@@ -4,8 +4,8 @@ use chrono::{Local, Duration, Datelike};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, io::Cursor, sync::Arc};
-use teloxide::{prelude::*, types::ParseMode, utils::{command::BotCommands, markdown as md}};
+use std::{collections::HashMap, env, sync::Arc};
+use teloxide::{prelude::*, types::ParseMode, net::Download, utils::{command::BotCommands, markdown as md}};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
@@ -396,9 +396,9 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
     if let Some(doc) = msg.document() {
         match download_telegram_file(&bot, &doc.file.id).await {
             Ok(data) => {
-                let mime = doc.mime_type.as_deref().unwrap_or("application/octet-stream");
+                let mime = doc.mime_type.as_ref().map(|m| m.to_string()).unwrap_or_else(|| "application/octet-stream".to_string());
                 let fname = doc.file_name.clone().unwrap_or_else(|| format!("doc_{}", msg.id.0));
-                match upload_attachment(&app.memos_url, &tok, &fname, mime, &data).await {
+                match upload_attachment(&app.memos_url, &tok, &fname, &mime, &data).await {
                     Ok(name) => { att_names.push(name); att_labels.push(format!("📎 {} ({}KB)", fname, data.len() / 1024)); }
                     Err(e) => { warn!("attach upload err: {e}"); att_labels.push(format!("📎 {} (upload failed)", fname)); }
                 }
@@ -484,11 +484,11 @@ async fn upload_attachment(url: &str, tok: &str, filename: &str, mime: &str, dat
     Ok(v.name)
 }
 
-async fn download_telegram_file(bot: &Bot, file_id: &str) -> Result<Vec<u8>> {
-    let file = bot.get_file(file_id).await?;
-    let mut cursor = std::io::Cursor::new(Vec::new());
-    bot.download_file(&file.path, &mut cursor).await?;
-    Ok(cursor.into_inner())
+async fn download_telegram_file(bot: &Bot, file_id: &teloxide::types::FileId) -> Result<Vec<u8>> {
+    let file = bot.get_file(file_id.clone()).await?;
+    let mut buf = Vec::new();
+    bot.download_file(&file.path, &mut buf).await?;
+    Ok(buf)
 }
 
 async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
