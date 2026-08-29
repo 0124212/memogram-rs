@@ -1377,7 +1377,7 @@ fn create_meeting(args: &str) -> String {
     let notes = parts.get(1).unwrap_or(&"");
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
-        "# Meeting: {topic}\n\n**Date:** {date}\n\n## Attendees\n- \n\n## Agenda\n- \n\n## Discussion\n{notes}\n\n## Action Items\n- [ ] \n\n## Next Steps\n- ",
+        "# Meeting: {topic}\n\n**Date:** {date}\n\n## Attendees\n- \n\n## Agenda\n- \n\n## Discussion\n{notes}\n\n## Action Items\n- [ ] \n\n## Next Steps\n- \n\n#meeting #notes {date}",
         topic = esc(topic), date = date, notes = notes
     )
 }
@@ -1388,7 +1388,7 @@ fn create_project(args: &str) -> String {
     let desc = parts.get(1).unwrap_or(&"");
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
-        "# Project: {name}\n\n**Created:** {date}\n**Status:** 🟡 In Progress\n\n## Goal\n{desc}\n\n## Tasks\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Timeline\n- **Week 1:** \n- **Week 2:** ",
+        "# Project: {name}\n\n**Created:** {date}\n**Status:** 🟡 In Progress\n\n## Goal\n{desc}\n\n## Tasks\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Timeline\n- **Week 1:** \n- **Week 2:** \n\n#project #planning",
         name = esc(name), date = date, desc = desc
     )
 }
@@ -1398,7 +1398,7 @@ fn create_recipe(args: &str) -> String {
     let name = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
     let tags = parts.get(1).unwrap_or(&"");
     format!(
-        "# Recipe: {name}\n\n**Tags:** {tags}\n\n## Ingredients\n- \n- \n- \n\n## Instructions\n1. \n2. \n3. \n\n## Notes\n- \n\n## Nutrition\n- Calories: \n- Protein: ",
+        "# Recipe: {name}\n\n**Tags:** {tags}\n**Prep:** 15 min\n**Cook:** 30 min\n**Servings:** 4\n\n## Ingredients\n- \n- \n- \n\n## Instructions\n1. \n2. \n3. \n\n## Notes\n- \n\n## Nutrition\n- Calories: \n- Protein: \n\n#recipe #cooking",
         name = esc(name), tags = tags
     )
 }
@@ -1409,7 +1409,7 @@ fn create_book(args: &str) -> String {
     let author = parts.get(1).unwrap_or(&"");
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
-        "# Book: {title}\n\n**Author:** {author}\n**Started:** {date}\n**Status:** 📖 Reading\n**Rating:** ⭐⭐⭐⭐⭐\n\n## Summary\n- \n\n## Key Takeaways\n1. \n2. \n3. \n\n## Favorite Quotes\n> \"\" \n\n## Notes\n- ",
+        "# Book: {title}\n\n**Author:** {author}\n**Started:** {date}\n**Status:** 📖 Reading\n**Rating:** ⭐⭐⭐⭐⭐\n\n## Summary\n- \n\n## Key Takeaways\n1. \n2. \n3. \n\n## Favorite Quotes\n> \"\" \n\n## Notes\n- \n\n#book #reading",
         title = esc(title), author = author, date = date
     )
 }
@@ -1421,6 +1421,7 @@ fn create_todo(args: &str) -> String {
     for item in items {
         out.push_str(&format!("- [ ] {}\n", item));
     }
+    out.push_str("\n#todo #tasks");
     out
 }
 
@@ -1431,6 +1432,7 @@ fn create_list(args: &str) -> String {
     for item in items {
         out.push_str(&format!("- {}\n", item));
     }
+    out.push_str("\n#list #notes");
     out
 }
 
@@ -1440,7 +1442,7 @@ fn create_clip(args: &str) -> String {
     let notes = parts.get(1).unwrap_or(&"");
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
-        "# Bookmark\n\n**URL:** {url}\n**Saved:** {date}\n\n## Notes\n{notes}\n\n## Tags\n#bookmark",
+        "# Bookmark\n\n**URL:** {url}\n**Saved:** {date}\n\n## Notes\n{notes}\n\n#bookmark #save",
         url = url, date = date, notes = notes
     )
 }
@@ -1448,7 +1450,7 @@ fn create_clip(args: &str) -> String {
 fn create_proscons(args: &str) -> String {
     let topic = if args.trim().is_empty() { "Untitled" } else { args.trim() };
     format!(
-        "# Pros & Cons: {topic}\n\n## ✅ Pros\n- \n- \n- \n\n## ❌ Cons\n- \n- \n- \n\n## Verdict\n- \n\n## Alternative Options\n1. ",
+        "# Pros & Cons: {topic}\n\n## ✅ Pros\n- \n- \n- \n\n## ❌ Cons\n- \n- \n- \n\n## Verdict\n- \n\n## Alternative Options\n1. \n\n#comparison #decision",
         topic = esc(topic)
     )
 }
@@ -1458,7 +1460,7 @@ fn create_flashcard(args: &str) -> String {
     let q = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Question?");
     let a = parts.get(1).unwrap_or(&"Answer");
     format!(
-        "# Flashcard\n\n**Topic:** #flashcard\n\n## ❓ Question\n{q}\n\n## 💡 Answer\n{a}",
+        "# Flashcard\n\n## ❓ Question\n{q}\n\n## 💡 Answer\n{a}\n\n#flashcard #study",
         q = q, a = a
     )
 }
