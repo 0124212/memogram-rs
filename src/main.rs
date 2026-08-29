@@ -33,6 +33,22 @@ enum Command {
     Today,
     #[command(description = "week")]
     Week,
+    #[command(description = "GitHub search/explore")]
+    Gh(String),
+    #[command(description = "fx <pair> e.g. USD-KRW")]
+    Fx(String),
+    #[command(description = "read <url> summarize")]
+    Read(String),
+    #[command(description = "tasks <text>")]
+    Tasks(String),
+    #[command(description = "reminders <text>")]
+    Reminders(String),
+    #[command(description = "calendar <text>")]
+    Calendar(String),
+    #[command(description = "ops <text>")]
+    Ops(String),
+    #[command(description = "deepresearch <query>")]
+    Deepresearch(String),
     #[command(description = "help")]
     Help,
 }
@@ -83,6 +99,29 @@ async fn main() -> Result<()> {
     let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
+
+    // register slash commands so Telegram shows them on "/"
+    let _ = bot.set_my_commands(vec![
+        teloxide::types::BotCommand { command: "start".into(), description: "link Telegram → Memos: /start <token>".into() },
+        teloxide::types::BotCommand { command: "search".into(), description: "search memos".into() },
+        teloxide::types::BotCommand { command: "quote".into(), description: "random quote".into() },
+        teloxide::types::BotCommand { command: "hn".into(), description: "HackerNews top 5".into() },
+        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city>".into() },
+        teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
+        teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
+        teloxide::types::BotCommand { command: "cheat".into(), description: "cheat <query>".into() },
+        teloxide::types::BotCommand { command: "today".into(), description: "today".into() },
+        teloxide::types::BotCommand { command: "week".into(), description: "week".into() },
+        teloxide::types::BotCommand { command: "gh".into(), description: "GitHub".into() },
+        teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair>".into() },
+        teloxide::types::BotCommand { command: "read".into(), description: "read <url>".into() },
+        teloxide::types::BotCommand { command: "tasks".into(), description: "tasks".into() },
+        teloxide::types::BotCommand { command: "reminders".into(), description: "reminders".into() },
+        teloxide::types::BotCommand { command: "calendar".into(), description: "calendar".into() },
+        teloxide::types::BotCommand { command: "ops".into(), description: "ops".into() },
+        teloxide::types::BotCommand { command: "deepresearch".into(), description: "deepresearch".into() },
+        teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
+    ]).await;
 
     let handler = dptree::entry()
         .branch(Update::filter_message().filter_command::<Command>().endpoint(handle_command))
@@ -144,6 +183,14 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = format!("**Week {}**\n{}", Local::now().format("%V"), Local::now().format("%Y-%m-%d"));
             create_as_bot(&bot, &msg, &app, "week", &txt, tid).await?;
         }
+        Command::Gh(q) => { let t = if q.trim().is_empty() { "gh".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "gh", &t, tid).await?; }
+        Command::Fx(q) => { let t = if q.trim().is_empty() { "fx".to_string() } else { format!("fx {q}") }; create_as_bot(&bot, &msg, &app, "fx", &t, tid).await?; }
+        Command::Read(q) => { let t = if q.trim().is_empty() { "read".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "read", &t, tid).await?; }
+        Command::Tasks(q) => { let t = if q.trim().is_empty() { "tasks".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "tasks", &t, tid).await?; }
+        Command::Reminders(q) => { let t = if q.trim().is_empty() { "reminders".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "reminders", &t, tid).await?; }
+        Command::Calendar(q) => { let t = if q.trim().is_empty() { "calendar".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "calendar", &t, tid).await?; }
+        Command::Ops(q) => { let t = if q.trim().is_empty() { "ops".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "ops", &t, tid).await?; }
+        Command::Deepresearch(q) => { let t = if q.trim().is_empty() { "deepresearch".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "deepresearch", &t, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -165,19 +212,19 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
     Ok(())
 }
 
-// create memo as bot user (impersonate) and ping admin via @admin mention
+// create memo as bot user (impersonate) and ping admin via @admin mention — also echo body to Telegram
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
     let content = format!("@{} {}\n\n_{} via {}_", app.admin_username, body, bot_name, msg.from.as_ref().and_then(|u| u.username.as_deref()).unwrap_or("telegram"));
     let tok = if let Some(t) = bot_tok { t } else {
-        // fallback to telegram user's linked token
         let fallback = { app.store.read().await.get(&telegram_id).cloned() };
         let Some(f) = fallback else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-        // still ping admin via content prefix
         f
     };
+    // echo body to Telegram first (so you see content directly)
+    let _ = bot.send_message(msg.chat.id, body).await;
     match create_memo(&app.memos_url, &tok, &content).await {
-        Ok(name) => { bot.send_message(msg.chat.id, format!("{bot_name}: saved {name}")).await?; }
+        Ok(name) => { bot.send_message(msg.chat.id, format!("{bot_name}: saved {name} → @{} inbox", app.admin_username)).await?; }
         Err(e) => { bot.send_message(msg.chat.id, format!("{bot_name} err: {e}")).await?; }
     }
     Ok(())
@@ -215,6 +262,12 @@ async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
 
 // --- minimal external fetchers (no API keys, 5s timeout) ---
 async fn fetch_quote() -> Result<String> {
+    // dummyjson works on Oracle DNS, quotable.io does not
+    if let Ok(v) = HTTP.get("https://dummyjson.com/quotes/random").send().await?.json::<serde_json::Value>().await {
+        if let (Some(q), Some(a)) = (v["quote"].as_str(), v["author"].as_str()) {
+            return Ok(format!("\"{q}\" — {a}"));
+        }
+    }
     let v: serde_json::Value = HTTP.get("https://api.quotable.io/random").send().await?.json().await?;
     Ok(format!("\"{}\" — {}", v["content"].as_str().unwrap_or(""), v["author"].as_str().unwrap_or("")))
 }
