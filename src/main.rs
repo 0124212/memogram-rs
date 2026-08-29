@@ -1031,7 +1031,7 @@ async fn save_portfolio(store_path: &str, holdings: &[Holding]) {
     if let Ok(txt) = serde_json::to_string_pretty(holdings) { let _ = tokio::fs::write(p, txt).await; }
 }
 
-async fn handle_portfolio(args: &str, tid: i64, store_path: &str) -> String {
+async fn handle_portfolio(args: &str, _tid: i64, store_path: &str) -> String {
     let parts: Vec<&str> = args.trim().splitn(3, ' ').collect();
     let sub = parts.first().unwrap_or(&"list");
     let mut holdings = load_portfolio(store_path).await;
@@ -1176,7 +1176,7 @@ async fn fetch_markets() -> Result<String> {
                 let price_str = if price >= 1000.0 { format!("{:>12.0}", price) } else { format!("{:>12.2}", price) };
                 out.push_str(&format!("{name:<17} {price_str}   {sign}{pct:.2}%\n"));
             }
-            Err(_) => { out.push_str(&format!("{name:<17} {'>12':>12}   N/A\n")); }
+            Err(_) => { out.push_str(&format!("{name:<17} {'>'}12   N/A\n")); }
         }
     }
     out.push_str("```\n\n");
@@ -1279,7 +1279,7 @@ async fn fetch_inbox(memos_url: &str, token: &str) -> Result<String> {
     let untagged: Vec<&serde_json::Value> = memos.iter().filter(|m| {
         m["tags"].as_array().map(|t| t.is_empty()).unwrap_or(true)
     }).collect();
-    if untagged.is_empty() { return "📥 *Inbox*\n\n_all memos are tagged ✅_".into(); }
+    if untagged.is_empty() { return Ok("📥 *Inbox*\n\n_all memos are tagged ✅_".to_string()); }
     let mut out = format!("📥 *Inbox* — {} untagged\n\n", untagged.len());
     for m in untagged.iter().take(15) {
         let name = m["name"].as_str().unwrap_or("?");
@@ -1304,7 +1304,7 @@ async fn undo_last_memo(memos_url: &str, token: &str) -> String {
     let name = first["name"].as_str().unwrap_or("");
     let content = first["content"].as_str().unwrap_or("").chars().take(60).collect::<String>();
     match HTTP.delete(format!("{memos_url}/api/v1/{name}")).header("Authorization", format!("Bearer {token}")).send().await {
-        Ok(r) if r.status().is_success() => format!("🗑 *Deleted*\n\n`{name}`\n\n_{esc(&content)}_"),
+        Ok(r) if r.status().is_success() => format!("🗑 *Deleted*\n\n`{name}`\n\n_{}_", esc(&content)),
         _ => "❌ delete failed".into(),
     }
 }
@@ -1338,7 +1338,7 @@ async fn pin_last_memo(memos_url: &str, token: &str) -> String {
 async fn create_note(memos_url: &str, token: &str, content: &str) -> String {
     if content.trim().is_empty() { return "usage: `/note #tag my quick thought`".into(); }
     match create_memo(memos_url, token, content).await {
-        Ok(name) => format!("✅ *Saved*\n\n`{name}`\n\n_{esc(&content.chars().take(60).collect::<String>())}_"),
+        Ok(name) => format!("✅ *Saved*\n\n`{name}`\n\n_{}_", esc(&content.chars().take(60).collect::<String>())),
         Err(e) => format!("❌ save err: {e}"),
     }
 }
