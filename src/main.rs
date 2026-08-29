@@ -4,7 +4,7 @@ use chrono::{Local, Duration, Datelike};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, sync::Arc};
+use std::{collections::HashMap, env, io::Cursor, sync::Arc};
 use teloxide::{prelude::*, types::ParseMode, utils::{command::BotCommands, markdown as md}};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -353,17 +353,76 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
 }
 
 async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
-    let Some(text) = msg.text() else { return Ok(()); };
-    if text.starts_with('/') { return Ok(()); }
     let from = msg.from.as_ref();
     let username = from.and_then(|u| u.username.as_deref());
     if !app.is_allowed(username) { return Ok(()); }
     let tid = from.map(|u| u.id.0 as i64).unwrap_or(0);
     let token = { app.store.read().await.get(&tid).cloned() };
     let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <memos_pat> first").await?; return Ok(()); };
-    match create_memo(&app.memos_url, &tok, text).await {
-        Ok(name) => { bot.send_message(msg.chat.id, format!("saved {name}")).await?; }
-        Err(e) => { error!("create memo err: {e}"); bot.send_message(msg.chat.id, format!("save err: {e}")).await?; }
+
+    let caption = msg.caption().unwrap_or("").trim();
+    let has_photo = msg.photo().is_some();
+    let has_doc = msg.document().is_some();
+
+    if !has_photo && !has_doc {
+        let Some(text) = msg.text() else { return Ok(()); };
+        if text.starts_with('/') { return Ok(()); }
+        match create_memo(&app.memos_url, &tok, text).await {
+            Ok(name) => { bot.send_message(msg.chat.id, format!("saved {name}")).await?; }
+            Err(e) => { error!("create memo err: {e}"); bot.send_message(msg.chat.id, format!("save err: {e}")).await?; }
+        }
+        return Ok(());
+    }
+
+    let mut att_names: Vec<String> = Vec::new();
+    let mut att_labels: Vec<String> = Vec::new();
+
+    if let Some(photos) = msg.photo() {
+        if let Some(big) = photos.last() {
+            match download_telegram_file(&bot, &big.file.id).await {
+                Ok(data) => {
+                    let mime = "image/jpeg";
+                    let fname = format!("photo_{}.jpg", msg.id.0);
+                    match upload_attachment(&app.memos_url, &tok, &fname, mime, &data).await {
+                        Ok(name) => { att_names.push(name); att_labels.push(format!("📷 photo ({}KB)", data.len() / 1024)); }
+                        Err(e) => { warn!("attach upload err: {e}"); att_labels.push("📷 photo (upload failed)".into()); }
+                    }
+                }
+                Err(e) => { warn!("download err: {e}"); att_labels.push("📷 photo (download failed)".into()); }
+            }
+        }
+    }
+
+    if let Some(doc) = msg.document() {
+        match download_telegram_file(&bot, &doc.file.id).await {
+            Ok(data) => {
+                let mime = doc.mime_type.as_deref().unwrap_or("application/octet-stream");
+                let fname = doc.file_name.clone().unwrap_or_else(|| format!("doc_{}", msg.id.0));
+                match upload_attachment(&app.memos_url, &tok, &fname, mime, &data).await {
+                    Ok(name) => { att_names.push(name); att_labels.push(format!("📎 {} ({}KB)", fname, data.len() / 1024)); }
+                    Err(e) => { warn!("attach upload err: {e}"); att_labels.push(format!("📎 {} (upload failed)", fname)); }
+                }
+            }
+            Err(e) => { warn!("download err: {e}"); att_labels.push("📎 document (download failed)".into()); }
+        }
+    }
+
+    let body = if caption.is_empty() {
+        att_labels.join("\n")
+    } else {
+        format!("{}\n\n{}", caption, att_labels.join("\n"))
+    };
+
+    if att_names.is_empty() {
+        match create_memo(&app.memos_url, &tok, &body).await {
+            Ok(name) => { bot.send_message(msg.chat.id, format!("saved {name}")).await?; }
+            Err(e) => { error!("create memo err: {e}"); bot.send_message(msg.chat.id, format!("save err: {e}")).await?; }
+        }
+    } else {
+        match create_memo_with_attachments(&app.memos_url, &tok, &body, &att_names).await {
+            Ok(name) => { bot.send_message(msg.chat.id, format!("saved {name}")).await?; }
+            Err(e) => { error!("create memo err: {e}"); bot.send_message(msg.chat.id, format!("save err: {e}")).await?; }
+        }
     }
     Ok(())
 }
@@ -398,6 +457,38 @@ async fn create_memo(url: &str, tok: &str, content: &str) -> Result<String> {
     if !st.is_success() { anyhow::bail!("{st} {txt}") }
     let v: Resp = serde_json::from_str(&txt)?;
     Ok(v.name)
+}
+
+async fn create_memo_with_attachments(url: &str, tok: &str, content: &str, attachment_names: &[String]) -> Result<String> {
+    #[derive(Serialize)] struct AttRef { name: String }
+    #[derive(Serialize)] struct Req { content: String, visibility: String, attachments: Vec<AttRef> }
+    #[derive(Deserialize)] struct Resp { name: String }
+    let atts: Vec<AttRef> = attachment_names.iter().map(|n| AttRef { name: n.clone() }).collect();
+    let r = HTTP.post(format!("{url}/api/v1/memos")).bearer_auth(tok).json(&Req{ content: content.to_string(), visibility: "PROTECTED".into(), attachments: atts }).send().await?;
+    let st = r.status();
+    let txt = r.text().await?;
+    if !st.is_success() { anyhow::bail!("{st} {txt}") }
+    let v: Resp = serde_json::from_str(&txt)?;
+    Ok(v.name)
+}
+
+async fn upload_attachment(url: &str, tok: &str, filename: &str, mime: &str, data: &[u8]) -> Result<String> {
+    #[derive(Serialize)] struct Req { content: String, filename: String, #[serde(rename = "type")] mime: String }
+    #[derive(Deserialize)] struct Resp { name: String }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(data);
+    let r = HTTP.post(format!("{url}/api/v1/attachments")).bearer_auth(tok).json(&Req{ content: b64, filename: filename.to_string(), mime: mime.to_string() }).send().await?;
+    let st = r.status();
+    let txt = r.text().await?;
+    if !st.is_success() { anyhow::bail!("{st} {txt}") }
+    let v: Resp = serde_json::from_str(&txt)?;
+    Ok(v.name)
+}
+
+async fn download_telegram_file(bot: &Bot, file_id: &str) -> Result<Vec<u8>> {
+    let file = bot.get_file(file_id).await?;
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    bot.download_file(&file.path, &mut cursor).await?;
+    Ok(cursor.into_inner())
 }
 
 async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
