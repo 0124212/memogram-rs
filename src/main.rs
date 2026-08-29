@@ -560,9 +560,9 @@ async fn fetch_read(url: &str) -> Result<String> {
 async fn fetch_containers(memos_url: &str) -> Result<String> {
     let services = vec![
         ("Memos", format!("{memos_url}/api/v1/status")),
-        ("Vikunja", "https://vikunja.junilab.xyz".to_string()),
-        ("Radicale", "https://radicale.junilab.xyz".to_string()),
-        ("Gotify", "http://172.20.0.1:8080/health".to_string()),
+        ("Vikunja", "http://vikunja:3456/health".to_string()),
+        ("Radicale", "http://radicale:5232".to_string()),
+        ("Gotify", "http://gotify:8080/health".to_string()),
     ];
     let mut out = String::from("*🐳 Service Health*\n\n");
     let mut table = String::from("```\nService     Status      Latency\n");
