@@ -1,10 +1,10 @@
 use anyhow::Result;
-use chrono::Local;
+use chrono::{Local, NaiveDate, Duration};
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, sync::Arc};
-use teloxide::{prelude::*, utils::command::BotCommands};
+use teloxide::{prelude::*, types::ParseMode, utils::{command::BotCommands, markdown as md}};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
@@ -21,7 +21,7 @@ enum Command {
     Quote,
     #[command(description = "HackerNews top 5")]
     Hn,
-    #[command(description = "weather <city> (wttr.in, no key)")]
+    #[command(description = "weather <city> (wttr.in)")]
     Weather(String),
     #[command(description = "define <word>")]
     Define(String),
@@ -29,24 +29,18 @@ enum Command {
     Wiki(String),
     #[command(description = "cheat <query> (cheat.sh)")]
     Cheat(String),
-    #[command(description = "today")]
+    #[command(description = "daily memo digest")]
     Today,
-    #[command(description = "week")]
+    #[command(description = "weekly memo digest")]
     Week,
     #[command(description = "GitHub search/explore")]
     Gh(String),
     #[command(description = "fx <pair> e.g. USD-KRW")]
     Fx(String),
-    #[command(description = "read <url> summarize")]
+    #[command(description = "read <url> summarize via jina.ai")]
     Read(String),
-    #[command(description = "tasks <text>")]
-    Tasks(String),
-    #[command(description = "reminders <text>")]
-    Reminders(String),
-    #[command(description = "calendar <text>")]
-    Calendar(String),
-    #[command(description = "ops <text>")]
-    Ops(String),
+    #[command(description = "list task memos")]
+    Tasks,
     #[command(description = "deepresearch <query>")]
     Deepresearch(String),
     #[command(description = "help")]
@@ -56,12 +50,10 @@ enum Command {
 #[derive(Clone)]
 struct App {
     memos_url: String,
-    admin_username: String, // e.g. "admin" — pinged as @admin
+    admin_username: String,
     allowed: Option<Vec<String>>,
-    // per-Telegram user token store (like memogram data.txt)
     store: Arc<RwLock<HashMap<i64, String>>>,
     store_path: String,
-    // per-Memos bot user tokens: quote -> memos_pat_...
     bot_tokens: HashMap<String, String>,
 }
 
@@ -77,8 +69,7 @@ impl App {
     }
     fn bot_token(&self, bot: &str) -> Option<String> {
         self.bot_tokens.get(bot).cloned().or_else(|| {
-            // fallback: use admin-linked token if bot token not configured (still pings admin via content)
-            warn!("no bot token for {bot}, fallback to memogram store (will not impersonate)");
+            warn!("no bot token for {bot}, fallback to memogram store");
             None
         })
     }
@@ -93,16 +84,14 @@ async fn main() -> Result<()> {
     let admin_username = env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into());
     let allowed = env::var("ALLOWED_USERNAMES").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
     let store_path = env::var("DATA").unwrap_or_else(|_| "./data.txt".into());
-    // BOT_TOKENS_JSON e.g. {"quote":"memos_pat_...","hn":"...","weather":"..."}
     let bot_tokens: HashMap<String, String> = env::var("BOT_TOKENS_JSON").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     let store = Arc::new(RwLock::new(load_store(&store_path).await));
     let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
 
-    // register slash commands so Telegram shows them on "/"
     let _ = bot.set_my_commands(vec![
-        teloxide::types::BotCommand { command: "start".into(), description: "link Telegram → Memos: /start <token>".into() },
+        teloxide::types::BotCommand { command: "start".into(), description: "link Telegram → Memos".into() },
         teloxide::types::BotCommand { command: "search".into(), description: "search memos".into() },
         teloxide::types::BotCommand { command: "quote".into(), description: "random quote".into() },
         teloxide::types::BotCommand { command: "hn".into(), description: "HackerNews top 5".into() },
@@ -110,16 +99,13 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
         teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
         teloxide::types::BotCommand { command: "cheat".into(), description: "cheat <query>".into() },
-        teloxide::types::BotCommand { command: "today".into(), description: "today".into() },
-        teloxide::types::BotCommand { command: "week".into(), description: "week".into() },
-        teloxide::types::BotCommand { command: "gh".into(), description: "GitHub".into() },
-        teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair>".into() },
-        teloxide::types::BotCommand { command: "read".into(), description: "read <url>".into() },
-        teloxide::types::BotCommand { command: "tasks".into(), description: "tasks".into() },
-        teloxide::types::BotCommand { command: "reminders".into(), description: "reminders".into() },
-        teloxide::types::BotCommand { command: "calendar".into(), description: "calendar".into() },
-        teloxide::types::BotCommand { command: "ops".into(), description: "ops".into() },
-        teloxide::types::BotCommand { command: "deepresearch".into(), description: "deepresearch".into() },
+        teloxide::types::BotCommand { command: "today".into(), description: "daily memo digest".into() },
+        teloxide::types::BotCommand { command: "week".into(), description: "weekly memo digest".into() },
+        teloxide::types::BotCommand { command: "gh".into(), description: "GitHub search".into() },
+        teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair> USD-KRW".into() },
+        teloxide::types::BotCommand { command: "read".into(), description: "read <url> summarize".into() },
+        teloxide::types::BotCommand { command: "tasks".into(), description: "list task memos".into() },
+        teloxide::types::BotCommand { command: "deepresearch".into(), description: "deepresearch <query>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
     ]).await;
 
@@ -154,7 +140,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Start(token) => {
             let t = token.trim().to_string();
             if t.is_empty() { bot.send_message(msg.chat.id, "usage: /start <memos_pat>").await?; return Ok(()); }
-            // verify token
             if verify_token(&app.memos_url, &t).await.is_err() { bot.send_message(msg.chat.id, "invalid token").await?; return Ok(()); }
             { let mut w = app.store.write().await; w.insert(tid, t); save_store(&app.store_path, &w).await; }
             bot.send_message(msg.chat.id, "linked ✅ plain messages will create memos as you").await?;
@@ -176,20 +161,32 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "wiki", &txt, tid).await?; }
         Command::Cheat(q) => { let txt = fetch_cheat(&q).await.unwrap_or_else(|e| format!("cheat err: {e}")); create_as_bot(&bot, &msg, &app, "cheat", &txt, tid).await?; }
         Command::Today => {
-            let txt = format!("**Today {}**\n{}", Local::now().format("%Y-%m-%d %A"), Local::now().format("%H:%M %Z"));
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let today = Local::now().format("%Y-%m-%d").to_string();
+            let txt = fetch_daily_digest(&app.memos_url, &tok, &today).await.unwrap_or_else(|e| format!("digest err: {e}"));
             create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
         }
         Command::Week => {
-            let txt = format!("**Week {}**\n{}", Local::now().format("%V"), Local::now().format("%Y-%m-%d"));
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let now = Local::now();
+            let monday = now.naive_local().date() - Duration::days(now.naive_local().weekday().num_days_from_monday() as i64);
+            let sunday = monday + Duration::days(6);
+            let start = monday.format("%Y-%m-%d").to_string();
+            let end = sunday.format("%Y-%m-%d").to_string();
+            let txt = fetch_weekly_digest(&app.memos_url, &tok, &start, &end).await.unwrap_or_else(|e| format!("digest err: {e}"));
             create_as_bot(&bot, &msg, &app, "week", &txt, tid).await?;
         }
         Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "gh", &txt, tid).await?; }
-        Command::Fx(q) => { let t = if q.trim().is_empty() { "fx".to_string() } else { format!("fx {q}") }; create_as_bot(&bot, &msg, &app, "fx", &t, tid).await?; }
-        Command::Read(q) => { let t = if q.trim().is_empty() { "read".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "read", &t, tid).await?; }
-        Command::Tasks(q) => { let t = if q.trim().is_empty() { "tasks".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "tasks", &t, tid).await?; }
-        Command::Reminders(q) => { let t = if q.trim().is_empty() { "reminders".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "reminders", &t, tid).await?; }
-        Command::Calendar(q) => { let t = if q.trim().is_empty() { "calendar".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "calendar", &t, tid).await?; }
-        Command::Ops(q) => { let t = if q.trim().is_empty() { "ops".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "ops", &t, tid).await?; }
+        Command::Fx(pair) => { let txt = fetch_fx(&pair).await.unwrap_or_else(|e| format!("fx err: {e}")); create_as_bot(&bot, &msg, &app, "fx", &txt, tid).await?; }
+        Command::Read(url) => { let txt = fetch_read(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "read", &txt, tid).await?; }
+        Command::Tasks => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_tasks(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("tasks err: {e}"));
+            create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?;
+        }
         Command::Deepresearch(q) => { let t = if q.trim().is_empty() { "deepresearch".to_string() } else { q }; create_as_bot(&bot, &msg, &app, "deepresearch", &t, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
@@ -198,7 +195,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
 
 async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
     let Some(text) = msg.text() else { return Ok(()); };
-    if text.starts_with('/') { return Ok(()); } // already handled
+    if text.starts_with('/') { return Ok(()); }
     let from = msg.from.as_ref();
     let username = from.and_then(|u| u.username.as_deref());
     if !app.is_allowed(username) { return Ok(()); }
@@ -212,17 +209,14 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
     Ok(())
 }
 
-// create memo as bot user (impersonate) and ping admin via @admin mention — also echo body to Telegram (markdown-friendly)
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
-    // markdown-friendly: @admin on own line, body as markdown, footer as subtle italic — via asher
     let content = format!("@{}\n\n{}\n\n— _via {} · asher_", app.admin_username, body, bot_name);
     let tok = if let Some(t) = bot_tok { t } else {
         let fallback = { app.store.read().await.get(&telegram_id).cloned() };
         let Some(f) = fallback else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
         f
     };
-    // echo body to Telegram first (so you see content directly)
     let _ = bot.send_message(msg.chat.id, body).await;
     match create_memo(&app.memos_url, &tok, &content).await {
         Ok(name) => { bot.send_message(msg.chat.id, format!("{bot_name}: saved {name} → @{} inbox", app.admin_username)).await?; }
@@ -235,6 +229,7 @@ async fn verify_token(url: &str, tok: &str) -> Result<()> {
     let r = HTTP.get(format!("{url}/api/v1/user")).bearer_auth(tok).send().await?;
     if r.status().is_success() { Ok(()) } else { anyhow::bail!("verify {}", r.status()) }
 }
+
 async fn create_memo(url: &str, tok: &str, content: &str) -> Result<String> {
     #[derive(Serialize)] struct Req { content: String, visibility: String }
     #[derive(Deserialize)] struct Resp { name: String }
@@ -245,6 +240,7 @@ async fn create_memo(url: &str, tok: &str, content: &str) -> Result<String> {
     let v: Resp = serde_json::from_str(&txt)?;
     Ok(v.name)
 }
+
 async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
     if q.trim().is_empty() { return Ok("usage: /search <query>".into()); }
     let r = HTTP.get(format!("{url}/api/v1/memos?filter=content.contains(\"{}\")&pageSize=5", q.replace('\"', ""))).bearer_auth(tok).send().await?;
@@ -261,7 +257,82 @@ async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
     Ok(out)
 }
 
-// --- beautiful markdown fetchers — GitHub-style (headings, blockquotes, tables, badges, details) ---
+// --- memo digests ---
+
+async fn list_memos_filtered(url: &str, tok: &str, filter: &str) -> Result<Vec<serde_json::Value>> {
+    let req_url = format!("{url}/api/v1/memos?filter={}&pageSize=50&orderBy=update_time desc", urlencoding::encode(filter));
+    let r = HTTP.get(&req_url).bearer_auth(tok).send().await?;
+    let v: serde_json::Value = r.json().await?;
+    Ok(v.get("memos").and_then(|x| x.as_array()).cloned().unwrap_or_default())
+}
+
+async fn fetch_daily_digest(url: &str, tok: &str, date: &str) -> Result<String> {
+    let filter = format!("created_ts >= timestamp(\"{}T00:00:00Z\") && created_ts <= timestamp(\"{}T23:59:59Z\")", date, date);
+    let memos = list_memos_filtered(url, tok, &filter).await?;
+    if memos.is_empty() { return Ok(format!("## 📋 Daily Digest — {date}\n\n_No memos today._")); }
+    let mut out = format!("## 📋 Daily Digest — {date}\n\n**{} memo(s)**\n\n", memos.len());
+    for (i, m) in memos.iter().enumerate() {
+        let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
+        let name = m.get("name").and_then(|x| x.as_str()).unwrap_or("");
+        let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
+        let time = ts.get(11..16).unwrap_or("");
+        out.push_str(&format!("{}. `{time}` {} — _{}_\n", i + 1, name, chars(c, 80)));
+    }
+    out.push_str("\n#dailydigest");
+    Ok(out)
+}
+
+async fn fetch_weekly_digest(url: &str, tok: &str, start: &str, end: &str) -> Result<String> {
+    let filter = format!("created_ts >= timestamp(\"{start}T00:00:00Z\") && created_ts <= timestamp(\"{end}T23:59:59Z\")");
+    let memos = list_memos_filtered(url, tok, &filter).await?;
+    if memos.is_empty() { return Ok(format!("## 📋 Weekly Digest — {start} → {end}\n\n_No memos this week._")); }
+    let mut by_date: HashMap<String, Vec<&serde_json::Value>> = HashMap::new();
+    for m in &memos {
+        let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
+        let day = ts.get(..10).unwrap_or("unknown").to_string();
+        by_date.entry(day).or_default().push(m);
+    }
+    let mut out = format!("## 📋 Weekly Digest — {start} → {end}\n\n**{} memo(s)**\n\n", memos.len());
+    let mut days: Vec<&String> = by_date.keys().collect();
+    days.sort();
+    for day in days {
+        let day_memos = &by_date[day];
+        out.push_str(&format!("### {} ({})\n", day, day_memos.len()));
+        for m in day_memos {
+            let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
+            let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
+            let time = ts.get(11..16).unwrap_or("");
+            out.push_str(&format!("- `{time}` {}\n", chars(c, 80)));
+        }
+        out.push('\n');
+    }
+    out.push_str("#weeklydigest");
+    Ok(out)
+}
+
+async fn fetch_tasks(url: &str, tok: &str) -> Result<String> {
+    let filter = "content.contains(\"#tasks\")";
+    let memos = list_memos_filtered(url, tok, filter).await?;
+    if memos.is_empty() { return Ok("## ✅ Tasks\n\n_No task memos found (tagged with #tasks)._".into()); }
+    let mut out = format!("## ✅ Tasks\n\n**{} task(s)**\n\n", memos.len());
+    for (i, m) in memos.iter().enumerate() {
+        let c = m.get("content").and_then(|x| x.as_str()).unwrap_or("");
+        let name = m.get("name").and_then(|x| x.as_str()).unwrap_or("");
+        let ts = m.get("createTime").and_then(|x| x.as_str()).unwrap_or("");
+        let time = ts.get(..10).unwrap_or("");
+        out.push_str(&format!("{}. [ ] {} — _{}_\n", i + 1, name, chars(c, 80)));
+    }
+    out.push_str("\n#tasks");
+    Ok(out)
+}
+
+fn chars(s: &str, n: usize) -> String {
+    let clean: String = s.chars().filter(|c| *c != '\n').collect();
+    if clean.len() <= n { clean } else { format!("{}…", &clean[..n]) }
+}
+
+// --- external fetchers ---
+
 async fn fetch_quote() -> Result<String> {
     let v: serde_json::Value = if let Ok(j) = HTTP.get("https://dummyjson.com/quotes/random").send().await?.json::<serde_json::Value>().await {
         j
@@ -277,6 +348,7 @@ async fn fetch_quote() -> Result<String> {
         urlencoding::encode(a)
     ))
 }
+
 async fn fetch_hn() -> Result<String> {
     let ids: Vec<u64> = HTTP.get("https://hacker-news.firebaseio.com/v0/topstories.json").send().await?.json().await?;
     let mut out = String::from("# 🔥 Hacker News — Top 5\n\n| # | Title | Points | Comments | By |\n|---|---|---|---|---|\n");
@@ -297,6 +369,7 @@ async fn fetch_hn() -> Result<String> {
     out.push_str("\n> [View on HN](https://news.ycombinator.com) · #hn");
     Ok(out)
 }
+
 async fn fetch_weather(city: &str) -> Result<String> {
     let url = format!("http://wttr.in/{}?format=j1", city);
     let v: serde_json::Value = HTTP.get(url).send().await?.json().await?;
@@ -342,6 +415,7 @@ async fn fetch_weather(city: &str) -> Result<String> {
     out.push_str("#weather");
     Ok(out)
 }
+
 async fn fetch_define(word: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word)).send().await?.json().await?;
     let entry = &v[0];
@@ -375,6 +449,7 @@ async fn fetch_define(word: &str) -> Result<String> {
     out.push_str("#define");
     Ok(out)
 }
+
 async fn fetch_wiki(q: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", q)).send().await?.json().await?;
     let title = v["title"].as_str().unwrap_or(q);
@@ -386,11 +461,13 @@ async fn fetch_wiki(q: &str) -> Result<String> {
     out.push_str(&format!("{extract}\n\n> [Read more on Wikipedia]({url})\n\n#wiki"));
     Ok(out)
 }
+
 async fn fetch_cheat(q: &str) -> Result<String> {
     let txt = HTTP.get(format!("https://cheat.sh/{}?TQ", q)).send().await?.text().await?;
     let clean = txt.chars().take(1400).collect::<String>();
     Ok(format!("## 💻 cheat — `{q}`\n\n```sh\n{clean}\n```\n\n> [cheat.sh/{q}](https://cheat.sh/{q}) · #cheat"))
 }
+
 async fn fetch_gh(q: &str) -> Result<String> {
     let query = if q.trim().is_empty() { "stars:>50000" } else { q.trim() };
     let url = format!("https://api.github.com/search/repositories?q={}&sort=stars&per_page=5", urlencoding::encode(query));
@@ -408,5 +485,32 @@ async fn fetch_gh(q: &str) -> Result<String> {
         if !desc.is_empty() { out.push_str(&format!("|  | *{desc}* | | |\n")); }
     }
     out.push_str("\n> [View on GitHub](https://github.com/search?q=) · #gh");
+    Ok(out)
+}
+
+async fn fetch_fx(pair: &str) -> Result<String> {
+    let parts: Vec<&str> = pair.split('-').collect();
+    if parts.len() != 2 { return Ok("usage: /fx USD-KRW".into()); }
+    let base = parts[0].to_uppercase();
+    let quote = parts[1].to_uppercase();
+    let url = format!("https://open.er-api.com/v6/latest/{}", base);
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let rate = v["rates"][&quote].as_f64().ok_or_else(|| anyhow::anyhow!("pair not found"))?;
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    Ok(format!(
+        "## 💱 Exchange Rate\n\n**1 {base} = {rate:.4} {quote}**\n\n`{now}`\n\n> [Source: ExchangeRate API](https://open.er-api.com) · #fx"
+    ))
+}
+
+async fn fetch_read(url: &str) -> Result<String> {
+    if url.trim().is_empty() { return Ok("usage: /read <url>".into()); }
+    let jina_url = format!("https://r.jina.ai/{}", url);
+    let txt = HTTP.get(&jina_url).header("Accept", "text/markdown").send().await?.text().await?;
+    let clean = txt.chars().take(3800).collect::<String>();
+    let title = clean.lines().find(|l| l.starts_with("# ")).unwrap_or("").trim_start_matches("# ");
+    let body = clean.lines().skip_while(|l| l.starts_with("# ") || l.is_empty()).take(50).collect::<Vec<_>>().join("\n");
+    let mut out = format!("## 📰 Read — `{url}`\n\n");
+    if !title.is_empty() { out.push_str(&format!("**{title}**\n\n")); }
+    out.push_str(&format!("{body}\n\n> Summarized via [jina.ai](https://jina.ai/reader/) · #read"));
     Ok(out)
 }
