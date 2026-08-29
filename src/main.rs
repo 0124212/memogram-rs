@@ -853,7 +853,8 @@ async fn fetch_shah(q: &str) -> Result<String> {
     let topics: Vec<&serde_json::Value> = v["RelatedTopics"].as_array()
         .map(|a| a.iter().filter(|t| t.is_object() && t.get("Text").is_some()).take(5).collect())
         .unwrap_or_default();
-    if !topics.is_empty() {
+    let has_topics = !topics.is_empty();
+    if has_topics {
         out.push_str("*Related:*\n");
         for t in topics {
             let text = t["Text"].as_str().unwrap_or("");
@@ -861,7 +862,7 @@ async fn fetch_shah(q: &str) -> Result<String> {
             out.push_str(&format!("  • [{}]({})\n", esc(&text.chars().take(80).collect::<String>()), first_url));
         }
     }
-    if heading.is_empty() && abstract_text.is_empty() && topics.is_empty() {
+    if heading.is_empty() && abstract_text.is_empty() && !has_topics {
         out.push_str("_No results found._\n\n");
     }
     out.push_str(&format!("\n> [DuckDuckGo](https://duckduckgo.com/?q={}) · #shah", urlencoding::encode(q)));
