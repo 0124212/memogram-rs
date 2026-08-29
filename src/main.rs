@@ -444,7 +444,7 @@ async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body
 }
 
 async fn verify_token(url: &str, tok: &str) -> Result<()> {
-    let r = HTTP.get(format!("{url}/api/v1/user")).bearer_auth(tok).send().await?;
+    let r = HTTP.get(format!("{url}/api/v1/memos?pageSize=1")).bearer_auth(tok).send().await?;
     if r.status().is_success() { Ok(()) } else { anyhow::bail!("verify {}", r.status()) }
 }
 
