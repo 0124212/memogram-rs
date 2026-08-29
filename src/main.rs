@@ -215,8 +215,8 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
 // create memo as bot user (impersonate) and ping admin via @admin mention — also echo body to Telegram (markdown-friendly)
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
-    // markdown-friendly: @admin on own line, body as markdown, footer as subtle italic
-    let content = format!("@{}\n\n{}\n\n— _via {} · {}_", app.admin_username, body, bot_name, msg.from.as_ref().and_then(|u| u.username.as_deref()).unwrap_or("telegram"));
+    // markdown-friendly: @admin on own line, body as markdown, footer as subtle italic — via asher
+    let content = format!("@{}\n\n{}\n\n— _via {} · asher_", app.admin_username, body, bot_name);
     let tok = if let Some(t) = bot_tok { t } else {
         let fallback = { app.store.read().await.get(&telegram_id).cloned() };
         let Some(f) = fallback else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
