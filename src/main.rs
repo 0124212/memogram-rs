@@ -43,6 +43,16 @@ enum Command {
     Base64(String),
     Json(String),
     Remind(String),
+    Portfolio(String),
+    Alerts(String),
+    Markets,
+    Arxiv(String),
+    Devto,
+    Ph,
+    Inbox,
+    Undo,
+    Pin,
+    Note(String),
 }
 
 #[derive(Clone)]
@@ -93,6 +103,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "search".into(), description: "search memos".into() },
         teloxide::types::BotCommand { command: "hn".into(), description: "HackerNews top 5".into() },
         teloxide::types::BotCommand { command: "lobsters".into(), description: "Lobste.rs stories".into() },
+        teloxide::types::BotCommand { command: "arxiv".into(), description: "arXiv latest papers".into() },
+        teloxide::types::BotCommand { command: "devto".into(), description: "dev.to top posts".into() },
+        teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt daily".into() },
         teloxide::types::BotCommand { command: "weather".into(), description: "weather <city>".into() },
         teloxide::types::BotCommand { command: "forecast".into(), description: "7-day forecast".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
@@ -102,6 +115,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "fx".into(), description: "fx <pair>".into() },
         teloxide::types::BotCommand { command: "stock".into(), description: "stock <ticker>".into() },
         teloxide::types::BotCommand { command: "crypto".into(), description: "crypto <coin>".into() },
+        teloxide::types::BotCommand { command: "portfolio".into(), description: "track holdings".into() },
+        teloxide::types::BotCommand { command: "alerts".into(), description: "price alerts".into() },
+        teloxide::types::BotCommand { command: "markets".into(), description: "market indices".into() },
         teloxide::types::BotCommand { command: "translate".into(), description: "translate text".into() },
         teloxide::types::BotCommand { command: "color".into(), description: "color <hex>".into() },
         teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
@@ -109,6 +125,10 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "recent".into(), description: "last 20 memos".into() },
         teloxide::types::BotCommand { command: "count".into(), description: "count memos".into() },
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
+        teloxide::types::BotCommand { command: "inbox".into(), description: "untagged memos".into() },
+        teloxide::types::BotCommand { command: "undo".into(), description: "delete last memo".into() },
+        teloxide::types::BotCommand { command: "pin".into(), description: "pin/unpin last memo".into() },
+        teloxide::types::BotCommand { command: "note".into(), description: "note #tag text".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "password".into(), description: "generate password".into() },
         teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
@@ -211,6 +231,42 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Base64(args) => { let txt = gen_base64(&args); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Json(text) => { let txt = gen_json_pretty(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Remind(args) => { let txt = set_reminder(&args, &app).await; bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
+        Command::Portfolio(args) => {
+            let txt = handle_portfolio(&args, tid, &app.store_path).await;
+            bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
+        }
+        Command::Alerts(args) => {
+            let txt = handle_alerts(&args, &app).await;
+            bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
+        }
+        Command::Markets => { let txt = fetch_markets().await.unwrap_or_else(|e| format!("markets err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Arxiv(topic) => { let txt = fetch_arxiv(&topic).await.unwrap_or_else(|e| format!("arxiv err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Devto => { let txt = fetch_devto().await.unwrap_or_else(|e| format!("devto err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Inbox => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_inbox(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("inbox err: {e}"));
+            create_as_bot(&bot, &msg, &app, "today", &txt, tid).await?;
+        }
+        Command::Undo => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = undo_last_memo(&app.memos_url, &tok).await;
+            bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
+        }
+        Command::Pin => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = pin_last_memo(&app.memos_url, &tok).await;
+            bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
+        }
+        Command::Note(content) => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = create_note(&app.memos_url, &tok, &content).await;
+            bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
+        }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -953,6 +1009,338 @@ async fn set_reminder(args: &str, _app: &App) -> String {
     });
     let fire_at = Local::now() + chrono::Duration::minutes(mins as i64);
     format!("⏰ *Reminder set*\n\n`{mins} min` — {msg_text}\n\n> fires at {} · #reminder", fire_at.format("%H:%M"))
+}
+
+// --- money: portfolio ---
+
+fn portfolio_path(store_path: &str) -> String {
+    let dir = std::path::Path::new(store_path).parent().unwrap_or(std::path::Path::new("."));
+    dir.join("portfolio.json").to_string_lossy().to_string()
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct Holding { ticker: String, qty: f64, avg_price: f64 }
+
+async fn load_portfolio(store_path: &str) -> Vec<Holding> {
+    let p = portfolio_path(store_path);
+    tokio::fs::read_to_string(&p).await.ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+async fn save_portfolio(store_path: &str, holdings: &[Holding]) {
+    let p = portfolio_path(store_path);
+    if let Ok(txt) = serde_json::to_string_pretty(holdings) { let _ = tokio::fs::write(p, txt).await; }
+}
+
+async fn handle_portfolio(args: &str, tid: i64, store_path: &str) -> String {
+    let parts: Vec<&str> = args.trim().splitn(3, ' ').collect();
+    let sub = parts.first().unwrap_or(&"list");
+    let mut holdings = load_portfolio(store_path).await;
+
+    match *sub {
+        "add" => {
+            let ticker = parts.get(1).unwrap_or(&"").trim().to_uppercase();
+            let qty: f64 = parts.get(2).unwrap_or(&"1").trim().parse().unwrap_or(1.0);
+            if ticker.is_empty() { return "usage: `/portfolio add AAPL 10`".into(); }
+            holdings.retain(|h| h.ticker != ticker);
+            let price = fetch_stock_price(&ticker).await.unwrap_or(0.0);
+            holdings.push(Holding { ticker: ticker.clone(), qty, avg_price: price });
+            save_portfolio(store_path, &holdings).await;
+            format!("✅ *Added* `{ticker}` × {qty} @ ${price:.2}")
+        }
+        "remove" | "rm" => {
+            let ticker = parts.get(1).unwrap_or(&"").trim().to_uppercase();
+            if ticker.is_empty() { return "usage: `/portfolio rm AAPL`".into(); }
+            let before = holdings.len();
+            holdings.retain(|h| h.ticker != ticker);
+            if holdings.len() == before { return format!("❌ `{ticker}` not found"); }
+            save_portfolio(store_path, &holdings).await;
+            format!("🗑 Removed `{ticker}`")
+        }
+        _ => {
+            if holdings.is_empty() { return "📊 *Portfolio*\n\n_empty — `/portfolio add AAPL 10`_".into(); }
+            let mut total_val = 0.0;
+            let mut total_cost = 0.0;
+            let mut lines = String::from("```\nTicker  Qty     Price      Value      P&L\n");
+            lines.push_str("────── ─────── ────────── ────────── ──────────\n");
+            for h in &holdings {
+                let price = fetch_stock_price(&h.ticker).await.unwrap_or(h.avg_price);
+                let val = price * h.qty;
+                let cost = h.avg_price * h.qty;
+                let pnl = val - cost;
+                let sign = if pnl >= 0.0 { "+" } else { "" };
+                lines.push_str(&format!("{:<6} {:>6.1}  ${:>8.2}  ${:>8.2}  {sign}${:.2}\n", h.ticker, h.qty, price, val, pnl));
+                total_val += val;
+                total_cost += cost;
+            }
+            lines.push_str("────── ─────── ────────── ────────── ──────────\n");
+            let total_pnl = total_val - total_cost;
+            let sign = if total_pnl >= 0.0 { "+" } else { "" };
+            lines.push_str(&format!("Total           ${:>8.2}  {sign}${:.2}\n```", total_val, total_pnl));
+            format!("*📊 Portfolio*\n\n{lines}\n\n> #portfolio")
+        }
+    }
+}
+
+async fn fetch_stock_price(ticker: &str) -> Result<f64> {
+    let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}?interval=1d&range=1d", ticker);
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "Mozilla/5.0").send().await?.json().await?;
+    let price = v["chart"]["result"][0]["meta"]["regularMarketPrice"].as_f64().ok_or_else(|| anyhow::anyhow!("not found"))?;
+    Ok(price)
+}
+
+// --- money: alerts ---
+
+fn alerts_path(store_path: &str) -> String {
+    let dir = std::path::Path::new(store_path).parent().unwrap_or(std::path::Path::new("."));
+    dir.join("alerts.json").to_string_lossy().to_string()
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct PriceAlert { ticker: String, above: Option<f64>, below: Option<f64>, triggered: bool }
+
+async fn load_alerts(store_path: &str) -> Vec<PriceAlert> {
+    let p = alerts_path(store_path);
+    tokio::fs::read_to_string(&p).await.ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
+
+async fn save_alerts(store_path: &str, alerts: &[PriceAlert]) {
+    let p = alerts_path(store_path);
+    if let Ok(txt) = serde_json::to_string_pretty(alerts) { let _ = tokio::fs::write(p, txt).await; }
+}
+
+async fn handle_alerts(args: &str, app: &App) -> String {
+    let parts: Vec<&str> = args.trim().splitn(4, ' ').collect();
+    let sub = parts.first().unwrap_or(&"list");
+    let mut alerts = load_alerts(&app.store_path).await;
+
+    match *sub {
+        "add" => {
+            let ticker = parts.get(1).unwrap_or(&"").trim().to_uppercase();
+            let price: f64 = parts.get(2).unwrap_or(&"").trim().parse().unwrap_or(0.0);
+            let direction = parts.get(3).unwrap_or(&"above").trim();
+            if ticker.is_empty() || price == 0.0 { return "usage: `/alerts add AAPL 200 above`".into(); }
+            alerts.retain(|a| !(a.ticker == ticker && ((direction == "above" && a.above.is_some()) || (direction == "below" && a.below.is_some()))));
+            if direction == "below" {
+                alerts.push(PriceAlert { ticker: ticker.clone(), above: None, below: Some(price), triggered: false });
+            } else {
+                alerts.push(PriceAlert { ticker: ticker.clone(), above: Some(price), below: None, triggered: false });
+            }
+            save_alerts(&app.store_path, &alerts).await;
+            format!("🔔 *Alert set*\n\n`{ticker}` {direction} ${price:.2}")
+        }
+        "rm" | "remove" => {
+            let ticker = parts.get(1).unwrap_or(&"").trim().to_uppercase();
+            if ticker.is_empty() { return "usage: `/alerts rm AAPL`".into(); }
+            let before = alerts.len();
+            alerts.retain(|a| a.ticker != ticker);
+            if alerts.len() == before { return format!("❌ no alert for `{ticker}`"); }
+            save_alerts(&app.store_path, &alerts).await;
+            format!("🗑 Removed alert for `{ticker}`")
+        }
+        _ => {
+            if alerts.is_empty() { return "🔔 *Price Alerts*\n\n_none — `/alerts add AAPL 200 above`_".into(); }
+            let mut out = String::from("🔔 *Price Alerts*\n\n");
+            for a in &alerts {
+                let cond = if let Some(ab) = a.above { format!("above ${ab:.2}") } else if let Some(bw) = a.below { format!("below ${bw:.2}") } else { "?".into() };
+                let status = if a.triggered { "✅ fired" } else { "⏳ waiting" };
+                out.push_str(&format!("`{}` — {cond} · {status}\n", a.ticker));
+            }
+            out.push_str("\n> /alerts rm <ticker> to remove · #alerts");
+            out
+        }
+    }
+}
+
+// --- money: markets ---
+
+async fn fetch_markets() -> Result<String> {
+    let indices = vec![
+        ("^GSPC", "S&P 500"),
+        ("^IXIC", "NASDAQ"),
+        ("^DJI", "DOW"),
+        ("^RUT", "Russell 2000"),
+        ("BTC-USD", "Bitcoin"),
+        ("ETH-USD", "Ethereum"),
+    ];
+    let mut out = String::from("*📈 Markets*\n\n```\nIndex             Price          Change\n");
+    out.push_str("───────────────── ────────────── ──────────\n");
+    for (ticker, name) in indices {
+        match fetch_stock_price(ticker).await {
+            Ok(price) => {
+                let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d");
+                let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "Mozilla/5.0").send().await?.json().await?;
+                let prev = v["chart"]["result"][0]["meta"]["chartPreviousClose"].as_f64().unwrap_or(price);
+                let change = price - prev;
+                let pct = if prev != 0.0 { change / prev * 100.0 } else { 0.0 };
+                let sign = if change >= 0.0 { "+" } else { "" };
+                let price_str = if price >= 1000.0 { format!("{:>12.0}", price) } else { format!("{:>12.2}", price) };
+                out.push_str(&format!("{name:<17} {price_str}   {sign}{pct:.2}%\n"));
+            }
+            Err(_) => { out.push_str(&format!("{name:<17} {'>12':>12}   N/A\n")); }
+        }
+    }
+    out.push_str("```\n\n");
+    out.push_str(&format!("`{}` · #markets", Local::now().format("%Y-%m-%d %H:%M")));
+    Ok(out)
+}
+
+// --- news: arxiv ---
+
+async fn fetch_arxiv(topic: &str) -> Result<String> {
+    let query = if topic.trim().is_empty() { "cat:cs.AI".to_string() } else { format!("all:{}", urlencoding::encode(topic)) };
+    let url = format!("http://export.arxiv.org/api/query?search_query={}&sortBy=submittedDate&sortOrder=descending&max_results=5", query);
+    let txt = HTTP.get(&url).send().await?.text().await?;
+
+    let mut out = String::from("*📄 arXiv — Latest*\n\n");
+    let mut current = String::new();
+    let mut in_entry = false;
+
+    for line in txt.lines() {
+        if line.contains("<entry>") { in_entry = true; current.clear(); }
+        if in_entry { current.push_str(line); current.push('\n'); }
+        if line.contains("</entry>") {
+            in_entry = false;
+            let title = extract_xml(&current, "title").replace('\n', " ").trim().to_string();
+            let id_url = extract_xml(&current, "id");
+            let summary = extract_xml(&current, "summary").chars().take(120).collect::<String>();
+            let authors = extract_xml(&current, "name");
+            let published = extract_xml(&current, "published").chars().take(10).collect::<String>();
+            if !title.is_empty() {
+                out.push_str(&format!("*{}*\n[↗]({})\n   {} · `{}`\n   _{}_\n\n", esc(&title), id_url, esc(&authors), published, esc(&summary)));
+            }
+        }
+    }
+    if out.len() < 30 { out.push_str("_No results found._"); }
+    out.push_str("\n> [arxiv.org](https://arxiv.org) · #arxiv");
+    Ok(out)
+}
+
+fn extract_xml(xml: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    if let Some(start) = xml.find(&open) {
+        let rest = &xml[start + open.len()..];
+        if let Some(end) = rest.find(&close) { return rest[..end].trim().to_string(); }
+    }
+    String::new()
+}
+
+// --- news: dev.to ---
+
+async fn fetch_devto() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://dev.to/api/articles?per_page=7&top=1").header("User-Agent", "memogram-rs").send().await?.json().await?;
+    let articles = v.as_array().ok_or_else(|| anyhow::anyhow!("no articles"))?;
+    let mut out = String::from("*📝 dev.to — Top Posts*\n\n");
+    for (i, a) in articles.iter().take(7).enumerate() {
+        let title = a["title"].as_str().unwrap_or("?");
+        let url = a["url"].as_str().unwrap_or("");
+        let reactions = a["positive_reactions_count"].as_u64().unwrap_or(0);
+        let comments = a["comments_count"].as_u64().unwrap_or(0);
+        let tags: Vec<&str> = a["tag_list"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).take(3).collect()).unwrap_or_default();
+        let tag_str = tags.iter().map(|t| format!("`#{t}`")).collect::<Vec<_>>().join(" ");
+        out.push_str(&format!("*{}.* [{}]({})\n   ❤️ {reactions} · 💬 {comments} · {tag_str}\n\n", i + 1, esc(title), url));
+    }
+    out.push_str("> [dev.to](https://dev.to) · #devto");
+    Ok(out)
+}
+
+// --- news: product hunt ---
+
+async fn fetch_ph() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://www.producthunt.com/frontend/graphql")
+        .header("User-Agent", "Mozilla/5.0")
+        .header("Content-Type", "application/json")
+        .body(serde_json::json!({"query":"query{posts(order:RANKING,first:5){edges{node{name>tagline,url votesCount commentsCount topics{edges{node{name}}}}}}"}).to_string())
+        .send().await?.json().await?;
+
+    let edges = v["data"]["posts"]["edges"].as_array().ok_or_else(|| anyhow::anyhow!("no posts"))?;
+    let mut out = String::from("*🚀 Product Hunt — Today*\n\n");
+    for (i, edge) in edges.iter().take(5).enumerate() {
+        let node = &edge["node"];
+        let name = node["name"].as_str().unwrap_or("?");
+        let tagline = node["tagline"].as_str().unwrap_or("");
+        let url = node["url"].as_str().unwrap_or("");
+        let votes = node["votesCount"].as_u64().unwrap_or(0);
+        let comments = node["commentsCount"].as_u64().unwrap_or(0);
+        let topics: Vec<&str> = node["topics"]["edges"].as_array().map(|a| a.iter().filter_map(|e| e["node"]["name"].as_str()).take(2).collect()).unwrap_or_default();
+        let topic_str = topics.iter().map(|t| format!("`{t}`")).collect::<Vec<_>>().join(" ");
+        out.push_str(&format!("*{}.* [{}]({})\n   👍 {votes} · 💬 {comments} · {tagline}\n   {topic_str}\n\n", i + 1, esc(name), url));
+    }
+    out.push_str("> [producthunt.com](https://www.producthunt.com) · #ph");
+    Ok(out)
+}
+
+// --- today: inbox ---
+
+async fn fetch_inbox(memos_url: &str, token: &str) -> Result<String> {
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let untagged: Vec<&serde_json::Value> = memos.iter().filter(|m| {
+        m["tags"].as_array().map(|t| t.is_empty()).unwrap_or(true)
+    }).collect();
+    if untagged.is_empty() { return "📥 *Inbox*\n\n_all memos are tagged ✅_".into(); }
+    let mut out = format!("📥 *Inbox* — {} untagged\n\n", untagged.len());
+    for m in untagged.iter().take(15) {
+        let name = m["name"].as_str().unwrap_or("?");
+        let content = m["content"].as_str().unwrap_or("").chars().take(80).collect::<String>();
+        let time = m["createTime"].as_str().unwrap_or("");
+        out.push_str(&format!("*{name}* — `{} chars`\n   _{}_\n\n", content.len(), esc(&content)));
+    }
+    out.push_str("> tag memos with `/note #tag text` · #inbox");
+    Ok(out)
+}
+
+// --- today: undo ---
+
+async fn undo_last_memo(memos_url: &str, token: &str) -> String {
+    let v: serde_json::Value = match HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=1"))
+        .header("Authorization", format!("Bearer {token}")).send().await {
+        Ok(r) => match r.json().await { Ok(v) => v, Err(_) => return "❌ failed to fetch".into() },
+        Err(_) => return "❌ network error".into(),
+    };
+    let memos = v["memos"].as_array();
+    let Some(first) = memos.and_then(|a| a.first()) else { return "❌ no memos to undo".into(); };
+    let name = first["name"].as_str().unwrap_or("");
+    let content = first["content"].as_str().unwrap_or("").chars().take(60).collect::<String>();
+    match HTTP.delete(format!("{memos_url}/api/v1/{name}")).header("Authorization", format!("Bearer {token}")).send().await {
+        Ok(r) if r.status().is_success() => format!("🗑 *Deleted*\n\n`{name}`\n\n_{esc(&content)}_"),
+        _ => "❌ delete failed".into(),
+    }
+}
+
+// --- today: pin ---
+
+async fn pin_last_memo(memos_url: &str, token: &str) -> String {
+    let v: serde_json::Value = match HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=1"))
+        .header("Authorization", format!("Bearer {token}")).send().await {
+        Ok(r) => match r.json().await { Ok(v) => v, Err(_) => return "❌ failed to fetch".into() },
+        Err(_) => return "❌ network error".into(),
+    };
+    let memos = v["memos"].as_array();
+    let Some(first) = memos.and_then(|a| a.first()) else { return "❌ no memos to pin".into(); };
+    let name = first["name"].as_str().unwrap_or("");
+    let already = first["pinned"].as_bool().unwrap_or(false);
+    let new_val = !already;
+    match HTTP.patch(format!("{memos_url}/api/v1/{name}"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({"pinned": new_val}))
+        .send().await {
+        Ok(r) if r.status().is_success() => {
+            if new_val { format!("📌 *Pinned*\n\n`{name}`") } else { format!("📌 *Unpinned*\n\n`{name}`") }
+        }
+        _ => "❌ pin failed".into(),
+    }
+}
+
+// --- today: note ---
+
+async fn create_note(memos_url: &str, token: &str, content: &str) -> String {
+    if content.trim().is_empty() { return "usage: `/note #tag my quick thought`".into(); }
+    match create_memo(memos_url, token, content).await {
+        Ok(name) => format!("✅ *Saved*\n\n`{name}`\n\n_{esc(&content.chars().take(60).collect::<String>())}_"),
+        Err(e) => format!("❌ save err: {e}"),
+    }
 }
 
 
