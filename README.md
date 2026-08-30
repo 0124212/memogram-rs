@@ -1,5 +1,7 @@
 # memogram-rs
 
+[![Rust](https://img.shields.io/badge/rust-%23000.svg?style=flat-square&logo=rust&logoColor=white)](#) [![Telegram](https://img.shields.io/badge/telegram-bridge-26A5E4.svg?style=flat-square&logo=telegram&logoColor=white)](#) [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
+
 Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker.
 
 Keeps memogram defaults (inbox-ping, Telegram file forwarding) and adds 48 bot commands across 11 topic buckets.
