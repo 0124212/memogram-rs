@@ -1,104 +1,142 @@
 # memogram-rs
 
-Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker.
+Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker. **73 commands, 11 buckets, ~10MB RSS.**
 
-Keeps memogram defaults (inbox-ping, Telegram file forwarding) and adds 73 bot commands across 11 topic buckets.
-
-## Architecture
+## Cheatsheet
 
 ```
-Telegram (@memomommy_bot)
-    ↓
-memogram-rs (Rust binary, ~10MB RSS)
-    ↓
-Memos API (11 topic buckets)
+/start <pat>        Link account           /search <q>       Search memos
+/help               Show commands          /recent           Last 20 memos
+/inbox              Untagged memos         /tags             List all tags
+/count <tag>        Count by tag           /undo             Delete last
+/pin                Pin/unpin last         /note <text>      Quick note
 ```
 
-Each bucket is a separate Memos user with its own personal access token. Commands auto-tag memos with topic-specific hashtags.
+### Research
+```
+/define <word>       Dictionary             /wiki <q>         Wikipedia
+/cheat <q>           Cheat sheet            /translate <text>  Translate
+/etymology <word>    Word origin            /synonym <word>    Synonyms
+/deepresearch <q>    Multi-source           /philosophy        Random quote
+```
 
-## 11 Topic Buckets
-
-| Bucket | Purpose | Tags |
-|--------|---------|------|
-| `inbox` | Default memo capture | `#inbox` |
-| `news` | HN, arXiv, Dev.to, Product Hunt | `#hn` `#arxiv` `#devto` `#ph` |
-| `dev` | GitHub, npm, PyPI, crates, containers | `#gh` `#npm` `#pypi` `#crates` `#ops` |
-| `learn` | Wiki, definitions, cheat sheets, reading | `#wiki` `#define` `#cheat` `#read` `#deepresearch` |
-| `bio` | Biology, medicine, PubMed, genomes | `#pubmed` `#drug` `#genome` `#protein` |
-| `money` | FX rates, stocks, crypto | `#fx` `#stock` `#crypto` |
-| `life` | Stoicism, mood, gratitude, habits | `#stoic` `#mood` `#gratitude` `#habit` |
-| `planning` | Calendar, tasks, reminders | `#calendar` `#tasks` |
-| `daily` | Weekly reviews, today's notes | `#week` `#today` `#reminders` |
-| `stoic` | Philosophy quotes | `#quote` |
-| `weather` | Forecasts, sunrise/sunset | `#weather` `#sunrise` |
-
-## 73 Commands
-
-### Core
-`/start` `/help` `/inbox` `/recent` `/search <q>` `/tags` `/count <filter>` `/undo` `/pin`
-
-### Research & Reference
-`/define <word>` `/wiki <q>` `/cheat <q>` `/translate <text>` `/deepresearch <q>` `/etymology <word>` `/synonym <word>` `/philosophy <q>`
-
-### News & Discovery
-`/hn` `/arxiv <q>` `/devto` `/ph`
+### News
+```
+/hn                  HackerNews top 5       /arxiv <q>        arXiv papers
+/devto               dev.to top             /ph               Product Hunt
+```
 
 ### Finance
-`/fx <pair>` `/stock <ticker>` `/crypto <coin>` `/markets` `/portfolio <ticker>` `/alerts <ticker>`
+```
+/fx <pair>           Exchange rate          /stock <ticker>   Stock price
+/crypto <coin>       Crypto price           /markets          Market indices
+/portfolio <t> <n>   Track holdings         /alerts <t> <p>   Price alert
+```
 
 ### Science & Bio
-`/pubmed <q>` `/drug <name>` `/genome <gene>` `/protein <id>` `/mood <text>` `/gratitude <text>` `/habit <text>`
+```
+/pubmed <q>          PubMed papers          /drug <name>      Drug info
+/genome <gene>       Gene search            /protein <id>     Protein info
+/mood <note>         Log mood               /gratitude <n>    Gratitude
+/habit <task>        Track habit            /habit <task>     Track habit
+```
 
-### Dev & Infra
-`/gh <q>` `/npm <pkg>` `/pypi <pkg>` `/crates <pkg>` `/containers` `/stackoverflow <q>`
+### Dev
+```
+/gh <q>              GitHub search          /npm <pkg>        NPM info
+/pypi <pkg>          PyPI info              /crates <pkg>     crates.io info
+/containers          Docker health          /stackoverflow <q> SO search
+```
+
+### Weather
+```
+/weather <city>      Current + 3-day        /forecast <city>  7-day forecast
+/sunrise             Sunrise/sunset         /airquality <l>   AQI
+```
 
 ### Utilities
-`/weather <city>` `/forecast <city>` `/sunrise` `/airquality` `/math <expr>` `/color <hex>` `/ip` `/qr <text>` `/hash <text>` `/base64 <text>` `/json <text>` `/uuid` `/pass`
+```
+/math <expr>         Evaluate math          /color <hex>      Color preview
+/ip <addr>           IP lookup              /qr <text>        QR code
+/hash <text>         SHA-256                /base64 <text>    Encode/decode
+/json <text>         Pretty JSON            /uuid             Generate UUID
+/pass <len>          Password               /remind <m> <msg> Reminder
+```
 
 ### Quick Capture
-`/note <text>` `/meeting <text>` `/project <text>` `/recipe <text>` `/book <text>` `/todo <text>` `/list <text>` `/clip <text>` `/proscons <text>` `/flashcard <text>` `/remind <text>`
+```
+/meeting <text>      Meeting notes          /project <text>   Project doc
+/recipe <text>       Recipe card            /book <text>      Book note
+/todo <text>         Checklist              /list <text>      Bulleted list
+/clip <text>         Bookmark               /proscons <t>     Pros vs cons
+/flashcard <q> | <a> Flashcard              /remind <m> <msg> Reminder
+```
 
 ### Stoic
-`/meditation <note>` `/affirmation <note>` `/reflection <note>` `/wisdom` `/journal <note>`
+```
+/meditation <n>      Log meditation         /affirmation <n>  Affirmation
+/reflection <n>      Reflection             /wisdom           Stoic quote
+/journal <note>      Journal entry
+```
 
 ### Planning
-`/goal <goal>` `/deadline <date> <task>` `/plan <text>` `/review <text>` `/priority <level> <task>`
+```
+/goal <goal>         Set goal               /deadline <d> <t> Track deadline
+/plan <text>         Daily plan             /review <text>    Weekly review
+/priority <l> <t>    Set priority
+```
 
 ### Inbox
-`/idea <text>` `/braindump <text>` `/link <url> <desc>` `/snippet <code>` `/save <text>`
+```
+/idea <text>         Capture idea           /braindump <t>    Thought dump
+/link <url> <desc>   Save link              /snippet <code>   Code snippet
+/save <text>         Save anything
+```
 
 ### Daily
-`/morning <text>` `/evening <text>` `/checkin <text>` `/log <text>` `/summary <text>`
+```
+/morning <text>      Morning check-in       /evening <text>   Evening reflection
+/checkin <text>      Daily check-in         /log <text>       Daily log
+/summary <text>      Day summary
+```
 
 ### Life
-`/sleep <hours> <quality>` `/energy <level> <note>` `/exercise <activity> <duration>` `/water <amount> <note>` `/read <title> <author>`
+```
+/sleep <hrs> <q>     Log sleep              /energy <1-10>    Log energy
+/exercise <a> <d>    Log exercise           /water <amt>      Log water
+/read <title> <a>    Log reading
+```
+
+## 11 Buckets
+
+| Bucket | Purpose |
+|--------|---------|
+| `inbox` | Default capture |
+| `news` | HN, arXiv, Dev.to, PH |
+| `dev` | GitHub, npm, PyPI, crates |
+| `learn` | Wiki, definitions, research |
+| `bio` | PubMed, drugs, genomes |
+| `money` | FX, stocks, crypto |
+| `life` | Mood, gratitude, habits |
+| `planning` | Goals, deadlines, reviews |
+| `daily` | Check-ins, logs, summaries |
+| `stoic` | Philosophy, meditation |
+| `weather` | Forecasts, air quality |
 
 ## Quick start
 
 ```bash
-cp .env.example .env  # set MEMOS_URL, BOT_TOKEN, BOT_TOKENS_JSON
+cp .env.example .env
 cargo run --release
-# or
-docker build -t memogram-rs . && docker run --env-file .env memogram-rs
 ```
 
 ## Env
 
-- `MEMOS_URL` — your Memos instance URL
-- `BOT_TOKEN` — Telegram bot token
-- `BOT_TOKENS_JSON` — JSON map of bucket → Memos PAT
-- `ALLOWED_USERNAMES` — comma-separated Telegram usernames (optional)
-- `DATA` — path to data directory for inbox state
+`MEMOS_URL` `BOT_TOKEN` `BOT_TOKENS_JSON` `ALLOWED_USERNAMES` `DATA`
 
-## Tech Stack
+## Tech
 
-- **Runtime:** tokio async
-- **Telegram:** teloxide
-- **HTTP:** reqwest (rustls)
-- **XML parsing:** quick-xml (PubMed, arXiv)
-- **Storage:** Memos API (no local DB)
-
-Built with `teloxide`, `reqwest` (rustls), `tokio`.
+teloxide · reqwest (rustls) · tokio · quick-xml
 
 ## License
 
