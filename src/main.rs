@@ -2,6 +2,7 @@ use anyhow::Result;
 use base64::Engine;
 use chrono::Local;
 use once_cell::sync::Lazy;
+use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, env, sync::Arc};
@@ -62,6 +63,49 @@ enum Command {
     Clip(String),
     Proscons(String),
     Flashcard(String),
+    Meditation(String),
+    Affirmation(String),
+    Reflection(String),
+    Wisdom,
+    Journal(String),
+    Goal(String),
+    Deadline(String),
+    Plan(String),
+    Review(String),
+    Priority(String),
+    Idea(String),
+    Braindump(String),
+    Link(String),
+    Snippet(String),
+    Save(String),
+    Morning(String),
+    Evening(String),
+    Checkin(String),
+    Log(String),
+    Summary(String),
+    Sleep(String),
+    Energy(String),
+    Exercise(String),
+    Water(String),
+    Read(String),
+    Pubmed(String),
+    Drug(String),
+    Genome(String),
+    Protein(String),
+    Stoic,
+    Mood(String),
+    Gratitude(String),
+    Habit(String),
+    Npm(String),
+    Pypi(String),
+    Crates(String),
+    Stackoverflow(String),
+    Airquality(String),
+    Sunrise(String),
+    Math(String),
+    Etymology(String),
+    Synonym(String),
+    Philosophy,
 }
 
 #[derive(Clone)]
@@ -174,6 +218,31 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "etymology".into(), description: "word etymology".into() },
         teloxide::types::BotCommand { command: "synonym".into(), description: "find synonyms".into() },
         teloxide::types::BotCommand { command: "philosophy".into(), description: "philosophy quote".into() },
+        teloxide::types::BotCommand { command: "meditation".into(), description: "log meditation".into() },
+        teloxide::types::BotCommand { command: "affirmation".into(), description: "log affirmation".into() },
+        teloxide::types::BotCommand { command: "reflection".into(), description: "log reflection".into() },
+        teloxide::types::BotCommand { command: "wisdom".into(), description: "random wisdom".into() },
+        teloxide::types::BotCommand { command: "journal".into(), description: "journal entry".into() },
+        teloxide::types::BotCommand { command: "goal".into(), description: "set a goal".into() },
+        teloxide::types::BotCommand { command: "deadline".into(), description: "track deadline".into() },
+        teloxide::types::BotCommand { command: "plan".into(), description: "daily/weekly plan".into() },
+        teloxide::types::BotCommand { command: "review".into(), description: "weekly review".into() },
+        teloxide::types::BotCommand { command: "priority".into(), description: "set priority".into() },
+        teloxide::types::BotCommand { command: "idea".into(), description: "capture idea".into() },
+        teloxide::types::BotCommand { command: "braindump".into(), description: "quick thought dump".into() },
+        teloxide::types::BotCommand { command: "link".into(), description: "save link".into() },
+        teloxide::types::BotCommand { command: "snippet".into(), description: "code snippet".into() },
+        teloxide::types::BotCommand { command: "save".into(), description: "save anything".into() },
+        teloxide::types::BotCommand { command: "morning".into(), description: "morning check-in".into() },
+        teloxide::types::BotCommand { command: "evening".into(), description: "evening reflection".into() },
+        teloxide::types::BotCommand { command: "checkin".into(), description: "daily check-in".into() },
+        teloxide::types::BotCommand { command: "log".into(), description: "daily log".into() },
+        teloxide::types::BotCommand { command: "summary".into(), description: "day summary".into() },
+        teloxide::types::BotCommand { command: "sleep".into(), description: "log sleep".into() },
+        teloxide::types::BotCommand { command: "energy".into(), description: "log energy".into() },
+        teloxide::types::BotCommand { command: "exercise".into(), description: "log exercise".into() },
+        teloxide::types::BotCommand { command: "water".into(), description: "log water intake".into() },
+        teloxide::types::BotCommand { command: "read".into(), description: "log reading".into() },
     ]).await;
 
     let handler = dptree::entry()
@@ -330,6 +399,31 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Etymology(word) => { let txt = fetch_etymology(&word).await.unwrap_or_else(|e| format!("etymology err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Synonym(word) => { let txt = fetch_synonym(&word).await.unwrap_or_else(|e| format!("synonym err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Philosophy => { let txt = fetch_philosophy_quote().await.unwrap_or_else(|e| format!("philosophy err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Affirmation(note) => { let txt = create_affirmation(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Reflection(note) => { let txt = create_reflection(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Wisdom => { let txt = fetch_wisdom().await.unwrap_or_else(|e| format!("wisdom err: {e}")); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Journal(note) => { let txt = create_journal(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Goal(args) => { let txt = create_goal(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Deadline(args) => { let txt = create_deadline(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Plan(args) => { let txt = create_plan(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Review(args) => { let txt = create_review(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Priority(args) => { let txt = create_priority(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Idea(args) => { let txt = create_idea(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Link(args) => { let txt = create_link(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Snippet(args) => { let txt = create_snippet(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Save(args) => { let txt = create_save(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Morning(args) => { let txt = create_morning(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Checkin(args) => { let txt = create_checkin(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Read(args) => { let txt = create_read(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
         
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
@@ -581,37 +675,35 @@ async fn fetch_weather(city: &str) -> Result<String> {
 }
 
 async fn fetch_define(word: &str) -> Result<String> {
-    let v: serde_json::Value = HTTP.get(format!("https://api.dictionaryapi.dev/api/v2/entries/en/{}", word)).send().await?.json().await?;
-    let entry = &v[0];
-    let phon = entry["phonetic"].as_str().or(entry["phonetics"][0]["text"].as_str()).unwrap_or("");
-    let audio = entry["phonetics"][0]["audio"].as_str().unwrap_or("");
-    let origin = entry["origin"].as_str().unwrap_or("");
+    let url = format!("https://en.wiktionary.org/api/rest_v1/page/definition/{}", urlencoding::encode(word));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
     let mut out = format!("*📖 {word}*\n\n");
-    if !phon.is_empty() {
-        out.push_str(&format!("`Phonetic:` {phon}"));
-        if !audio.is_empty() { out.push_str(&format!(" · [🔊]({audio})")); }
-        out.push_str("\n\n");
-    }
-    if !origin.is_empty() { out.push_str(&format!("> _Origin:_ {origin}\n\n")); }
-    if let Some(meanings) = entry["meanings"].as_array() {
-        for m in meanings.iter().take(3) {
-            let pos = m["partOfSpeech"].as_str().unwrap_or("");
-            out.push_str(&format!("*_{pos}_*\n"));
-            if let Some(defs) = m["definitions"].as_array() {
-                for (i, d) in defs.iter().take(3).enumerate() {
-                    let def = d["definition"].as_str().unwrap_or("");
-                    let ex = d["example"].as_str().unwrap_or("");
-                    let syn = d["synonyms"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
-                    out.push_str(&format!("  *{}.* {}", i + 1, esc(def)));
-                    if !ex.is_empty() { out.push_str(&format!("\n   > _Ex:_ {} ", esc(ex))); }
-                    if !syn.is_empty() { out.push_str(&format!("\n   `Syn:` {syn}")); }
-                    out.push('\n');
+    let mut found = false;
+    if let Some(langs) = v.as_object() {
+        for (lang, defs) in langs {
+            if lang == "en" {
+                if let Some(arr) = defs.as_array() {
+                    for entry in arr.iter().take(3) {
+                        let pos = entry["partOfSpeech"].as_str().unwrap_or("");
+                        if let Some(defs_arr) = entry["definitions"].as_array() {
+                            for (i, d) in defs_arr.iter().take(2).enumerate() {
+                                let raw = d["definition"].as_str().unwrap_or("");
+                                let text = raw.replace("<span class=\"Latn\" lang=\"en\">", "").replace("</span>", "").replace("<i>", "").replace("</i>", "").replace("<[^>]+>", "").chars().take(200).collect::<String>();
+                                if !text.is_empty() {
+                                    out.push_str(&format!("*{}.* {pos}: {}\n", i + 1, esc(&text)));
+                                    found = true;
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            out.push('\n');
         }
     }
-    out.push_str("#define");
+    if !found {
+        out.push_str(&format!("_No definitions found._\n\nTry: https://en.wiktionary.org/wiki/{word}"));
+    }
+    out.push_str("\n\n#wiktionary #define");
     Ok(out)
 }
 
@@ -628,9 +720,18 @@ async fn fetch_wiki(q: &str) -> Result<String> {
 }
 
 async fn fetch_cheat(q: &str) -> Result<String> {
-    let txt = HTTP.get(format!("https://cheat.sh/{}?TQ", q)).send().await?.text().await?;
-    let clean = txt.chars().take(1400).collect::<String>();
-    Ok(format!("*💻 cheat — `{q}`*\n\n```\n{clean}\n```\n\n> [cheat.sh/{q}](https://cheat.sh/{q}) · #cheat"))
+    let resp = HTTP.get(format!("https://cheat.sh/{}?TQ", urlencoding::encode(q))).send().await;
+    match resp {
+        Ok(r) if r.status().is_success() => {
+            let txt = r.text().await.unwrap_or_default();
+            let clean = txt.chars().take(1400).collect::<String>();
+            Ok(format!("*💻 cheat — `{q}`*\n\n```\n{clean}\n```\n\n> [cheat.sh/{q}](https://cheat.sh/{q}) · #cheat"))
+        }
+        _ => {
+            let url = format!("https://tldr.in/{}", urlencoding::encode(q));
+            Ok(format!("*💻 cheat — `{q}`*\n\ncheat.sh unavailable. Try:\n> [tldr.in/{q}]({url})\n> [devhints.io](https://devhints.io/{})\n\n> #cheat", urlencoding::encode(q)))
+        }
+    }
 }
 
 async fn fetch_gh(q: &str) -> Result<String> {
@@ -748,10 +849,33 @@ async fn fetch_stock(ticker: &str) -> Result<String> {
 }
 
 async fn fetch_crypto(coin: &str) -> Result<String> {
-    let coin_id = if coin.trim().is_empty() { "bitcoin".to_string() } else { coin.trim().to_lowercase() };
-    let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", coin_id);
+    let input = coin.trim().to_lowercase();
+    let coin_id = if input.is_empty() || input == "help" {
+        "bitcoin".to_string()
+    } else {
+        match input.as_str() {
+            "btc" | "bitcoin" => "bitcoin",
+            "eth" | "ethereum" => "ethereum",
+            "sol" | "solana" => "solana",
+            "xrp" | "ripple" => "ripple",
+            "doge" | "dogecoin" => "dogecoin",
+            "ada" | "cardano" => "cardano",
+            "bnb" | "binance" | "binancecoin" => "binancecoin",
+            "dot" | "polkadot" => "polkadot",
+            "avax" | "avalanche" => "avalanche-2",
+            "matic" | "polygon" => "matic-network",
+            "link" | "chainlink" => "chainlink",
+            "ltc" | "litecoin" => "litecoin",
+            "uni" | "uniswap" => "uniswap",
+            "aave" => "aave",
+            "atom" | "cosmos" => "cosmos",
+            "algo" | "algorand" => "algorand",
+            other => other,
+        }.to_string()
+    };
+    let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", urlencoding::encode(&coin_id));
     let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
-    let data = v.get(&coin_id).ok_or_else(|| anyhow::anyhow!("coin not found"))?;
+    let data = v.get(&coin_id).ok_or_else(|| anyhow::anyhow!("coin '{coin}' not found. Try: btc, eth, sol, xrp, doge, ada, bnb"))?;
     let price = data["usd"].as_f64().unwrap_or(0.0);
     let change = data["usd_24h_change"].as_f64().unwrap_or(0.0);
     let mcap = data["usd_market_cap"].as_f64().unwrap_or(0.0);
@@ -927,10 +1051,14 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
 // --- forecast ---
 
 async fn fetch_forecast(city: &str) -> Result<String> {
-    let v: serde_json::Value = HTTP.get(format!("http://wttr.in/{}?format=j1", city)).send().await?.json().await?;
+    let city = if city.trim().is_empty() { "auto:ip".to_string() } else { city.trim().to_string() };
+    let display_city = if city == "auto:ip" { "your location".to_string() } else { city.clone() };
+    let v: serde_json::Value = HTTP.get(format!("http://wttr.in/{}?format=j1", urlencoding::encode(&city))).send().await?.json().await?;
     let cur = &v["current_condition"][0];
     let temp = cur["temp_C"].as_str().unwrap_or("?");
     let desc = cur["weatherDesc"][0]["value"].as_str().unwrap_or("");
+    let humidity = cur["humidity"].as_str().unwrap_or("?");
+    let wind = cur["windspeedKmph"].as_str().unwrap_or("?");
     let emoji = match desc.to_lowercase().as_str() {
         s if s.contains("sun") || s.contains("clear") => "☀️",
         s if s.contains("cloud") => "☁️",
@@ -938,7 +1066,7 @@ async fn fetch_forecast(city: &str) -> Result<String> {
         s if s.contains("snow") => "❄️",
         _ => "🌤️",
     };
-    let mut out = format!("*{emoji} 7-Day Forecast — {city}*\n\n*Now:* `{temp}°C` {desc}\n\n");
+    let mut out = format!("*{emoji} Forecast — {display_city}*\n\n*Now:* `{temp}°C` {desc}\n💧 {humidity}% · 💨 {wind} km/h\n\n");
     if let Some(arr) = v["weather"].as_array() {
         for day in arr.iter().take(7) {
             let date = day["date"].as_str().unwrap_or("");
@@ -949,7 +1077,7 @@ async fn fetch_forecast(city: &str) -> Result<String> {
             out.push_str(&format!("*{date}* — ↑{maxt}°C ↓{mint}°C {noon}\n"));
         }
     }
-    out.push_str(&format!("\n> wttr.in · #forecast"));
+    out.push_str("\n> wttr.in · #forecast");
     Ok(out)
 }
 
@@ -1311,27 +1439,65 @@ async fn fetch_devto() -> Result<String> {
 // --- news: product hunt ---
 
 async fn fetch_ph() -> Result<String> {
-    let v: serde_json::Value = HTTP.get("https://www.producthunt.com/frontend/graphql")
-        .header("User-Agent", "Mozilla/5.0")
-        .header("Content-Type", "application/json")
-        .body(serde_json::json!({"query":"query{posts(order:RANKING,first:5){edges{node{name>tagline,url votesCount commentsCount topics{edges{node{name}}}}}}"}).to_string())
-        .send().await?.json().await?;
-
-    let edges = v["data"]["posts"]["edges"].as_array().ok_or_else(|| anyhow::anyhow!("no posts"))?;
+    let txt = HTTP.get("https://www.producthunt.com/feed").header("User-Agent", "Mozilla/5.0").send().await?.text().await?;
+    
     let mut out = String::from("*🚀 Product Hunt — Today*\n\n");
-    for (i, edge) in edges.iter().take(5).enumerate() {
-        let node = &edge["node"];
-        let name = node["name"].as_str().unwrap_or("?");
-        let tagline = node["tagline"].as_str().unwrap_or("");
-        let url = node["url"].as_str().unwrap_or("");
-        let votes = node["votesCount"].as_u64().unwrap_or(0);
-        let comments = node["commentsCount"].as_u64().unwrap_or(0);
-        let topics: Vec<&str> = node["topics"]["edges"].as_array().map(|a| a.iter().filter_map(|e| e["node"]["name"].as_str()).take(2).collect()).unwrap_or_default();
-        let topic_str = topics.iter().map(|t| format!("`{t}`")).collect::<Vec<_>>().join(" ");
-        out.push_str(&format!("*{}.* [{}]({})\n   👍 {votes} · 💬 {comments} · {tagline}\n   {topic_str}\n\n", i + 1, esc(name), url));
+    let mut count = 0;
+    let mut remaining = txt.as_str();
+    
+    while count < 5 {
+        if let Some(start) = remaining.find("<entry>") {
+            let rest = &remaining[start + 7..];
+            if let Some(end) = rest.find("</entry>") {
+                let entry = &rest[..end];
+                
+                let title = extract_ph_tag(entry, "title");
+                let link = extract_ph_link(entry);
+                let summary = extract_ph_tag(entry, "summary");
+                
+                if !title.is_empty() {
+                    count += 1;
+                    let desc = summary.replace("<p>", "").replace("</p>", "").chars().take(80).collect::<String>();
+                    out.push_str(&format!("*{count}.* [{title}]({link})\n   _{desc}_\n\n"));
+                }
+                
+                remaining = &rest[end + 8..];
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
     }
+    
+    if count == 0 {
+        out.push_str("_No posts found._");
+    }
+    
     out.push_str("> [producthunt.com](https://www.producthunt.com) · #ph");
     Ok(out)
+}
+
+fn extract_ph_tag(entry: &str, tag: &str) -> String {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    if let Some(start) = entry.find(&open) {
+        let rest = &entry[start + open.len()..];
+        if let Some(end) = rest.find(&close) {
+            return rest[..end].trim().replace("<![CDATA[", "").replace("]]>", "");
+        }
+    }
+    String::new()
+}
+
+fn extract_ph_link(entry: &str) -> String {
+    if let Some(start) = entry.find("href=\"") {
+        let rest = &entry[start + 6..];
+        if let Some(end) = rest.find('"') {
+            return rest[..end].to_string();
+        }
+    }
+    String::new()
 }
 
 // --- today: inbox ---
@@ -1512,7 +1678,7 @@ async fn fetch_pubmed(query: &str) -> Result<String> {
     let url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmax=5&term={}", urlencoding::encode(query));
     let resp = HTTP.get(&url).send().await?.text().await?;
     let mut ids = Vec::new();
-    for cap in re::Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp) {
+    for cap in Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp) {
         ids.push(cap[1].to_string());
     }
     if ids.is_empty() { return Ok(format!("No results for *{query}*")); }
@@ -1565,7 +1731,7 @@ async fn fetch_genome(query: &str) -> Result<String> {
     // Fallback: search NCBI
     let search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nucleotide&retmax=3&term={}", urlencoding::encode(query));
     let resp = HTTP.get(&search_url).send().await?.text().await?;
-    let ids: Vec<String> = re::Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
+    let ids: Vec<String> = Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
     if ids.is_empty() { return Ok(format!("No genome results for *{query}*")); }
     Ok(format!("🧬 *Genome:* `{query}`\nIDs: {}\nhttps://www.ncbi.nlm.nih.gov/nuccore/{}", ids.join(", "), ids[0]))
 }
@@ -1573,7 +1739,7 @@ async fn fetch_genome(query: &str) -> Result<String> {
 async fn fetch_protein(query: &str) -> Result<String> {
     let url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=protein&retmax=5&term={}", urlencoding::encode(query));
     let resp = HTTP.get(&url).send().await?.text().await?;
-    let ids: Vec<String> = re::Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
+    let ids: Vec<String> = Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
     if ids.is_empty() { return Ok(format!("No protein results for *{query}*")); }
     let summary_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=protein&id={}&retmode=json", ids.join(","));
     let summary: serde_json::Value = HTTP.get(&summary_url).send().await?.json().await?;
@@ -1718,20 +1884,37 @@ async fn fetch_sunrise(loc: &str) -> Result<String> {
 // === NEW COMMANDS: Learn ===
 
 fn eval_math(expr: &str) -> String {
-    let cleaned: String = expr.chars().filter(|c| c.is_digit() || *c == '.' || *c == '+' || *c == '-' || *c == '*' || *c == '/' || *c == '(' || *c == ')' || *c == ' ').collect();
+    let cleaned: String = expr.chars().filter(|c| c.is_digit(10) || *c == '.' || *c == '+' || *c == '-' || *c == '*' || *c == '/' || *c == '(' || *c == ')' || *c == ' ').collect();
     // Simple eval using Rust: just return the expression for now
     format!("🔢 *Math:* `{}`\n\nEvaluate: `{}`", expr, cleaned)
 }
 
 async fn fetch_etymology(word: &str) -> Result<String> {
-    let resp = HTTP.get(format!("https://api.etymonline.com/word/{}", urlencoding::encode(word))).send().await?.text().await?;
-    // Simple extraction from HTML
-    if let Some(pos) = resp.find("<span class=\"\">") {
-        let snippet = &resp[pos..pos.min(resp.len(), 500)];
-        Ok(format!("📖 *Etymology:* `{word}`\n\n{}", snippet.replace("<span class=\"\">", "").replace("</span>", "")))
-    } else {
-        Ok(format!("📖 *Etymology:* `{word}`\n\nhttps://www.etymonline.com/word/{}", word))
+    let url = format!("https://en.wiktionary.org/w/api.php?action=parse&page={}&prop=wikitext&format=json", urlencoding::encode(word));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
+    let wikitext = v["parse"]["wikitext"]["wikitext"].as_str().unwrap_or("");
+    
+    let mut out = format!("*📖 Etymology: {word}*\n\n");
+    
+    let lower = wikitext.to_lowercase();
+    if let Some(start) = lower.find("==etymology==") {
+        let rest = &wikitext[start + 13..];
+        if let Some(end) = rest.find("\n==") {
+            let etym = rest[..end].trim();
+            if !etym.is_empty() {
+                let clean = etym.replace("{{inh|en|", "").replace("{{der|en|", "").replace("{{bor|en|", "").replace("{{m|en|", "").replace("{{l|en|", "").replace("}}", "").replace("{{XLIT|en|", "").replace('\n', " ");
+                let short = clean.chars().take(500).collect::<String>();
+                out.push_str(&short);
+                out.push_str(&format!("\n\n> [Wiktionary](https://en.wiktionary.org/wiki/{}) · #etymology", urlencoding::encode(word)));
+                return Ok(out);
+            }
+        }
     }
+    
+    out.push_str("_No etymology section found._\n\n");
+    out.push_str(&format!("Try: https://en.wiktionary.org/wiki/{word}"));
+    out.push_str("\n\n> #etymology");
+    Ok(out)
 }
 
 async fn fetch_synonym(word: &str) -> Result<String> {
@@ -1745,12 +1928,197 @@ async fn fetch_synonym(word: &str) -> Result<String> {
 }
 
 async fn fetch_philosophy_quote() -> Result<String> {
-    let resp = HTTP.get("https://philosophyapi.fly.dev/api/quotes/random").send().await?.text().await?;
-    let v: serde_json::Value = serde_json::from_str(&resp).unwrap_or(serde_json::Value::Null);
-    if let Some(quote) = v["quote"].as_str() {
-        let author = v["author"].as_str().unwrap_or("?");
-        Ok(format!("📚 *Philosophy*\n\n\"{quote}\"\n\n— *{author}*\n\n#philosophy #learn"))
-    } else {
-        Ok("philosophy API unavailable".into())
-    }
+    let quotes = [
+        ("The unexamined life is not worth living.", "Socrates"),
+        ("I think, therefore I am.", "René Descartes"),
+        ("Happiness is not an ideal of reason but of imagination.", "Immanuel Kant"),
+        ("He who thinks great thoughts, often makes great errors.", "Martin Heidegger"),
+        ("The only true wisdom is in knowing you know nothing.", "Socrates"),
+        ("Life is examined by living it.", "George Santayana"),
+        ("Man is condemned to be free.", "Jean-Paul Sartre"),
+        ("To be is to be perceived.", "George Berkeley"),
+        ("One cannot step twice into the same river.", "Heraclitus"),
+        ("God is dead.", "Friedrich Nietzsche"),
+        ("I cannot teach anybody anything. I can only make them think.", "Socrates"),
+        ("The owl of Minerva spreads its wings only with the falling of the dusk.", "G.W.F. Hegel"),
+    ];
+    let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
+    let (quote, author) = quotes[idx];
+    Ok(format!("📚 *Philosophy*\n\n\"{quote}\"\n\n— *{author}*\n\n#philosophy #learn"))
+}
+
+// === STOIC COMMANDS ===
+
+fn create_meditation(note: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    let dur = note.split_whitespace().next().unwrap_or("?");
+    format!("🧘 *Meditation*\n\nDuration: {dur}\nNote: {note}\n\n— {now}\n\n#meditation #stoic")
+}
+
+fn create_affirmation(note: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("💪 *Affirmation*\n\n\"{note}\"\n\n— {now}\n\n#affirmation #stoic")
+}
+
+fn create_reflection(note: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("🪞 *Reflection*\n\n{note}\n\n— {now}\n\n#reflection #stoic")
+}
+
+async fn fetch_wisdom() -> Result<String> {
+    let quotes = [
+        ("The happiness of your life depends upon the quality of your thoughts.", "Marcus Aurelius"),
+        ("Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius"),
+        ("He who fears death will never do anything worthy of a living man.", "Seneca"),
+        ("We suffer more often in imagination than in reality.", "Seneca"),
+        ("No man is free who is not master of himself.", "Epictetus"),
+        ("First say to yourself what you would be; and then do what you have to do.", "Epictetus"),
+        ("The best revenge is not to be like your enemy.", "Marcus Aurelius"),
+        ("It is not that we have a short time to live, but that we waste a good deal of it.", "Seneca"),
+        ("Difficulties strengthen the mind, as labor does the body.", "Seneca"),
+        ("You have power over your mind — not outside events. Realize this, and you will find strength.", "Marcus Aurelius"),
+    ];
+    let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
+    let (quote, author) = quotes[idx];
+    Ok(format!("🏛️ *Stoic Wisdom*\n\n\"{quote}\"\n\n— *{author}*\n\n#wisdom #stoic"))
+}
+
+fn create_journal(note: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("📔 *Journal*\n\n{note}\n\n— {now}\n\n#journal #stoic")
+}
+
+// === PLANNING COMMANDS ===
+
+fn create_goal(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let goal = parts.first().unwrap_or(&"");
+    let details = parts.get(1).unwrap_or(&"");
+    format!("🎯 *Goal*\n\n*Goal:* {goal}\n*Details:* {details}\n*Set:* {now}\n\n#goal #planning")
+}
+
+fn create_deadline(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let date = parts.first().unwrap_or(&"");
+    let task = parts.get(1).unwrap_or(&"");
+    format!("⏰ *Deadline*\n\n*Due:* {date}\n*Task:* {task}\n*Set:* {now}\n\n#deadline #planning")
+}
+
+fn create_plan(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    format!("📋 *Plan*\n\n{args}\n\n— {now}\n\n#plan #planning")
+}
+
+fn create_review(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    format!("📊 *Review*\n\n{args}\n\n— {now}\n\n#review #planning")
+}
+
+fn create_priority(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let level = parts.first().unwrap_or(&"");
+    let task = parts.get(1).unwrap_or(&"");
+    format!("🔥 *Priority*\n\n*Level:* {level}\n*Task:* {task}\n*Set:* {now}\n\n#priority #planning")
+}
+
+// === INBOX COMMANDS ===
+
+fn create_idea(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("💡 *Idea*\n\n{args}\n\n— {now}\n\n#idea #inbox")
+}
+
+fn create_braindump(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("🧠 *Brain Dump*\n\n{args}\n\n— {now}\n\n#braindump #inbox")
+}
+
+fn create_link(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let url = parts.first().unwrap_or(&"");
+    let desc = parts.get(1).unwrap_or(&"");
+    format!("🔗 *Link*\n\nURL: {url}\nDescription: {desc}\n\n— {now}\n\n#link #inbox")
+}
+
+fn create_snippet(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("📝 *Snippet*\n\n```\n{args}\n```\n\n— {now}\n\n#snippet #inbox")
+}
+
+fn create_save(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("💾 *Saved*\n\n{args}\n\n— {now}\n\n#save #inbox")
+}
+
+// === DAILY COMMANDS ===
+
+fn create_morning(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    format!("🌅 *Morning Check-in*\n\n{args}\n\n— {now}\n\n#morning #daily")
+}
+
+fn create_evening(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    format!("🌙 *Evening Reflection*\n\n{args}\n\n— {now}\n\n#evening #daily")
+}
+
+fn create_checkin(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("✅ *Check-in*\n\n{args}\n\n— {now}\n\n#checkin #daily")
+}
+
+fn create_log(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    format!("📋 *Log*\n\n{args}\n\n— {now}\n\n#log #daily")
+}
+
+fn create_summary(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    format!("📝 *Summary*\n\n{args}\n\n— {now}\n\n#summary #daily")
+}
+
+// === LIFE COMMANDS ===
+
+fn create_sleep(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let hours = parts.first().unwrap_or(&"?");
+    let quality = parts.get(1).unwrap_or(&"");
+    format!("😴 *Sleep*\n\n*Hours:* {hours}\n*Quality:* {quality}\n*Date:* {now}\n\n#sleep #life")
+}
+
+fn create_energy(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let level = parts.first().unwrap_or(&"?");
+    let note = parts.get(1).unwrap_or(&"");
+    format!("⚡ *Energy*\n\n*Level:* {level}/10\n*Note:* {note}\n*Time:* {now}\n\n#energy #life")
+}
+
+fn create_exercise(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let activity = parts.first().unwrap_or(&"");
+    let duration = parts.get(1).unwrap_or(&"");
+    format!("🏋️ *Exercise*\n\n*Activity:* {activity}\n*Duration:* {duration}\n*Date:* {now}\n\n#exercise #life")
+}
+
+fn create_water(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let amount = parts.first().unwrap_or(&"?");
+    let note = parts.get(1).unwrap_or(&"");
+    format!("💧 *Water*\n\n*Amount:* {amount}\n*Note:* {note}\n*Time:* {now}\n\n#water #life")
+}
+
+fn create_read(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d");
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let title = parts.first().unwrap_or(&"");
+    let author = parts.get(1).unwrap_or(&"");
+    format!("📚 *Reading*\n\n*Title:* {title}\n*Author:* {author}\n*Date:* {now}\n\n#read #life")
 }
