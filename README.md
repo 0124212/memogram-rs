@@ -1,10 +1,8 @@
 # memogram-rs
 
-[![Rust](https://img.shields.io/badge/rust-%23000.svg?style=flat-square&logo=rust&logoColor=white)](#) [![Telegram](https://img.shields.io/badge/telegram-bridge-26A5E4.svg?style=flat-square&logo=telegram&logoColor=white)](#) [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg?style=flat-square&logo=docker&logoColor=white)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](./LICENSE)
-
 Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker.
 
-Keeps memogram defaults (inbox-ping, Telegram file forwarding) and adds 48 bot commands across 11 topic buckets.
+Keeps memogram defaults (inbox-ping, Telegram file forwarding) and adds 73 bot commands across 11 topic buckets.
 
 ## Architecture
 
@@ -34,7 +32,7 @@ Each bucket is a separate Memos user with its own personal access token. Command
 | `stoic` | Philosophy quotes | `#quote` |
 | `weather` | Forecasts, sunrise/sunset | `#weather` `#sunrise` |
 
-## 48 Commands
+## 73 Commands
 
 ### Core
 `/start` `/help` `/inbox` `/recent` `/search <q>` `/tags` `/count <filter>` `/undo` `/pin`
@@ -59,6 +57,21 @@ Each bucket is a separate Memos user with its own personal access token. Command
 
 ### Quick Capture
 `/note <text>` `/meeting <text>` `/project <text>` `/recipe <text>` `/book <text>` `/todo <text>` `/list <text>` `/clip <text>` `/proscons <text>` `/flashcard <text>` `/remind <text>`
+
+### Stoic
+`/meditation <note>` `/affirmation <note>` `/reflection <note>` `/wisdom` `/journal <note>`
+
+### Planning
+`/goal <goal>` `/deadline <date> <task>` `/plan <text>` `/review <text>` `/priority <level> <task>`
+
+### Inbox
+`/idea <text>` `/braindump <text>` `/link <url> <desc>` `/snippet <code>` `/save <text>`
+
+### Daily
+`/morning <text>` `/evening <text>` `/checkin <text>` `/log <text>` `/summary <text>`
+
+### Life
+`/sleep <hours> <quality>` `/energy <level> <note>` `/exercise <activity> <duration>` `/water <amount> <note>` `/read <title> <author>`
 
 ## Quick start
 
