@@ -871,9 +871,27 @@ async fn fetch_stock(ticker: &str) -> Result<String> {
     let sign = if change >= 0.0 { "+" } else { "" };
     let name = meta["shortName"].as_str().unwrap_or(&ticker);
     let currency = meta["currency"].as_str().unwrap_or("USD");
+    let high = meta["regularMarketDayHigh"].as_f64().unwrap_or(price);
+    let low = meta["regularMarketDayLow"].as_f64().unwrap_or(price);
+    let open = meta["regularMarketOpen"].as_f64().unwrap_or(price);
+    let volume = meta["regularMarketVolume"].as_u64().unwrap_or(0);
     let now_str = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let header = tg_header(emoji, &format!("{} ({})", name, ticker), "");
-    let body = tg_code_block(&format!("{price:.2} {currency}\n{sign}{change:.2} ({sign}{pct:.2}%)"));
+    // 5-day closes table
+    let mut table = String::from("Date       Close     Change\n");
+    table.push_str("────────── ───────── ─────────\n");
+    if let (Some(ts), Some(quote)) = (result["timestamp"].as_array(), result["indicators"]["quote"].as_array().and_then(|a| a.first())) {
+        if let Some(closes) = quote["close"].as_array() {
+            for (t, c) in ts.iter().zip(closes.iter()).rev().take(5).rev() {
+                if let (Some(epoch), Some(close)) = (t.as_i64(), c.as_f64()) {
+                    let date = chrono::DateTime::<chrono::Utc>::from_timestamp(epoch, 0).map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_else(|| "?".into());
+                    table.push_str(&format!("{date}  {close:>8.2}  {currency}\n"));
+                }
+            }
+        }
+    }
+    let vol_str = if volume >= 1_000_000_000 { format!("{:.2}B", volume as f64 / 1e9) } else if volume >= 1_000_000 { format!("{:.2}M", volume as f64 / 1e6) } else { format!("{}", volume) };
+    let body = tg_code_block(&format!("{price:.2} {currency}  {sign}{change:.2} ({sign}{pct:.2}%)\nOpen: {open:.2}  High: {high:.2}  Low: {low:.2}\nVol: {vol_str}\n\n{table}"));
     Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, esc(&now_str), esc("stock")))
 }
 
@@ -902,18 +920,29 @@ async fn fetch_crypto(coin: &str) -> Result<String> {
             other => other,
         }.to_string()
     };
-    let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", urlencoding::encode(&coin_id));
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
-    let data = v.get(&coin_id).ok_or_else(|| anyhow::anyhow!("coin '{coin}' not found. Try: btc, eth, sol, xrp, doge, ada, bnb"))?;
-    let price = data["usd"].as_f64().unwrap_or(0.0);
-    let change = data["usd_24h_change"].as_f64().unwrap_or(0.0);
-    let mcap = data["usd_market_cap"].as_f64().unwrap_or(0.0);
+    // Try detailed endpoint for more fields, fallback to simple
+    let detailed_url = format!("https://api.coingecko.com/api/v3/coins/{}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false", urlencoding::encode(&coin_id));
+    let (price, change, mcap, high24, low24, ath, atl) = if let Ok(v) = HTTP.get(&detailed_url).header("User-Agent", "memogram-rs").send().await {
+        if let Ok(j) = v.json::<serde_json::Value>().await {
+            let md = &j["market_data"];
+            (md["current_price"]["usd"].as_f64().unwrap_or(0.0), md["price_change_percentage_24h"].as_f64().unwrap_or(0.0), md["market_cap"]["usd"].as_f64().unwrap_or(0.0), md["high_24h"]["usd"].as_f64().unwrap_or(0.0), md["low_24h"]["usd"].as_f64().unwrap_or(0.0), md["ath"]["usd"].as_f64().unwrap_or(0.0), md["atl"]["usd"].as_f64().unwrap_or(0.0))
+        } else { (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) }
+    } else { (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0) };
+    let (price, change, mcap) = if price == 0.0 {
+        let url = format!("https://api.coingecko.com/api/v3/simple/price?ids={}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true", urlencoding::encode(&coin_id));
+        let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
+        let data = v.get(&coin_id).ok_or_else(|| anyhow::anyhow!("coin '{coin}' not found. Try: btc, eth, sol, xrp, doge, ada, bnb"))?;
+        (data["usd"].as_f64().unwrap_or(0.0), data["usd_24h_change"].as_f64().unwrap_or(0.0), data["usd_market_cap"].as_f64().unwrap_or(0.0))
+    } else { (price, change, mcap) };
     let emoji = if change >= 0.0 { "📈" } else { "📉" };
     let sign = if change >= 0.0 { "+" } else { "" };
     let mcap_str = if mcap >= 1e12 { format!("${:.2}T", mcap / 1e12) } else if mcap >= 1e9 { format!("${:.2}B", mcap / 1e9) } else if mcap >= 1e6 { format!("${:.2}M", mcap / 1e6) } else { format!("${:.0}", mcap) };
     let now_str = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let header = tg_header(emoji, &coin_id, coin);
-    let body = tg_code_block(&format!("${price:.2}\n{sign}{change:.2}%\nMCap: {mcap_str}"));
+    let mut body_str = format!("${price:.2}  {sign}{change:.2}%\nMCap: {mcap_str}");
+    if high24 > 0.0 { body_str.push_str(&format!("\n24h High: ${high24:.2}  Low: ${low24:.2}")); }
+    if ath > 0.0 { body_str.push_str(&format!("\nATH: ${ath:.2}  ATL: ${atl:.2}")); }
+    let body = tg_code_block(&body_str);
     Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, esc(&now_str), esc("crypto")))
 }
 
@@ -1277,24 +1306,33 @@ async fn handle_portfolio(args: &str, _tid: i64, store_path: &str) -> String {
         _ => {
             if holdings.is_empty() { return "📊 *Portfolio*\n\n_empty — `/portfolio add AAPL 10`_".into(); }
             let mut total_val = 0.0;
-            let mut total_cost = 0.0;
-            let mut lines = String::from("```\nTicker  Qty     Price      Value      P&L\n");
-            lines.push_str("────── ─────── ────────── ────────── ──────────\n");
+            // First pass to get total_val for allocation
+            let mut prices: Vec<(String, f64, f64)> = Vec::new();
             for h in &holdings {
                 let price = fetch_stock_price(&h.ticker).await.unwrap_or(h.avg_price);
                 let val = price * h.qty;
+                total_val += val;
+                prices.push((h.ticker.clone(), price, val));
+            }
+            let total_cost: f64 = holdings.iter().map(|h| h.avg_price * h.qty).sum();
+            let mut lines = String::from("```\nTicker  Qty     Price      Value    Alloc     P&L\n");
+            lines.push_str("────── ─────── ────────── ────────── ────── ──────────\n");
+            for (i, h) in holdings.iter().enumerate() {
+                let (ticker, price, val) = &prices[i];
                 let cost = h.avg_price * h.qty;
                 let pnl = val - cost;
+                let alloc = if total_val > 0.0 { val / total_val * 100.0 } else { 0.0 };
                 let sign = if pnl >= 0.0 { "+" } else { "" };
-                lines.push_str(&format!("{:<6} {:>6.1}  ${:>8.2}  ${:>8.2}  {sign}${:.2}\n", h.ticker, h.qty, price, val, pnl));
-                total_val += val;
-                total_cost += cost;
+                let bar_len = (alloc / 10.0).round() as usize;
+                let bar = "█".repeat(bar_len) + &"░".repeat(10 - bar_len);
+                lines.push_str(&format!("{:<6} {:>6.1}  ${:>8.2}  ${:>8.2}  {alloc:>4.1}% {bar} {sign}${:.2}\n", ticker, h.qty, price, val, pnl));
             }
-            lines.push_str("────── ─────── ────────── ────────── ──────────\n");
+            lines.push_str("────── ─────── ────────── ────────── ────── ──────────\n");
             let total_pnl = total_val - total_cost;
             let sign = if total_pnl >= 0.0 { "+" } else { "" };
-            lines.push_str(&format!("Total           ${:>8.2}  {sign}${:.2}\n```", total_val, total_pnl));
-            format!("*📊 Portfolio*\n\n{lines}\n\n> #portfolio")
+            let total_alloc = if total_val > 0.0 { "100.0%" } else { "0.0%" };
+            lines.push_str(&format!("Total           ${:>8.2}  {total_alloc:>6}          {sign}${:.2}\n```", total_val, total_pnl));
+            format!("{}\n\n{}\n\n{}", tg_header("📊", "Portfolio", ""), lines, tg_footer("portfolio", "portfolio"))
         }
     }
 }
@@ -1380,8 +1418,8 @@ async fn fetch_markets() -> Result<String> {
         ("BTC-USD", "Bitcoin"),
         ("ETH-USD", "Ethereum"),
     ];
-    let mut out = String::from("*📈 Markets*\n\n```\nIndex             Price          Change\n");
-    out.push_str("───────────────── ────────────── ──────────\n");
+    let mut out = format!("{}\n\n", tg_header("📈", "Markets", ""));
+    let mut table = String::from("Index             Price          Change\n───────────────── ────────────── ──────────\n");
     for (ticker, name) in indices {
         match fetch_stock_price(ticker).await {
             Ok(price) => {
@@ -1392,13 +1430,13 @@ async fn fetch_markets() -> Result<String> {
                 let pct = if prev != 0.0 { change / prev * 100.0 } else { 0.0 };
                 let sign = if change >= 0.0 { "+" } else { "" };
                 let price_str = if price >= 1000.0 { format!("{:>12.0}", price) } else { format!("{:>12.2}", price) };
-                out.push_str(&format!("{name:<17} {price_str}   {sign}{pct:.2}%\n"));
+                table.push_str(&format!("{name:<17} {price_str}   {sign}{pct:.2}%\n"));
             }
-            Err(_) => { out.push_str(&format!("{name:<17} {:>12}   N/A\n", "N/A")); }
+            Err(_) => { table.push_str(&format!("{name:<17} {:>12}   N/A\n", "N/A")); }
         }
     }
-    out.push_str("```\n\n");
-    out.push_str(&format!("\n{} · #{}", esc(&Local::now().format("%Y-%m-%d %H:%M").to_string()), esc("markets")));
+    out.push_str(&tg_code_block(&table));
+    out.push_str(&format!("\n`{}` · #{}", esc(&Local::now().format("%Y-%m-%d %H:%M").to_string()), esc("markets")));
     Ok(out)
 }
 
