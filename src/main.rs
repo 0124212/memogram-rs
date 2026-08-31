@@ -171,8 +171,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "arxiv".into(), description: "arXiv latest papers".into() },
         teloxide::types::BotCommand { command: "devto".into(), description: "dev.to top posts".into() },
         teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt daily".into() },
-        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city>".into() },
-        teloxide::types::BotCommand { command: "forecast".into(), description: "7-day forecast".into() },
+        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city> (default: Thousand Oaks, CA)".into() },
+        teloxide::types::BotCommand { command: "forecast".into(), description: "7-day forecast (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
         teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
         teloxide::types::BotCommand { command: "cheat".into(), description: "cheat <query>".into() },
@@ -224,8 +224,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "pypi".into(), description: "PyPI package info".into() },
         teloxide::types::BotCommand { command: "crates".into(), description: "crates.io info".into() },
         teloxide::types::BotCommand { command: "stackoverflow".into(), description: "Stack Overflow search".into() },
-        teloxide::types::BotCommand { command: "airquality".into(), description: "air quality index".into() },
-        teloxide::types::BotCommand { command: "sunrise".into(), description: "sunrise/sunset".into() },
+        teloxide::types::BotCommand { command: "airquality".into(), description: "air quality (default: Thousand Oaks, CA)".into() },
+        teloxide::types::BotCommand { command: "sunrise".into(), description: "sunrise/sunset (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "math".into(), description: "math expression".into() },
         teloxide::types::BotCommand { command: "etymology".into(), description: "word etymology".into() },
         teloxide::types::BotCommand { command: "synonym".into(), description: "find synonyms".into() },
@@ -300,7 +300,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Hn => { let txt = fetch_hn().await.unwrap_or_else(|e| format!("hn err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Weather(city) => {
-            let c = if city.trim().is_empty() { "Los Angeles".to_string() } else { city };
+            let c = if city.trim().is_empty() { "Thousand Oaks, CA".to_string() } else { city };
             let txt = fetch_weather(&c).await.unwrap_or_else(|e| format!("weather err: {e}"));
             create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?;
         }
@@ -1080,8 +1080,8 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
 // --- forecast ---
 
 async fn fetch_forecast(city: &str) -> Result<String> {
-    let city = if city.trim().is_empty() { "auto:ip".to_string() } else { city.trim().to_string() };
-    let display_city = if city == "auto:ip" { "your location".to_string() } else { city.clone() };
+    let city = if city.trim().is_empty() { "Thousand Oaks, CA".to_string() } else { city.trim().to_string() };
+    let display_city = city.clone();
     let v: serde_json::Value = HTTP.get(format!("http://wttr.in/{}?format=j1", urlencoding::encode(&city))).send().await?.json().await?;
     let cur = &v["current_condition"][0];
     let temp = cur["temp_C"].as_str().unwrap_or("?");
@@ -1874,6 +1874,7 @@ async fn fetch_stackoverflow(query: &str) -> Result<String> {
 // === NEW COMMANDS: Weather ===
 
 async fn fetch_airquality(loc: &str) -> Result<String> {
+    let loc = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
     let url = format!("https://api.waqi.info/feed/{}/?token=demo", urlencoding::encode(loc));
     let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
     if resp["status"].as_str() == Some("ok") {
@@ -1887,9 +1888,10 @@ async fn fetch_airquality(loc: &str) -> Result<String> {
 }
 
 async fn fetch_sunrise(loc: &str) -> Result<String> {
+    let loc = if loc.trim().is_empty() { "34.1706,-118.8376" } else { loc };
     let parts: Vec<&str> = loc.split(',').collect();
-    let lat = parts.first().unwrap_or(&"40.7");
-    let lon = parts.get(1).unwrap_or(&"-74.0");
+    let lat = parts.first().unwrap_or(&"34.1706");
+    let lon = parts.get(1).unwrap_or(&"-118.8376");
     let url = format!("https://api.sunrise-sunset.org/json?lat={}&lng={}&formatted=0", lat.trim(), lon.trim());
     let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
     if resp["status"].as_str() == Some("OK") {
