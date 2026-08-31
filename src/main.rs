@@ -1732,26 +1732,40 @@ async fn fetch_drug(name: &str) -> Result<String> {
         if let Some(drug) = results.first() {
             let brand = drug["openfda"]["brand_name"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("?");
             let generic = drug["openfda"]["generic_name"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("?");
-            let purpose = drug["purpose"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("N/A");
-            let warnings = drug["warnings"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("N/A");
-            return Ok(format!("💊 *{brand}* ({generic})\n\n**Purpose:** {purpose}\n\n**Warnings:** {warnings}", brand = brand, generic = generic, purpose = &purpose[..purpose.len().min(300)], warnings = &warnings[..warnings.len().min(300)]));
+            // Fallback chain: purpose -> indications_and_usage -> description -> active_ingredient
+            let purpose = drug["purpose"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str())
+                .or_else(|| drug["indications_and_usage"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
+                .or_else(|| drug["description"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
+                .unwrap_or("No purpose/indication found");
+            let warnings = drug["warnings"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str())
+                .or_else(|| drug["warnings_and_cautions"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
+                .or_else(|| drug["boxed_warning"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
+                .or_else(|| drug["adverse_reactions"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
+                .unwrap_or("No warnings found");
+            let header = tg_header("💊", &format!("{} ({})", brand, generic), name);
+            let body = format!("**Indications:** {}\n\n**Warnings:** {}", esc(&purpose[..purpose.len().min(400)]), esc(&warnings[..warnings.len().min(400)]));
+            return Ok(format!("{}\n\n{}\n\n{}", header, body, tg_footer("fda.gov", "drug")));
         }
     }
-    Ok(format!("No drug info for *{name}*"))
+    Ok(format!("{} \n\n_No drug info found._\n\n{}", tg_header("💊", "Drug", name), tg_footer("fda.gov", "drug")))
 }
 
 async fn fetch_genome(query: &str) -> Result<String> {
     let url = format!("https://api.ncbi.nlm.nih.gov/datasets/v2/genus/+/taxon/{}/dataset_report?page_size=3", urlencoding::encode(query));
-    let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
-    if let Some(taxonomy) = resp["assembly_summary"].as_array() {
-        if let Some(first) = taxonomy.first() {
-            let name = first["organism_name"].as_str().unwrap_or("?");
-            let acc = first["assembly_accession"].as_str().unwrap_or("?");
-            let status = first["assembly_level"].as_str().unwrap_or("?");
-            return Ok(format!("🧬 *Genome:* {name}\n**Accession:** {acc}\n**Level:** {status}\nhttps://www.ncbi.nlm.nih.gov/datasets/{acc}"));
+    // Try datasets API, but don't fail hard — fall back to eutils on any error (e.g., invalid taxon like 'human')
+    if let Ok(resp) = HTTP.get(&url).send().await {
+        if let Ok(json) = resp.json::<serde_json::Value>().await {
+            if let Some(taxonomy) = json["assembly_summary"].as_array() {
+                if let Some(first) = taxonomy.first() {
+                    let name = first["organism_name"].as_str().unwrap_or("?");
+                    let acc = first["assembly_accession"].as_str().unwrap_or("?");
+                    let status = first["assembly_level"].as_str().unwrap_or("?");
+                    return Ok(format!("{}\n**Accession:** `{}`\n**Level:** {}\nhttps://www.ncbi.nlm.nih.gov/datasets/{}\n\n{}", tg_header("🧬", "Genome", name), esc(acc), esc(status), esc(acc), tg_footer("ncbi.nlm.nih.gov", "genome")));
+                }
+            }
         }
     }
-    // Fallback: search NCBI
+    // Fallback: search NCBI nucleotide
     let search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nucleotide&retmax=3&term={}", urlencoding::encode(query));
     let resp = HTTP.get(&search_url).send().await?.text().await?;
     let ids: Vec<String> = Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
@@ -1779,10 +1793,34 @@ async fn fetch_protein(query: &str) -> Result<String> {
 // === NEW COMMANDS: Stoicism ===
 
 async fn fetch_stoic_quote() -> Result<String> {
-    let resp: serde_json::Value = HTTP.get("https://stoic-quotes/api/v1/random").send().await?.json().await?;
-    let text = resp["text"].as_str().unwrap_or("?");
-    let author = resp["author"].as_str().unwrap_or("?");
-    Ok(format!("{}\n\n\"{}\"\n\n— *{}*\n\n{}", tg_header("🏛️", "Stoic Wisdom", ""), esc(text), esc(author), tg_footer("stoic", "stoic")))
+    // Try API (stoic-quotes.com), fallback to local 10 quotes (like philosophy) — API was https://stoic-quotes/api (missing TLD) and 500s
+    let api = async {
+        let v: serde_json::Value = HTTP.get("https://stoic-quotes.com/api/quote").timeout(std::time::Duration::from_secs(5)).send().await?.json().await?;
+        let text = v["text"].as_str().or_else(|| v["data"]["quote"].as_str()).ok_or_else(|| anyhow::anyhow!("no text"))?;
+        let author = v["author"].as_str().or_else(|| v["data"]["author"].as_str()).unwrap_or("Unknown");
+        Ok::<(String, String), anyhow::Error>((text.to_string(), author.to_string()))
+    }.await;
+    let (text, author) = match api {
+        Ok((t, a)) if !t.is_empty() && t != "?" => (t, a),
+        _ => {
+            let quotes = [
+                ("The happiness of your life depends upon the quality of your thoughts.", "Marcus Aurelius"),
+                ("Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius"),
+                ("He who fears death will never do anything worthy of a living man.", "Seneca"),
+                ("We suffer more often in imagination than in reality.", "Seneca"),
+                ("No man is free who is not master of himself.", "Epictetus"),
+                ("First say to yourself what you would be; and then do what you have to do.", "Epictetus"),
+                ("The best revenge is not to be like your enemy.", "Marcus Aurelius"),
+                ("It is not that we have a short time to live, but that we waste a good deal of it.", "Seneca"),
+                ("Difficulties strengthen the mind, as labor does the body.", "Seneca"),
+                ("You have power over your mind — not outside events. Realize this, and you will find strength.", "Marcus Aurelius"),
+            ];
+            let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
+            let (q, a) = quotes[idx];
+            (q.to_string(), a.to_string())
+        }
+    };
+    Ok(format!("{}\n\n\"{}\"\n\n— *{}*\n\n{}", tg_header("🏛️", "Stoic Wisdom", ""), esc(&text), esc(&author), tg_footer("stoic", "stoic")))
 }
 
 fn create_mood_entry(args: &str) -> String {
