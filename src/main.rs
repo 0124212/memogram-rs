@@ -1398,7 +1398,7 @@ async fn fetch_markets() -> Result<String> {
         }
     }
     out.push_str("```\n\n");
-    out.push_str(&format!("`{}` · #markets", Local::now().format("%Y-%m-%d %H:%M")));
+    out.push_str(&format!("\n{} · #{}", esc(&Local::now().format("%Y-%m-%d %H:%M").to_string()), esc("markets")));
     Ok(out)
 }
 
