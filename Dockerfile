@@ -1,11 +1,8 @@
-FROM rust:1.88-slim AS builder
+FROM rust:1.97-slim AS builder
 WORKDIR /app
-COPY Cargo.toml Cargo.lock* ./
-RUN cargo update -p takecell --precise 0.1.0 2>&1 || cargo update -p takecell --precise 0.1.1 2>&1 || true
-RUN mkdir src && echo "fn main(){}" > src/main.rs && cargo build --release || true
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-RUN cargo update -p takecell --precise 0.1.0 2>&1 || cargo update -p takecell --precise 0.1.1 2>&1 || true
-RUN cargo build --release
+RUN cargo build --release && ls -lh target/release/memogram-rs && test $(stat -c%s target/release/memogram-rs) -gt 1000000
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*

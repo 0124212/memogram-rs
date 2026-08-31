@@ -138,9 +138,21 @@ impl App {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Early eprintln before tracing init so we see startup even if RUST_LOG unset
+    eprintln!("memogram-rs: starting up... pid={} cwd={:?}", std::process::id(), std::env::current_dir().unwrap_or_default());
     dotenvy::dotenv().ok();
-    tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
-    let bot = Bot::from_env();
+    // Default to info if RUST_LOG not set, so docker logs are not silent
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+    // Support both TELOXIDE_TOKEN (teloxide default) and BOT_TOKEN (legacy .env)
+    let token = std::env::var("TELOXIDE_TOKEN").or_else(|_| std::env::var("BOT_TOKEN")).unwrap_or_else(|_| {
+        eprintln!("FATAL: TELOXIDE_TOKEN (or BOT_TOKEN) not set in env");
+        tracing::error!("FATAL: TELOXIDE_TOKEN not set");
+        std::process::exit(1);
+    });
+    eprintln!("memogram-rs: token loaded len={} prefix={}...", token.len(), &token[..token.len().min(10)]);
+    let bot = Bot::new(token);
     let memos_url = env::var("MEMOS_URL").unwrap_or_else(|_| "https://memos.junilab.xyz".into()).trim_end_matches('/').to_string();
     let admin_username = env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into());
     let allowed = env::var("ALLOWED_USERNAMES").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
