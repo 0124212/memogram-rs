@@ -1157,15 +1157,13 @@ async fn fetch_ip(addr: &str) -> Result<String> {
     let lat = v["lat"].as_f64().unwrap_or(0.0);
     let lon = v["lon"].as_f64().unwrap_or(0.0);
     let org = v["org"].as_str().unwrap_or("?");
-    Ok(format!(
-        "*🌐 IP — {ip}*\n\n`Country:` {country}\n`Region:` {region}\n`City:` {city}\n`ISP:` {isp}\n`Org:` {org}\n`Coords:` {lat:.4}, {lon:.4}\n\n> ip-api.com · #ip"
-    ))
+    Ok(format!("{}\n\n`Country:` {}\n`Region:` {}\n`City:` {}\n`ISP:` {}\n`Org:` {}\n`Coords:` {:.4}, {:.4}\n\n{}", tg_header("🌐", "IP", ip), esc(country), esc(region), esc(city), esc(isp), esc(org), lat, lon, tg_footer("ip-api.com", "ip")))
 }
 
 fn gen_qr(text: &str) -> String {
     if text.trim().is_empty() { return "usage: `/qr <text>`".into(); }
     let url = format!("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={}", urlencoding::encode(text));
-    format!("*📱 QR Code*\n\n![QR]({url})\n\n> `{} chars` · #qr", text.len())
+    format!("{}\n\n![QR]({url})\n\n`{} chars` · #{}", tg_header("📱", "QR Code", ""), esc(&text.len().to_string()), esc("qr"))
 }
 
 fn gen_hash(text: &str) -> String {
@@ -1645,11 +1643,11 @@ fn create_book(args: &str) -> String {
 fn create_todo(args: &str) -> String {
     let items: Vec<&str> = args.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
     if items.is_empty() { return "usage: `/todo buy milk, write report, call mom`".into(); }
-    let mut out = "# Todo List\n\n".to_string();
+    let mut out = format!("{}\n\n", tg_header("✅", "Todo List", ""));
     for item in items {
-        out.push_str(&format!("- [ ] {}\n", item));
+        out.push_str(&format!("- [ ] {}\n", esc(item)));
     }
-    out.push_str("\n#todo #tasks");
+    out.push_str(&format!("\n{}", tg_footer("todo", "tasks")));
     out
 }
 
@@ -1784,7 +1782,7 @@ async fn fetch_stoic_quote() -> Result<String> {
     let resp: serde_json::Value = HTTP.get("https://stoic-quotes/api/v1/random").send().await?.json().await?;
     let text = resp["text"].as_str().unwrap_or("?");
     let author = resp["author"].as_str().unwrap_or("?");
-    Ok(format!("🏛️ *Stoic Wisdom*\n\n\"{text}\"\n\n— *{author}*\n\n#stoic #philosophy"))
+    Ok(format!("{}\n\n\"{}\"\n\n— *{}*\n\n{}", tg_header("🏛️", "Stoic Wisdom", ""), esc(text), esc(author), tg_footer("stoic", "stoic")))
 }
 
 fn create_mood_entry(args: &str) -> String {
@@ -1830,7 +1828,7 @@ async fn fetch_npm(pkg: &str) -> Result<String> {
     let version = resp["dist-tags"]["latest"].as_str().unwrap_or("?");
     let desc = resp["description"].as_str().unwrap_or("?");
     let homepage = resp["homepage"].as_str().unwrap_or("");
-    Ok(format!("📦 *npm:* `{name}@{version}`\n{desc}\n\nhttps://www.npmjs.com/package/{name}"))
+    Ok(format!("{}\n\n{}\n\nhttps://www.npmjs.com/package/{}\n\n{}", tg_header("📦", "npm", &format!("{}@{}", name, version)), esc(desc), esc(name), tg_footer("npmjs.com", "npm")))
 }
 
 async fn fetch_pypi(pkg: &str) -> Result<String> {
@@ -1850,7 +1848,7 @@ async fn fetch_crates(pkg: &str) -> Result<String> {
         let version = c["max_version"].as_str().unwrap_or("?");
         let desc = c["description"].as_str().unwrap_or("?");
         let downloads = c["downloads"].as_i64().unwrap_or(0);
-        return Ok(format!("📦 *crates.io:* `{name}@{version}`\n{desc}\nDownloads: {}\n\nhttps://crates.io/crates/{name}", downloads));
+        return Ok(format!("{}\n\n{}\nDownloads: {}\n\nhttps://crates.io/crates/{}\n\n{}", tg_header("📦", "crates.io", &format!("{}@{}", name, version)), esc(desc), esc(&downloads.to_string()), esc(name), tg_footer("crates.io", "crates")));
     }
     Ok(format!("crate not found: *{pkg}*"))
 }
@@ -2013,11 +2011,11 @@ fn create_journal(note: &str) -> String {
 // === PLANNING COMMANDS ===
 
 fn create_goal(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d");
+    let now = Local::now().format("%Y-%m-%d").to_string();
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let goal = parts.first().unwrap_or(&"");
     let details = parts.get(1).unwrap_or(&"");
-    format!("🎯 *Goal*\n\n*Goal:* {goal}\n*Details:* {details}\n*Set:* {now}\n\n#goal #planning")
+    format!("{}\n\n*Goal:* {}\n*Details:* {}\n*Set:* `{}`\n\n{}", tg_header("🎯", "Goal", goal), esc(goal), esc(details), esc(&now), tg_footer("goal", "planning"))
 }
 
 fn create_deadline(args: &str) -> String {
