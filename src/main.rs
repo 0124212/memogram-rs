@@ -1122,7 +1122,7 @@ fn gen_password(len: &str) -> String {
         let idx = (rand_byte() as usize) % CHARS.len();
         s.push(CHARS[idx] as char);
     }
-    format!("*🔑 Password* `{n} chars`\n\n`{s}`")
+    format!("{}\n\n{}", tg_header("🔑", &format!("Password {} chars", n), ""), tg_code_block(&s))
 }
 
 fn rand_byte() -> u8 {
@@ -1137,8 +1137,7 @@ fn gen_uuid() -> String {
     let a = t.as_secs() as u32;
     let b = t.subsec_nanos();
     let c = rand_byte() as u16;
-    format!("*🆔 UUID v4*\n\n`{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}`",
-        a, b & 0xFFFF, (b >> 16) & 0xFFF, c | 0x8000, (b as u64) & 0xFFFFFFFFFFFF)
+    format!("{}\n\n{}", tg_header("🆔", "UUID v4", ""), tg_code_block(&format!("{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}", a, b & 0xFFFF, (b >> 16) & 0xFFF, c | 0x8000, (b as u64) & 0xFFFFFFFFFFFF)))
 }
 
 async fn fetch_ip(addr: &str) -> Result<String> {
@@ -1902,7 +1901,7 @@ async fn fetch_sunrise(loc: &str) -> Result<String> {
         let day_length = results["day_length"].as_i64().unwrap_or(0);
         let hours = day_length / 3600;
         let mins = (day_length % 3600) / 60;
-        return Ok(format!("🌅 *Sunrise/Sunset*\n**Sunrise:** {sunrise}\n**Sunset:** {sunset}\n**Day length:** {hours}h {mins}m"));
+        return Ok(format!("{}\n\n**Sunrise:** `{}`\n**Sunset:** `{}`\n**Day length:** `{}h {}m`\n\n{}", tg_header("🌅", "Sunrise/Sunset", loc), esc(sunrise), esc(sunset), esc(&hours.to_string()), esc(&mins.to_string()), tg_footer("sunrise-sunset.org", "sunrise")));
     }
     Ok(format!("sunrise data unavailable for *{loc}*"))
 }
@@ -1973,19 +1972,19 @@ async fn fetch_philosophy_quote() -> Result<String> {
 // === STOIC COMMANDS ===
 
 fn create_meditation(note: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let dur = note.split_whitespace().next().unwrap_or("?");
-    format!("🧘 *Meditation*\n\nDuration: {dur}\nNote: {note}\n\n— {now}\n\n#meditation #stoic")
+    format!("{}\n\nDuration: `{}`\nNote: {}\n\n— `{}`\n\n{}", tg_header("🧘", "Meditation", dur), esc(dur), esc(note), esc(&now), tg_footer("meditation", "stoic"))
 }
 
 fn create_affirmation(note: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("💪 *Affirmation*\n\n\"{note}\"\n\n— {now}\n\n#affirmation #stoic")
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    format!("{}\n\n\"{}\"\n\n— `{}`\n\n{}", tg_header("💪", "Affirmation", ""), esc(note), esc(&now), tg_footer("affirmation", "stoic"))
 }
 
 fn create_reflection(note: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("🪞 *Reflection*\n\n{note}\n\n— {now}\n\n#reflection #stoic")
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("🪞", "Reflection", ""), esc(note), esc(&now), tg_footer("reflection", "stoic"))
 }
 
 async fn fetch_wisdom() -> Result<String> {
