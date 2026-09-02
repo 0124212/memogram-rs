@@ -1,6 +1,6 @@
 # memogram-rs
 
-Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â€” Telegram â†’ Memos bridge, single binary + Docker. **73 commands, 11 buckets, ~10MB RSS.**
+Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â€” Telegram â†’ Memos bridge, single binary + Docker. **77 polished markdown commands, 11 buckets, ~10MB RSS.** â€” detailed document memos with tables/graphs, not text-message snippets.
 
 ## Cheatsheet
 
@@ -17,7 +17,7 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /define <word>       Dictionary             /wiki <q>         Wikipedia
 /cheat <q>           Cheat sheet            /translate <text>  Translate
 /etymology <word>    Word origin            /synonym <word>    Synonyms
-/deepresearch <q>    Multi-source           /philosophy        Random quote
+/finance <term>      Finance explainer      /philosophy        Random quote
 ```
 
 ### News
@@ -26,19 +26,19 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /devto               dev.to top             /ph               Product Hunt
 ```
 
-### Finance
+### Finance (learn-focused)
 ```
 /fx <pair>           Exchange rate          /stock <ticker>   Stock price
 /crypto <coin>       Crypto price           /markets          Market indices
-/portfolio <t> <n>   Track holdings         /alerts <t> <p>   Price alert
+/finance <term>      Explain term           /compound <p> <r> <y>  Interest calc
 ```
 
 ### Science & Bio
 ```
 /pubmed <q>          PubMed papers          /drug <name>      Drug info
 /genome <gene>       Gene search            /protein <id>     Protein info
-/mood <note>         Log mood               /gratitude <n>    Gratitude
-/habit <task>        Track habit            /habit <task>     Track habit
+/trial <q>           Clinical trials        /food <query>     Nutrition facts
+/mood <note>         Log mood               /habit <task>     Track habit
 ```
 
 ### Dev
@@ -51,7 +51,8 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 ### Weather
 ```
 /weather <city>      Current + 3-day        /forecast <city>  7-day forecast
-/sunrise             Sunrise/sunset         /airquality <l>   AQI
+/sunrise <loc>       Sunrise/sunset         /sunset <loc>     Sunset/sunrise
+/airquality <loc>    AQI                  
 ```
 
 ### Utilities
@@ -115,8 +116,8 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 | `news` | HN, arXiv, Dev.to, PH |
 | `dev` | GitHub, npm, PyPI, crates |
 | `learn` | Wiki, definitions, research |
-| `bio` | PubMed, drugs, genomes |
-| `money` | FX, stocks, crypto |
+| `bio` | PubMed, drugs, genomes, trials, nutrition |
+| `money` | FX, stocks, crypto, finance explainers, compound |
 | `life` | Mood, gratitude, habits |
 | `planning` | Goals, deadlines, reviews |
 | `daily` | Check-ins, logs, summaries |

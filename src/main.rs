@@ -106,6 +106,11 @@ enum Command {
     Etymology(String),
     Synonym(String),
     Philosophy,
+    Finance(String),
+    Compound(String),
+    Trial(String),
+    Food(String),
+    Sunset(String),
 }
 
 #[derive(Clone)]
@@ -204,7 +209,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "proscons".into(), description: "pros vs cons".into() },
         teloxide::types::BotCommand { command: "flashcard".into(), description: "Q | A".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
-        teloxide::types::BotCommand { command: "password".into(), description: "generate password".into() },
+        teloxide::types::BotCommand { command: "pass".into(), description: "generate password".into() },
         teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
         teloxide::types::BotCommand { command: "ip".into(), description: "IP lookup".into() },
         teloxide::types::BotCommand { command: "qr".into(), description: "QR code".into() },
@@ -226,10 +231,15 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "stackoverflow".into(), description: "Stack Overflow search".into() },
         teloxide::types::BotCommand { command: "airquality".into(), description: "air quality (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "sunrise".into(), description: "sunrise/sunset (default: Thousand Oaks, CA)".into() },
+        teloxide::types::BotCommand { command: "sunset".into(), description: "sunset/sunrise (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "math".into(), description: "math expression".into() },
         teloxide::types::BotCommand { command: "etymology".into(), description: "word etymology".into() },
         teloxide::types::BotCommand { command: "synonym".into(), description: "find synonyms".into() },
         teloxide::types::BotCommand { command: "philosophy".into(), description: "philosophy quote".into() },
+        teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
+        teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
+        teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
+        teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "meditation".into(), description: "log meditation".into() },
         teloxide::types::BotCommand { command: "affirmation".into(), description: "log affirmation".into() },
         teloxide::types::BotCommand { command: "reflection".into(), description: "log reflection".into() },
@@ -407,10 +417,15 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Stackoverflow(q) => { let txt = fetch_stackoverflow(&q).await.unwrap_or_else(|e| format!("stackoverflow err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Airquality(loc) => { let txt = fetch_airquality(&loc).await.unwrap_or_else(|e| format!("airquality err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sunrise(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Sunset(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Math(expr) => { let txt = eval_math(&expr); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Etymology(word) => { let txt = fetch_etymology(&word).await.unwrap_or_else(|e| format!("etymology err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Synonym(word) => { let txt = fetch_synonym(&word).await.unwrap_or_else(|e| format!("synonym err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Philosophy => { let txt = fetch_philosophy_quote().await.unwrap_or_else(|e| format!("philosophy err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Finance(term) => { let txt = fetch_finance(&term).await.unwrap_or_else(|e| format!("finance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
         Command::Affirmation(note) => { let txt = create_affirmation(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
         Command::Reflection(note) => { let txt = create_reflection(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
@@ -2043,6 +2058,202 @@ async fn fetch_philosophy_quote() -> Result<String> {
     let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
     let (quote, author) = quotes[idx];
     Ok(format!("{}\n\n\"{}\"\n\n— *{}*\n\n{}", tg_header("📚", "Philosophy", ""), esc(quote), esc(author), tg_footer("philosophy", "learn")))
+}
+
+// === MONEY: Finance explainer (learn-focused) ===
+async fn fetch_finance(term: &str) -> Result<String> {
+    let q = term.trim();
+    if q.is_empty() { return Ok(format!("{} \n\n_Usage:_ `/finance <term>` — e.g. `inflation`, `dividend`, `etf`\n\n{}", tg_header("💰", "Finance", "learn"), tg_footer("finance", "money"))); }
+    // Try Wikipedia summary first (stable, no key)
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(q));
+    let wiki: serde_json::Value = HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
+    let title = wiki["title"].as_str().unwrap_or(q);
+    let extract = wiki["extract"].as_str().unwrap_or("");
+    let default_url = format!("https://en.wikipedia.org/wiki/{}", urlencoding::encode(q));
+    let url = wiki["content_urls"]["desktop"]["page"].as_str().unwrap_or(&default_url);
+    let thumb = wiki["thumbnail"]["source"].as_str().unwrap_or("");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    // Build detailed document
+    let mut out = String::new();
+    out.push_str(&format!("# 💰 Finance: {}\n\n", esc(title)));
+    out.push_str(&format!("**Term:** `{}` · **Date:** `{}` \n", esc(q), esc(&now)));
+    if !thumb.is_empty() { out.push_str(&format!("[📷 Cover]({})\n\n", thumb)); }
+    out.push_str("## 📖 Overview\n");
+    if !extract.is_empty() {
+        out.push_str(&format!("{}\n\n", esc(&tg_truncate(extract, 600))));
+    } else {
+        out.push_str(&format!("_No summary found for `{}`. Try broader term._\n\n", esc(q)));
+    }
+    // Key facts table
+    out.push_str("## 📊 Key Facts\n\n");
+    out.push_str("| Aspect | Details |\n|---|---|\n");
+    let typ = wiki["type"].as_str().unwrap_or("standard");
+    let desc = wiki["description"].as_str().unwrap_or("finance term");
+    out.push_str(&format!("| Type | {} |\n", esc(desc)));
+    out.push_str(&format!("| Source | [Wikipedia]({}) |\n", url));
+    out.push_str(&format!("| Query | `{}` |\n", esc(q)));
+    out.push_str(&format!("| Kind | {} |\n", esc(typ)));
+    // Example / how to think
+    out.push_str("\n## 💡 How to think about it\n\n");
+    out.push_str(&format!("> _Tip:_ Search `{} + investopedia` for plain-English examples. Try `/compound 1000 7% 10` to see compounding in action._\n\n", esc(q)));
+    // Fun / learn more
+    out.push_str("## 🎓 Fun & Learn More\n\n");
+    out.push_str(&format!("- [Read full article]({})\n", url));
+    out.push_str(&format!("- Related: `finance {}` → `compound` calculator\n", esc(q)));
+    out.push_str(&format!("- Tags: `#finance #money #learn`\n"));
+    out.push_str("\n---\n");
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("💰", "Finance", q), esc(&now), esc("finance")));
+    // Also include memo footer for Telegram/md
+    out.push_str(&format!("\n\n{}", tg_footer("wikipedia.org", "finance")));
+    Ok(out)
+}
+
+fn create_compound(args: &str) -> String {
+    // Parse: "1000 7% 10" or "1000 0.07 10y" -> principal, rate, years
+    let re = Regex::new(r"(?i)([0-9,.]+)\s*([0-9.]+%?)\s*([0-9.]+)").unwrap();
+    let caps = re.captures(args.trim());
+    if caps.is_none() {
+        return format!("{} \n\n_Usage:_ `/compound <principal> <rate%> <years>`\n_Eg:_ `/compound 1000 7% 10` or `/compound 5000 0.05 20`\n\n{}", tg_header("🧮", "Compound Interest", "calc"), tg_footer("compound", "money"));
+    }
+    let cap = caps.unwrap();
+    let p_str = cap.get(1).unwrap().as_str().replace(",", "");
+    let r_str = cap.get(2).unwrap().as_str().replace("%", "").trim().to_string();
+    let y_str = cap.get(3).unwrap().as_str().to_string();
+    let p: f64 = p_str.parse().unwrap_or(1000.0);
+    let r_raw: f64 = r_str.parse().unwrap_or(0.07);
+    let r = if r_raw > 1.0 { r_raw / 100.0 } else { r_raw };
+    let years: usize = y_str.parse::<f64>().unwrap_or(10.0) as usize;
+    let years = years.clamp(1, 50);
+    let final_amt = p * (1.0 + r).powi(years as i32);
+    let interest = final_amt - p;
+    let apr = r * 100.0;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = String::new();
+    out.push_str(&format!("# 🧮 Compound Interest — Detailed\n\n"));
+    out.push_str(&format!("**Principal:** `${:.2}` · **Rate:** `{:.2}%` · **Years:** `{}` · **Date:** `{}`\n\n", p, apr, years, esc(&now)));
+    out.push_str("## 📊 Result\n\n");
+    out.push_str("| Metric | Amount |\n|---|---|\n");
+    out.push_str(&format!("| Principal | `${:.2}` |\n", p));
+    out.push_str(&format!("| Interest | `${:.2}` |\n", interest));
+    out.push_str(&format!("| Final Amount | `${:.2}` |\n", final_amt));
+    out.push_str(&format!("| Multiple | `{:.2}x` |\n", final_amt / p));
+    out.push_str("\n## 📈 Yearly Breakdown\n\n");
+    out.push_str("| Year | Balance | Interest Y | Bar |\n|---:|---:|---:|---|\n");
+    let max = final_amt;
+    for y in 1..=years.min(30) {
+        let bal = p * (1.0 + r).powi(y as i32);
+        let yr_interest = bal - p * (1.0 + r).powi((y-1) as i32);
+        let bar_len = ((bal / max) * 10.0).round() as usize;
+        let bar = "█".repeat(bar_len) + &"░".repeat(10 - bar_len);
+        out.push_str(&format!("| {} | ${:.0} | ${:.0} | {} |\n", y, bal, yr_interest, bar));
+        if y == 30 && years > 30 { out.push_str(&format!("| ... | ... | ... | ... |\n")); break; }
+    }
+    out.push_str("\n```mermaid\n");
+    out.push_str("xychart-beta\n");
+    out.push_str("    title \"Growth\"\n");
+    out.push_str("    x-axis [Year]");
+    let mut vals = Vec::new();
+    for y in (1..=years).step_by((years/5).max(1)) { let v = p * (1.0 + r).powi(y as i32); vals.push(format!("{:.0}", v)); }
+    out.push_str(&format!("    y-axis \"Balance\" {}\n", vals.join(" ")));
+    out.push_str("```\n\n");
+    out.push_str("## 🧠 Formula & Fun\n\n");
+    out.push_str(&format!("_A = P(1+r)^t_ → `{:.0}*(1+{:.4})^{}`\n\n", p, r, years));
+    out.push_str("> _Tip:_ Increase rate 1% or add $100/mo — small changes compound massively. Try again with different inputs._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🧮", "Compound", args), esc(&now), esc("compound")));
+    out.push_str("\n\n> #compound #money #learn");
+    out
+}
+
+// === BIO: Trial + Food (beautiful docs) ===
+async fn fetch_trial(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{} \n\n_Usage:_ `/trial diabetes` or `/trial Alzheimer`\n\n{}", tg_header("🔬", "Clinical Trials", "search"), tg_footer("clinicaltrials.gov", "trial"))); }
+    let url = format!("https://clinicaltrials.gov/api/v2/studies?query.term={}&pageSize=5&format=json", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
+    let studies = v["studies"].as_array();
+    if studies.is_none() || studies.unwrap().is_empty() {
+        return Ok(format!("{} \n\n_No trials found for `{}`._ Try broader term like `diabetes` or `cancer`.\n\n{}", tg_header("🔬", "Clinical Trials", q), esc(q), tg_footer("clinicaltrials.gov", "trial")));
+    }
+    let arr = studies.unwrap();
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = String::new();
+    out.push_str(&format!("# 🔬 Clinical Trials — `{}`\n\n", esc(q)));
+    out.push_str(&format!("**Query:** `{}` · **Found:** `{}` · **Date:** `{}`\n\n", esc(q), arr.len(), esc(&now)));
+    out.push_str("| # | NCTId | Phase | Status | Title |\n|---:|---|---|---|---|\n");
+    for (i, s) in arr.iter().enumerate() {
+        let proto = &s["protocolSection"];
+        let id = proto["identificationModule"]["nctId"].as_str().unwrap_or("?");
+        let title = proto["identificationModule"]["briefTitle"].as_str().unwrap_or("?").chars().take(50).collect::<String>();
+        let phase = proto["designModule"]["phases"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("N/A");
+        let status = proto["statusModule"]["overallStatus"].as_str().unwrap_or("?");
+        out.push_str(&format!("| {} | {} | {} | {} | {} |\n", i+1, esc(id), esc(phase), esc(status), esc(&title)));
+    }
+    out.push_str("\n## 📋 Details\n\n");
+    for s in arr.iter().take(3) {
+        let proto = &s["protocolSection"];
+        let id = proto["identificationModule"]["nctId"].as_str().unwrap_or("?");
+        let title = proto["identificationModule"]["briefTitle"].as_str().unwrap_or("?");
+        let conds = proto["conditionsModule"]["conditions"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or("?".into());
+        let url2 = format!("https://clinicaltrials.gov/study/{}", id);
+        out.push_str(&format!("### {} — {} \n**Conditions:** {} \n[View on ClinicalTrials.gov]({})\n\n", esc(id), esc(title), esc(&conds.chars().take(120).collect::<String>()), url2));
+    }
+    out.push_str("---\n");
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🔬", "Clinical Trials", q), esc(&now), esc("trial")));
+    out.push_str(&format!("\n\n{}", tg_footer("clinicaltrials.gov", "trial")));
+    Ok(out)
+}
+
+async fn fetch_food(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{} \n\n_Usage:_ `/food apple` or `/food oreo`\n\n{}", tg_header("🥗", "Food", "nutrition"), tg_footer("openfoodfacts.org", "food"))); }
+    let url = format!("https://world.openfoodfacts.org/cgi/search.pl?search_terms={}&search_simple=1&action=process&json=true&page_size=3", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
+    let products = v["products"].as_array();
+    if products.is_none() || products.unwrap().is_empty() {
+        return Ok(format!("{} \n\n_No foods found for `{}`._\n\n{}", tg_header("🥗", "Nutrition", q), esc(q), tg_footer("openfoodfacts.org", "food")));
+    }
+    let arr = products.unwrap();
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = String::new();
+    out.push_str(&format!("# 🥗 Nutrition — `{}`\n\n", esc(q)));
+    out.push_str("| # | Product | Brand | Score |\n|---:|---|---|---|\n");
+    for (i, p) in arr.iter().enumerate() {
+        let name = p["product_name"].as_str().unwrap_or("?").chars().take(30).collect::<String>();
+        let brand = p["brands"].as_str().unwrap_or("?").chars().take(20).collect::<String>();
+        let score = p["nutriscore_grade"].as_str().unwrap_or("-");
+        let emoji = match score { "a"=>"🟢", "b"=>"🟢", "c"=>"🟡", "d"=>"🟠", "e"=>"🔴", _=>"⚪" };
+        out.push_str(&format!("| {} | {} | {} | {} {} |\n", i+1, esc(&name), esc(&brand), emoji, esc(score)));
+    }
+    out.push_str("\n## 📊 Nutrition Facts (per 100g)\n\n");
+    out.push_str("| Product | Kcal | Prot | Fat | Carbs | Sugar | Salt | Fiber |\n|---|---|---|---|---|---|---|---|\n");
+    for p in arr.iter().take(3) {
+        let name = p["product_name"].as_str().unwrap_or("?").chars().take(20).collect::<String>();
+        let nutr = &p["nutriments"];
+        let kcal = nutr["energy-kcal_100g"].as_f64().map(|v| format!("{:.0}", v)).unwrap_or("-".into());
+        let prot = nutr["proteins_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
+        let fat = nutr["fat_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
+        let carbs = nutr["carbohydrates_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
+        let sugar = nutr["sugars_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
+        let salt = nutr["salt_100g"].as_f64().map(|v| format!("{:.2}", v)).unwrap_or("-".into());
+        let fiber = nutr["fiber_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
+        out.push_str(&format!("| {} | {} | {} | {} | {} | {} | {} | {} |\n", esc(&name), kcal, prot, fat, carbs, sugar, salt, fiber));
+    }
+    out.push_str("\n```mermaid\n");
+    out.push_str("pie title \"Top Product Nutrients (g/100g)\"\n");
+    if let Some(p) = arr.first() {
+        let nutr = &p["nutriments"];
+        let prot: f64 = nutr["proteins_100g"].as_f64().unwrap_or(0.0);
+        let fat: f64 = nutr["fat_100g"].as_f64().unwrap_or(0.0);
+        let carbs: f64 = nutr["carbohydrates_100g"].as_f64().unwrap_or(0.0);
+        out.push_str(&format!("    \"Protein\" : {}\n", prot));
+        out.push_str(&format!("    \"Fat\" : {}\n", fat));
+        out.push_str(&format!("    \"Carbs\" : {}\n", carbs));
+    }
+    out.push_str("```\n\n");
+    out.push_str("> _Tip:_ Nutri-Score `a`=best `e`=worst. Compare brands for same food._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🥗", "Nutrition", q), esc(&now), esc("food")));
+    out.push_str(&format!("\n\n{}", tg_footer("openfoodfacts.org", "food")));
+    Ok(out)
 }
 
 // === STOIC COMMANDS ===
