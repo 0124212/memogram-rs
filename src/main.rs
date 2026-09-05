@@ -880,12 +880,18 @@ async fn fetch_fx(pair: &str) -> Result<String> {
     let url = format!("https://open.er-api.com/v6/latest/{}", base);
     let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
     let rate = v["rates"][&quote].as_f64().ok_or_else(|| anyhow::anyhow!("pair not found"))?;
-    let now = Local::now().format("%Y-%m-%d %H:%M");
-    Ok(format!(
-        "{}\n\n`1 {base} = {rate:.4} {quote}`\n\n`{now}`\n\n{}",
-        tg_header("💱", "Exchange Rate", &format!("{base}/{quote}")),
-        tg_footer("open.er-api.com", "fx")
-    ))
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = format!("{}\n\n", tg_header("💱", "Exchange Rate", &format!("{base}/{quote}")));
+    out.push_str(&format!("**Pair:** `{} → {}`\n\n", base, quote));
+    out.push_str("## 💰 Conversion\n\n");
+    out.push_str("| Amount | Result |\n|---|---|\n");
+    out.push_str(&format!("| 1 {base} | **{:.4} {quote}** |\n", rate));
+    out.push_str(&format!("| 10 {} | {:.4} {} |\n", base, rate * 10.0, quote));
+    out.push_str(&format!("| 100 {} | {:.4} {} |\n", base, rate * 100.0, quote));
+    out.push_str(&format!("| 1,000 {} | {:.2} {} |\n\n", base, rate * 1000.0, quote));
+    out.push_str(&format!("🔗 [More rates](https://open.er-api.com/v6/latest/{})\n\n", base));
+    out.push_str(&format!("{}\n\n`{}` · #fx", tg_footer("open.er-api.com", "fx"), now));
+    Ok(out)
 }
 
 async fn fetch_containers(memos_url: &str) -> Result<String> {
@@ -1021,23 +1027,32 @@ async fn fetch_translate(args: &str) -> Result<String> {
         ("en|es".to_string(), args.to_string())
     };
     if text.trim().is_empty() { return Ok("usage: `/translate <text>` or `/translate ja → en <text>`".into()); }
-    // Fix auto -> en (MyMemory doesn't support auto)
     let langpair = langpair.replace("auto|", "en|");
     let url = format!("https://api.mymemory.translated.net/get?q={}&langpair={}", urlencoding::encode(&text), urlencoding::encode(&langpair));
     let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
     let translated = v["responseData"]["translatedText"].as_str().unwrap_or("(no result)");
-    // Detect MyMemory error (returns INVALID message as translatedText)
     if translated.contains("IS AN INVALID") || translated.contains("INVALID SOURCE") {
-        return Ok(format!("{}\n\n**Original:** {}\n\n_Translation unavailable for `{} → {}`. Try `/translate en → es {}`_\n\n{}", tg_header("🌐", "Translation", &langpair), text, langpair.split('|').next().unwrap_or("?"), langpair.split('|').last().unwrap_or("?"), text, tg_footer("mymemory.translated.net", "translate")));
+        let src = langpair.split('|').next().unwrap_or("en");
+        let tgt = langpair.split('|').last().unwrap_or("en");
+        let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let mut out = format!("{}\n\n", tg_header("🌐", "Translation", &langpair));
+        out.push_str(&format!("**Source:** `{}` → **Target:** `{}`\n\n", src, tgt));
+        out.push_str(&format!("**Original:**\n> {}\n\n", text));
+        out.push_str(&format!("_Translation unavailable. Try:_\n\n"));
+        out.push_str(&format!("`/translate en → es {}`\n\n", text));
+        out.push_str(&format!("{}\n\n`{}` · #translate", tg_footer("mymemory.translated.net", "translate"), now));
+        return Ok(out);
     }
     let detected = v["responseData"]["match"].as_f64().unwrap_or(0.0);
     let src = langpair.split('|').next().unwrap_or("en");
     let tgt = langpair.split('|').last().unwrap_or("en");
-    Ok(format!(
-        "{}\n\n`{src}` → `{tgt}` (confidence: {detected:.0}%)\n\n**Original:** {text}\n\n**Translated:** {translated}\n\n{}",
-        tg_header("🌐", "Translation", &langpair),
-        tg_footer("mymemory.translated.net", "translate")
-    ))
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = format!("{}\n\n", tg_header("🌐", "Translation", &format!("{} → {}", src, tgt)));
+    out.push_str(&format!("**Source:** `{}` → **Target:** `{}` · **Confidence:** `{:.0}%`\n\n", src, tgt, detected));
+    out.push_str(&format!("## 📝 Original\n\n> {}\n\n", text));
+    out.push_str(&format!("## ✅ Translation\n\n> {}\n\n", translated));
+    out.push_str(&format!("{}\n\n`{}` · #translate", tg_footer("mymemory.translated.net", "translate"), now));
+    Ok(out)
 }
 
 fn fetch_color(hex: &str) -> String {
@@ -2339,7 +2354,17 @@ async fn fetch_npm(pkg: &str) -> Result<String> {
     let version = resp["dist-tags"]["latest"].as_str().unwrap_or("?");
     let desc = resp["description"].as_str().unwrap_or("?");
     let homepage = resp["homepage"].as_str().unwrap_or("");
-    Ok(format!("{}\n\n{}\n\nhttps://www.npmjs.com/package/{}\n\n{}", tg_header("📦", "npm", &format!("{}@{}", name, version)), desc, name, tg_footer("npmjs.com", "npm")))
+    let repo = resp["repository"]["url"].as_str().unwrap_or("");
+    let license = resp["license"].as_str().unwrap_or("-");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = format!("{}\n\n", tg_header("📦", "npm", &format!("{}@{}", name, version)));
+    out.push_str(&format!("**Package:** `{}` · **Version:** `{}` · **License:** `{}`\n\n", name, version, license));
+    out.push_str(&format!("## 📝 Description\n\n{}\n\n", desc));
+    if !homepage.is_empty() { out.push_str(&format!("**Homepage:** [{}]({})\n", homepage, homepage)); }
+    if !repo.is_empty() { out.push_str(&format!("**Repository:** [{}]({})\n", repo, repo)); }
+    out.push_str(&format!("\n**Install:**\n\n```\nnpm install {}\n```\n\n", name));
+    out.push_str(&format!("{}\n\n`{}` · #npm", tg_footer("npmjs.com", "npm"), now));
+    Ok(out)
 }
 
 async fn fetch_pypi(pkg: &str) -> Result<String> {
@@ -2349,7 +2374,18 @@ async fn fetch_pypi(pkg: &str) -> Result<String> {
     let name = info["name"].as_str().unwrap_or("?");
     let version = info["version"].as_str().unwrap_or("?");
     let summary = info["summary"].as_str().unwrap_or("?");
-    Ok(format!("{}\n\n{}\n\nhttps://pypi.org/project/{}/\n\n{}", tg_header("📦", "PyPI", &format!("{}@{}", name, version)), summary, name, tg_footer("pypi.org", "pypi")))
+    let license = info["license"].as_str().unwrap_or("-");
+    let author = info["author"].as_str().unwrap_or("");
+    let home = info["home_page"].as_str().unwrap_or("");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = format!("{}\n\n", tg_header("📦", "PyPI", &format!("{}@{}", name, version)));
+    out.push_str(&format!("**Package:** `{}` · **Version:** `{}` · **License:** `{}`\n\n", name, version, license));
+    if !author.is_empty() { out.push_str(&format!("**Author:** {}\n\n", author)); }
+    out.push_str(&format!("## 📝 Description\n\n{}\n\n", summary));
+    if !home.is_empty() { out.push_str(&format!("**Homepage:** [{}]({})\n", home, home)); }
+    out.push_str(&format!("\n**Install:**\n\n```\npip install {}\n```\n\n", name));
+    out.push_str(&format!("{}\n\n`{}` · #pypi", tg_footer("pypi.org", "pypi"), now));
+    Ok(out)
 }
 
 async fn fetch_crates(pkg: &str) -> Result<String> {
@@ -2359,7 +2395,17 @@ async fn fetch_crates(pkg: &str) -> Result<String> {
         let version = c["max_version"].as_str().unwrap_or("?");
         let desc = c["description"].as_str().unwrap_or("?");
         let downloads = c["downloads"].as_i64().unwrap_or(0);
-        return Ok(format!("{}\n\n{}\nDownloads: {}\n\nhttps://crates.io/crates/{}\n\n{}", tg_header("📦", "crates.io", &format!("{}@{}", name, version)), desc, downloads.to_string(), name, tg_footer("crates.io", "crates")));
+        let license = c.get("license").and_then(|v| v.as_str()).unwrap_or("-");
+        let repo = c["repository"].as_str().unwrap_or("");
+        let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+        let mut out = format!("{}\n\n", tg_header("📦", "crates.io", &format!("{}@{}", name, version)));
+        out.push_str(&format!("**Crate:** `{}` · **Version:** `{}` · **License:** `{}`\n\n", name, version, license));
+        out.push_str(&format!("## 📝 Description\n\n{}\n\n", desc));
+        out.push_str(&format!("**Downloads:** `{}`\n", downloads));
+        if !repo.is_empty() { out.push_str(&format!("**Repository:** [{}]({})\n", repo, repo)); }
+        out.push_str(&format!("\n**Add to Cargo.toml:**\n\n```toml\n{} = \"{}\"\n```\n\n", name, version));
+        out.push_str(&format!("{}\n\n`{}` · #crates", tg_footer("crates.io", "crates"), now));
+        return Ok(out);
     }
     Ok(format!("crate not found: **{pkg}**"))
 }
@@ -2367,16 +2413,24 @@ async fn fetch_crates(pkg: &str) -> Result<String> {
 async fn fetch_stackoverflow(query: &str) -> Result<String> {
     let url = format!("https://api.stackexchange.com/2.3/search?order=desc&sort=activity&intitle={}&site=stackoverflow&pagesize=5", urlencoding::encode(query));
     let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     if let Some(items) = resp["items"].as_array() {
         if items.is_empty() { return Ok(format!("No results for **{query}**")); }
+        let total = items.len();
+        let total_answers: i64 = items.iter().map(|i| i["answer_count"].as_i64().unwrap_or(0)).sum();
+        let avg_score: f64 = items.iter().map(|i| i["score"].as_i64().unwrap_or(0) as f64).sum::<f64>() / total as f64;
         let mut out = format!("{}\n\n", tg_header("📖", "Stack Overflow", query));
+        out.push_str(&format!("**Query:** `{}` · **Results:** {} · **Avg Score:** {:.0}\n\n", query, total, avg_score));
+        out.push_str("## 📊 Top Results\n\n");
         for item in items {
             let title = item["title"].as_str().unwrap_or("?");
             let link = item["link"].as_str().unwrap_or("?");
             let score = item["score"].as_i64().unwrap_or(0);
             let answers = item["answer_count"].as_i64().unwrap_or(0);
-            out.push_str(&format!("**{}** (⬆{} · answers:{})\n  {}\n\n", title, score, answers, link));
+            let accepted = if item["is_answered"].as_bool().unwrap_or(false) { " ✅" } else { "" };
+            out.push_str(&format!("**[{}]({})**\n   ⬆ {} · 💬 {} answers{}\n\n", title, link, score, answers, accepted));
         }
+        out.push_str(&format!("{}\n\n`{}` · #stackoverflow", tg_footer("stackoverflow.com", "stackoverflow"), now));
         return Ok(out);
     }
     Ok(format!("stackoverflow err for *{query}*"))
@@ -2388,12 +2442,30 @@ async fn fetch_airquality(loc: &str) -> Result<String> {
     let loc = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
     let url = format!("https://api.waqi.info/feed/{}/?token=demo", urlencoding::encode(loc));
     let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     if resp["status"].as_str() == Some("ok") {
         let data = &resp["data"];
         let aqi = data["aqi"].as_i64().unwrap_or(0);
         let city = data["city"]["name"].as_str().unwrap_or("?");
         let dominant = data["dominentpol"].as_str().unwrap_or("?");
-        return Ok(format!("🌬️ **Air Quality:** {city}\n**AQI:** {aqi}\n**Dominant pollutant:** {dominant}\n\nhttps://aqicn.org/city/{loc}"));
+        let level = if aqi <= 50 { "Good 🟢" } else if aqi <= 100 { "Moderate 🟡" } else if aqi <= 150 { "Unhealthy for Sensitive 🟠" } else if aqi <= 200 { "Unhealthy 🔴" } else if aqi <= 300 { "Very Unhealthy 🟣" } else { "Hazardous ⚫" };
+        let mut out = format!("{}\n\n", tg_header("🌬️", "Air Quality", city));
+        out.push_str(&format!("**City:** `{}` · **Station:** `{}`\n\n", city, loc));
+        out.push_str(&format!("## 📊 AQI Report\n\n"));
+        out.push_str("| Metric | Value |\n|---|---|\n");
+        out.push_str(&format!("| AQI | **{}** |\n", aqi));
+        out.push_str(&format!("| Level | {} |\n", level));
+        out.push_str(&format!("| Dominant | `{}` |\n", dominant));
+        out.push_str(&format!("| Updated | `{}` |\n\n", now));
+        out.push_str(&format!("**Health Advice:**\n"));
+        if aqi <= 50 { out.push_str("✅ Excellent air quality. Perfect for outdoor activities.\n"); }
+        else if aqi <= 100 { out.push_str("⚠️ Acceptable. Unusually sensitive people should reduce prolonged outdoor exertion.\n"); }
+        else if aqi <= 150 { out.push_str("⚠️ Sensitive groups may experience health effects. Limit prolonged outdoor exertion.\n"); }
+        else if aqi <= 200 { out.push_str("🔴 Everyone may begin to experience health effects. Avoid prolonged outdoor exertion.\n"); }
+        else { out.push_str("🟣 Health alert: everyone may experience more serious health effects.\n"); }
+        out.push_str(&format!("\n🔗 [Detailed forecast](https://aqicn.org/city/{})\n\n", urlencoding::encode(loc)));
+        out.push_str(&format!("{}\n\n`{}` · #airquality", tg_footer("aqicn.org", "airquality"), now));
+        return Ok(out);
     }
     Ok(format!("air quality data unavailable for *{loc}*"))
 }
@@ -2405,14 +2477,27 @@ async fn fetch_sunrise(loc: &str) -> Result<String> {
     let lon = parts.get(1).unwrap_or(&"-118.8376");
     let url = format!("https://api.sunrise-sunset.org/json?lat={}&lng={}&formatted=0", lat.trim(), lon.trim());
     let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     if resp["status"].as_str() == Some("OK") {
         let results = &resp["results"];
         let sunrise = results["sunrise"].as_str().unwrap_or("?");
         let sunset = results["sunset"].as_str().unwrap_or("?");
+        let dawn = results["civil_twilight_begin"].as_str().unwrap_or("?");
+        let dusk = results["civil_twilight_end"].as_str().unwrap_or("?");
         let day_length = results["day_length"].as_i64().unwrap_or(0);
         let hours = day_length / 3600;
         let mins = (day_length % 3600) / 60;
-        return Ok(format!("{}\n\n**Sunrise:** `{}`\n**Sunset:** `{}`\n**Day length:** `{}h {}m`\n\n{}", tg_header("🌅", "Sunrise/Sunset", loc), sunrise, sunset, hours.to_string(), mins.to_string(), tg_footer("sunrise-sunset.org", "sunrise")));
+        let mut out = format!("{}\n\n", tg_header("🌅", "Sunrise/Sunset", &format!("({},{})", lat, lon)));
+        out.push_str(&format!("**Location:** `{}, {}`\n\n", lat, lon));
+        out.push_str("## ⏰ Sun Times\n\n");
+        out.push_str("| Event | Time |\n|---|---|\n");
+        out.push_str(&format!("| 🌅 Dawn | `{}` |\n", dawn));
+        out.push_str(&format!("| ☀️ Sunrise | `{}` |\n", sunrise));
+        out.push_str(&format!("| 🌇 Sunset | `{}` |\n", sunset));
+        out.push_str(&format!("| 🌆 Dusk | `{}` |\n", dusk));
+        out.push_str(&format!("| ☀️ Day Length | **{}h {}m** |\n\n", hours, mins));
+        out.push_str(&format!("{}\n\n`{}` · #sunrise", tg_footer("sunrise-sunset.org", "sunrise"), now));
+        return Ok(out);
     }
     Ok(format!("sunrise data unavailable for *{loc}*"))
 }
@@ -2429,8 +2514,8 @@ async fn fetch_etymology(word: &str) -> Result<String> {
     let url = format!("https://en.wiktionary.org/w/api.php?action=parse&page={}&prop=wikitext&format=json", urlencoding::encode(word));
     let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
     let wikitext = v["parse"]["wikitext"]["wikitext"].as_str().unwrap_or("");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let mut out = format!("{}\n\n", tg_header("📖", "Etymology", word));
-    
     let lower = wikitext.to_lowercase();
     if let Some(start) = lower.find("==etymology==") {
         let rest = &wikitext[start + 13..];
@@ -2439,29 +2524,48 @@ async fn fetch_etymology(word: &str) -> Result<String> {
             if !etym.is_empty() {
                 let clean = etym.replace("{{inh|en|", "").replace("{{der|en|", "").replace("{{bor|en|", "").replace("{{m|en|", "").replace("{{l|en|", "").replace("}}", "").replace("{{XLIT|en|", "").replace('\n', " ");
                 let short = clean.chars().take(500).collect::<String>();
-                out.push_str(&short);
-                out.push_str(&format!("\n\n{}", tg_footer("wiktionary.org", "etymology")));
+                out.push_str(&format!("**Word:** `{}`\n\n", word));
+                out.push_str(&format!("## 📚 Etymology\n\n{}\n\n", short));
+                out.push_str(&format!("🔗 [Full entry](https://en.wiktionary.org/wiki/{})\n\n", urlencoding::encode(word)));
+                out.push_str(&format!("{}\n\n`{}` · #etymology", tg_footer("wiktionary.org", "etymology"), now));
                 return Ok(out);
             }
         }
     }
-    out.push_str(&format!("_No etymology section found for `{}`._\n\nTry: https://en.wiktionary.org/wiki/{}", word, urlencoding::encode(word)));
-    out.push_str(&format!("\n\n{}", tg_footer("wiktionary.org", "etymology")));
+    out.push_str(&format!("**Word:** `{}`\n\n", word));
+    out.push_str(&format!("_No etymology section found._\n\n"));
+    out.push_str(&format!("🔗 [Try Wiktionary](https://en.wiktionary.org/wiki/{})\n\n", urlencoding::encode(word)));
+    out.push_str(&format!("{}\n\n`{}` · #etymology", tg_footer("wiktionary.org", "etymology"), now));
     Ok(out)
 }
 
 async fn fetch_synonym(word: &str) -> Result<String> {
     let resp: serde_json::Value = HTTP.get(format!("https://api.datamuse.com/words?rel_syn={}", urlencoding::encode(word))).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     if let Some(words) = resp.as_array() {
-        if words.is_empty() { return Ok(format!("{} \n\n_No synonyms found._\n\n{}", tg_header("📝", "Synonyms", word), tg_footer("datamuse.com", "synonym"))); }
-        let syns: Vec<String> = words.iter().take(10).filter_map(|w| w["word"].as_str()).map(|s| format!("`{}`", s)).collect();
-        return Ok(format!("{}\n\n{}\n\n{}", tg_header("📝", "Synonyms", word), syns.join(", "), tg_footer("datamuse.com", "synonym")));
+        if words.is_empty() {
+            let mut out = format!("{}\n\n", tg_header("📝", "Synonyms", word));
+            out.push_str(&format!("**Word:** `{}`\n\n", word));
+            out.push_str("_No synonyms found._\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #synonym", tg_footer("datamuse.com", "synonym"), now));
+            return Ok(out);
+        }
+        let total = words.len();
+        let syns: Vec<String> = words.iter().take(15).filter_map(|w| w["word"].as_str()).map(|s| format!("`{}`", s)).collect();
+        let mut out = format!("{}\n\n", tg_header("📝", "Synonyms", word));
+        out.push_str(&format!("**Word:** `{}` · **Found:** {} synonyms\n\n", word, total));
+        out.push_str("## 📋 Synonyms\n\n");
+        out.push_str(&format!("{}\n\n", syns.join(" · ")));
+        out.push_str(&format!("{}\n\n`{}` · #synonym", tg_footer("datamuse.com", "synonym"), now));
+        return Ok(out);
     }
-    Ok(format!("{} \n\n_synonym lookup failed_\n\n{}", tg_header("📝", "Synonyms", word), tg_footer("datamuse.com", "synonym")))
+    let mut out = format!("{}\n\n", tg_header("📝", "Synonyms", word));
+    out.push_str("_Synonym lookup failed._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #synonym", tg_footer("datamuse.com", "synonym"), now));
+    Ok(out)
 }
 
 async fn fetch_philosophy_quote() -> Result<String> {
-    // Try philosophy API, fallback to local quotes
     let api = async {
         let v: serde_json::Value = HTTP.get("https://philosophyapi.fly.dev/api/quotes/random")
             .timeout(std::time::Duration::from_secs(5))
@@ -2490,7 +2594,13 @@ async fn fetch_philosophy_quote() -> Result<String> {
             (q.to_string(), a.to_string())
         }
     };
-    Ok(format!("{}\n\n> \"{}\"\n\n— **{}**\n\n{}", tg_header("📚", "Philosophy", ""), quote, author, tg_footer("philosophy", "learn")))
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = format!("{}\n\n", tg_header("📚", "Philosophy", ""));
+    out.push_str(&format!("## 💭 Quote of the Moment\n\n"));
+    out.push_str(&format!("> _\"{}\"_\n\n", quote));
+    out.push_str(&format!("— **{}**\n\n", author));
+    out.push_str(&format!("{}\n\n`{}` · #philosophy #learn", tg_footer("philosophy", "learn"), now));
+    Ok(out)
 }
 
 // === MONEY: Finance explainer (learn-focused) ===
