@@ -111,6 +111,14 @@ enum Command {
     Trial(String),
     Food(String),
     Sunset(String),
+    // Music bucket (7) — beats / promo
+    Itunes(String),
+    Deezer(String),
+    Mbrainz(String),
+    Lyrics(String),
+    Cover(String),
+    Trend,
+    Promo(String),
 }
 
 #[derive(Clone)]
@@ -134,10 +142,18 @@ impl App {
         true
     }
     fn bot_token(&self, bot: &str) -> Option<String> {
-        self.bot_tokens.get(bot).cloned().or_else(|| {
-            warn!("no bot token for {bot}, fallback to memogram store");
-            None
-        })
+        if let Some(tok) = self.bot_tokens.get(bot).cloned() {
+            return Some(tok);
+        }
+        // Fallback for renamed bucket: wellness <- stoic/life
+        if bot == "wellness" {
+            if let Some(tok) = self.bot_tokens.get("stoic").cloned().or_else(|| self.bot_tokens.get("life").cloned()) {
+                warn!("wellness: using fallback token from stoic/life");
+                return Some(tok);
+            }
+        }
+        warn!("no bot token for {bot}, fallback to memogram store");
+        None
     }
 }
 
@@ -400,7 +416,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
@@ -411,10 +427,10 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Drug(name) => { let txt = fetch_drug(&name).await.unwrap_or_else(|e| format!("drug err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Genome(q) => { let txt = fetch_genome(&q).await.unwrap_or_else(|e| format!("genome err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Protein(q) => { let txt = fetch_protein(&q).await.unwrap_or_else(|e| format!("protein err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Stoic => { let txt = fetch_stoic_quote().await.unwrap_or_else(|e| format!("stoic err: {e}")); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Mood(note) => { let txt = create_mood_entry(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Gratitude(note) => { let txt = create_gratitude_entry(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Habit(args) => { let txt = create_habit_entry(&args); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Stoic => { let txt = fetch_stoic_quote().await.unwrap_or_else(|e| format!("stoic err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Mood(note) => { let txt = create_mood_entry(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Gratitude(note) => { let txt = create_gratitude_entry(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Habit(args) => { let txt = create_habit_entry(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Npm(pkg) => { let txt = fetch_npm(&pkg).await.unwrap_or_else(|e| format!("npm err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Pypi(pkg) => { let txt = fetch_pypi(&pkg).await.unwrap_or_else(|e| format!("pypi err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Crates(pkg) => { let txt = fetch_crates(&pkg).await.unwrap_or_else(|e| format!("crates err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
@@ -430,11 +446,11 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Affirmation(note) => { let txt = create_affirmation(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Reflection(note) => { let txt = create_reflection(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Wisdom => { let txt = fetch_wisdom().await.unwrap_or_else(|e| format!("wisdom err: {e}")); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
-        Command::Journal(note) => { let txt = create_journal(&note); create_as_bot(&bot, &msg, &app, "stoic", &txt, tid).await?; }
+        Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Affirmation(note) => { let txt = create_affirmation(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Reflection(note) => { let txt = create_reflection(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Wisdom => { let txt = fetch_wisdom().await.unwrap_or_else(|e| format!("wisdom err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Journal(note) => { let txt = create_journal(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = create_goal(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = create_deadline(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Plan(args) => { let txt = create_plan(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
@@ -450,11 +466,18 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Checkin(args) => { let txt = create_checkin(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
-        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
-        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
-        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
-        Command::Read(args) => { let txt = create_read(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Read(args) => { let txt = create_read(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Itunes(q) => { let txt = fetch_itunes(&q).await.unwrap_or_else(|e| format!("itunes err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Deezer(q) => { let txt = fetch_deezer(&q).await.unwrap_or_else(|e| format!("deezer err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Mbrainz(q) => { let txt = fetch_mbrainz(&q).await.unwrap_or_else(|e| format!("mbrainz err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Lyrics(q) => { let txt = fetch_lyrics(&q).await.unwrap_or_else(|e| format!("lyrics err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Cover(q) => { let txt = fetch_cover(&q).await.unwrap_or_else(|e| format!("cover err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Trend => { let txt = fetch_trend().await.unwrap_or_else(|e| format!("trend err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Promo(q) => { let txt = create_promo(&q); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
@@ -2433,6 +2456,160 @@ async fn fetch_food(query: &str) -> Result<String> {
     Ok(out)
 }
 
+// === MUSIC BUCKET (7) — beats/promo ===
+
+async fn fetch_itunes(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/itunes <artist or track>`\n\n{}", tg_header("🎵", "iTunes", "search"), tg_footer("itunes.apple.com", "itunes"))); }
+    let url = format!("https://itunes.apple.com/search?term={}&media=music&limit=5&entity=song", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let results = v["results"].as_array();
+    if results.is_none() || results.unwrap().is_empty() {
+        return Ok(format!("{}\n\n_No results for `{}`._\n\n{}", tg_header("🎵", "iTunes", q), q, tg_footer("itunes.apple.com", "itunes")));
+    }
+    let arr = results.unwrap();
+    let mut out = format!("{}\n\n", tg_header("🎵", "iTunes", q));
+    for (i, r) in arr.iter().enumerate() {
+        let track = r["trackName"].as_str().unwrap_or("?");
+        let artist = r["artistName"].as_str().unwrap_or("?");
+        let album = r["collectionName"].as_str().unwrap_or("?");
+        let genre = r["primaryGenreName"].as_str().unwrap_or("?");
+        let url = r["trackViewUrl"].as_str().unwrap_or("");
+        let art = r["artworkUrl100"].as_str().unwrap_or("");
+        out.push_str(&format!("**{}. {}** — {}\n   _{}_ · `{}`\n   [Listen]({})\n", i+1, track, artist, album, genre, url));
+        if !art.is_empty() { out.push_str(&format!("   ![art]({})\n", art)); }
+        out.push('\n');
+    }
+    out.push_str(&format!("\n{}", tg_footer("itunes.apple.com", "itunes")));
+    Ok(out)
+}
+
+async fn fetch_deezer(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/deezer <query>`\n\n{}", tg_header("🎧", "Deezer", "search"), tg_footer("deezer.com", "deezer"))); }
+    let url = format!("https://api.deezer.com/search/track?q={}&limit=5", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let data = v["data"].as_array();
+    if data.is_none() || data.unwrap().is_empty() {
+        return Ok(format!("{}\n\n_No results for `{}`._\n\n{}", tg_header("🎧", "Deezer", q), q, tg_footer("deezer.com", "deezer")));
+    }
+    let arr = data.unwrap();
+    let mut out = format!("{}\n\n", tg_header("🎧", "Deezer", q));
+    for (i, r) in arr.iter().enumerate() {
+        let title = r["title"].as_str().unwrap_or("?");
+        let artist = r["artist"]["name"].as_str().unwrap_or("?");
+        let album = r["album"]["title"].as_str().unwrap_or("?");
+        let link = r["link"].as_str().unwrap_or("");
+        let preview = r["preview"].as_str().unwrap_or("");
+        out.push_str(&format!("**{}. {}** — {}\n   _{}_\n   [Link]({})", i+1, title, artist, album, link));
+        if !preview.is_empty() { out.push_str(&format!(" · [Preview]({})", preview)); }
+        out.push_str("\n\n");
+    }
+    out.push_str(&format!("\n{}", tg_footer("deezer.com", "deezer")));
+    Ok(out)
+}
+
+async fn fetch_mbrainz(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/mbrainz <artist>`\n\n{}", tg_header("🎙️", "MusicBrainz", "search"), tg_footer("musicbrainz.org", "mbrainz"))); }
+    let url = format!("https://musicbrainz.org/ws/2/artist/?query=artist:{}&fmt=json&limit=5", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs/0.1 ( junilab.xyz )").send().await?.json().await?;
+    let artists = v["artists"].as_array();
+    if artists.is_none() || artists.unwrap().is_empty() {
+        return Ok(format!("{}\n\n_No artists for `{}`._\n\n{}", tg_header("🎙️", "MusicBrainz", q), q, tg_footer("musicbrainz.org", "mbrainz")));
+    }
+    let arr = artists.unwrap();
+    let mut out = format!("{}\n\n", tg_header("🎙️", "MusicBrainz", q));
+    for (i, a) in arr.iter().enumerate() {
+        let name = a["name"].as_str().unwrap_or("?");
+        let disamb = a["disambiguation"].as_str().unwrap_or("");
+        let country = a["country"].as_str().unwrap_or("?");
+        let typ = a["type"].as_str().unwrap_or("?");
+        let id = a["id"].as_str().unwrap_or("");
+        out.push_str(&format!("**{}. {}**", i+1, name));
+        if !disamb.is_empty() { out.push_str(&format!(" — _{}_", disamb)); }
+        out.push_str(&format!("\n   {} · `{}`\n   https://musicbrainz.org/artist/{}\n\n", typ, country, id));
+    }
+    out.push_str(&format!("\n{}", tg_footer("musicbrainz.org", "mbrainz")));
+    Ok(out)
+}
+
+async fn fetch_lyrics(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() || !q.contains('-') && !q.contains('/') && !q.contains('|') {
+        return Ok(format!("{}\n\n_Usage:_ `/lyrics Artist - Title` or `/lyrics Artist/Title`\n\n{}", tg_header("📝", "Lyrics", "search"), tg_footer("lyrics.ovh", "lyrics")));
+    }
+    let (artist, title) = if q.contains(" - ") { let p: Vec<&str> = q.splitn(2, " - ").collect(); (p[0].trim(), p[1].trim()) }
+        else if q.contains('/') { let p: Vec<&str> = q.splitn(2, '/').collect(); (p[0].trim(), p[1].trim()) }
+        else if q.contains('|') { let p: Vec<&str> = q.splitn(2, '|').collect(); (p[0].trim(), p[1].trim()) }
+        else { (q, "") };
+    if artist.is_empty() || title.is_empty() {
+        return Ok(format!("{}\n\n_Usage:_ `/lyrics Artist - Title`\n\n{}", tg_header("📝", "Lyrics", q), tg_footer("lyrics.ovh", "lyrics")));
+    }
+    let url = format!("https://api.lyrics.ovh/v1/{}/{}", urlencoding::encode(artist), urlencoding::encode(title));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    if let Some(ly) = v["lyrics"].as_str() {
+        let snippet = ly.chars().take(1200).collect::<String>();
+        return Ok(format!("{}\n\n```\n{}\n```\n\n{}", tg_header("📝", "Lyrics", &format!("{artist} — {title}")), snippet.trim(), tg_footer("lyrics.ovh", "lyrics")));
+    }
+    if let Some(err) = v["error"].as_str() {
+        return Ok(format!("{}\n\n_No lyrics for `{} — {}`: {}_\n\n{}", tg_header("📝", "Lyrics", q), artist, title, err, tg_footer("lyrics.ovh", "lyrics")));
+    }
+    Ok(format!("{}\n\n_No lyrics found._\n\n{}", tg_header("📝", "Lyrics", q), tg_footer("lyrics.ovh", "lyrics")))
+}
+
+async fn fetch_cover(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/cover <album or track>`\n\n{}", tg_header("🖼️", "Cover", "search"), tg_footer("itunes.apple.com", "cover"))); }
+    let url = format!("https://itunes.apple.com/search?term={}&media=music&entity=album&limit=3", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let results = v["results"].as_array();
+    if results.is_none() || results.unwrap().is_empty() {
+        return Ok(format!("{}\n\n_No covers for `{}`._\n\n{}", tg_header("🖼️", "Cover", q), q, tg_footer("itunes.apple.com", "cover")));
+    }
+    let arr = results.unwrap();
+    let mut out = format!("{}\n\n", tg_header("🖼️", "Cover", q));
+    for r in arr {
+        let album = r["collectionName"].as_str().unwrap_or("?");
+        let artist = r["artistName"].as_str().unwrap_or("?");
+        let art = r["artworkUrl100"].as_str().unwrap_or("").replace("100x100", "600x600");
+        let url = r["collectionViewUrl"].as_str().unwrap_or("");
+        out.push_str(&format!("**{}** — {}\n", album, artist));
+        if !art.is_empty() { out.push_str(&format!("![cover]({})\n", art)); }
+        if !url.is_empty() { out.push_str(&format!("[View on iTunes]({})\n\n", url)); }
+    }
+    out.push_str(&format!("\n{}", tg_footer("itunes.apple.com", "cover")));
+    Ok(out)
+}
+
+async fn fetch_trend() -> Result<String> {
+    let v: serde_json::Value = HTTP.get("https://api.deezer.com/chart/0/tracks?limit=5").send().await?.json().await?;
+    let data = v["data"].as_array().or_else(|| v["tracks"]["data"].as_array());
+    if data.is_none() || data.unwrap().is_empty() {
+        return Ok(format!("{}\n\n_No trends._\n\n{}", tg_header("🔥", "Trending", "Deezer Top 5"), tg_footer("deezer.com", "trend")));
+    }
+    let arr = data.unwrap();
+    let mut out = format!("{}\n\n", tg_header("🔥", "Trending", "Deezer Top 5"));
+    for (i, r) in arr.iter().take(5).enumerate() {
+        let title = r["title"].as_str().unwrap_or("?");
+        let artist = r["artist"]["name"].as_str().unwrap_or("?");
+        let link = r["link"].as_str().unwrap_or("");
+        let rank = r["rank"].as_u64().unwrap_or(0);
+        out.push_str(&format!("**{}. {}** — {}\n   Rank: {} · [Link]({})\n\n", i+1, title, artist, rank, link));
+    }
+    out.push_str(&format!("\n{}", tg_footer("deezer.com", "trend")));
+    Ok(out)
+}
+
+fn create_promo(args: &str) -> String {
+    let topic = if args.trim().is_empty() { "New Beat Drop" } else { args.trim() };
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    format!(
+        "# Promo: {topic}\n\n**Date:** {now}\n**Platform:** Instagram / TikTok / YouTube Shorts\n\n## Hook (0-3s)\n- \"{topic} — out now\"\n\n## Caption\n{topic} 🎧 — link in bio\n\n## Hashtags\n#beats #instrumental #typebeat #producer #newmusic #hiphop #trap #junilab\n\n## CTA\n- Comment \"BEAT\" for link\n- Tag a rapper who needs this\n\n## Links\n- BeatStars: \n- YouTube: \n\n#promo #music #{now}",
+        topic = topic, now = now
+    )
+}
+
 // === STOIC COMMANDS ===
 
 fn create_meditation(note: &str) -> String {
@@ -2645,6 +2822,12 @@ async fn run_preview() -> Result<()> {
         ("ph", try_fetch("ph", fetch_ph()).await.1),
         ("markets", try_fetch("markets", fetch_markets()).await.1),
         ("ip", try_fetch("ip", fetch_ip("8.8.8.8")).await.1),
+        ("itunes", try_fetch("itunes", fetch_itunes("drake")).await.1),
+        ("deezer", try_fetch("deezer", fetch_deezer("drake")).await.1),
+        ("mbrainz", try_fetch("mbrainz", fetch_mbrainz("beatles")).await.1),
+        ("lyrics", try_fetch("lyrics", fetch_lyrics("coldplay - adventure of a lifetime")).await.1),
+        ("cover", try_fetch("cover", fetch_cover("thriller")).await.1),
+        ("trend", try_fetch("trend", fetch_trend()).await.1),
     ];
 
     for (name, content) in samples {
@@ -2674,6 +2857,7 @@ async fn run_preview() -> Result<()> {
         ("water", create_water("500ml morning")),
         ("read", create_read("Dune Frank Herbert")),
         ("compound", create_compound("1000 7% 10")),
+        ("promo", create_promo("New Beat Drop - Trap Soul Type Beat")),
     ];
     for (name, content) in templates {
         let path = out_dir.join(format!("{}.md", name));
