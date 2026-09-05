@@ -34,7 +34,7 @@ enum Command {
     Stock(String),
     Crypto(String),
     Translate(String),
-    Color(String),
+    Ph(String),
     Forecast(String),
     Remind(String),
     Portfolio(String),
@@ -53,43 +53,42 @@ enum Command {
     Undo,
     Pin,
     Note(String),
-    Meeting(String),
-    Project(String),
+    Yt(String),
+    Ghrepo(String),
     Book(String),
-    Todo(String),
-    List(String),
-    Clip(String),
+    Stocksave(String),
+    Weather7(String),
+    Img(String),
     Meditation(String),
     Affirmation(String),
     Reflection(String),
-    Wisdom,
+    Zen,
     Journal(String),
     Goal(String),
     Deadline(String),
-    Plan(String),
+    Astro(String),
     Review(String),
     Priority(String),
     Idea(String),
     Braindump(String),
-    Link(String),
-    Snippet(String),
+    Summarize(String),
+    Qr(String),
     Save(String),
-    Morning(String),
-    Evening(String),
-    Checkin(String),
-    Log(String),
-    Summary(String),
-    Sleep(String),
+    Dogs,
+    Cats,
+    Useless,
+    Number(String),
+    Activities,
+    Bmi(String),
     Energy(String),
     Exercise(String),
     Water(String),
     Read(String),
     Pubmed(String),
     Drug(String),
-    Genome(String),
+    Ip(String),
     Protein(String),
-    // Wellness bucket (10) — self-care
-    Joke(String),
+    Chuck,
     Mood(String),
     Gratitude(String),
     Habit(String),
@@ -104,7 +103,7 @@ enum Command {
     Man(String),
     Airquality(String),
     Sunrise(String),
-    Math(String),
+    Insult(String),
     Etymology(String),
     Synonym(String),
     Philosophy,
@@ -113,7 +112,6 @@ enum Command {
     Trial(String),
     Food(String),
     Sunset(String),
-    // Music bucket (10) — beats / promo
     Itunes(String),
     Deezer(String),
     Mbrainz(String),
@@ -124,24 +122,20 @@ enum Command {
     Setlist(String),
     Sample(String),
     Cover(String),
-    // Daily bucket (10) — routines
     Recap(String),
-    Bored(String),
-    // Inbox bucket (7) — capture
-    // Money bucket (10) — finance
+    Advice,
     Ticker(String),
     Dividend(String),
     Etf(String),
     Earnings(String),
-    // Fun bucket (9) — entertainment
     Trivia(String),
     Story(String),
-    Fortune(String),
+    Hello(String),
     Wordoftheday,
-    Quote(String),
-    Truth,
-    Fact,
-    Dadjoke,
+    Kanye,
+    Wouldyourather,
+    Catfact,
+    Affirmation2(String),
 }
 
 #[derive(Clone)]
@@ -392,7 +386,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Color(hex) => { let txt = fetch_color(&hex); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Ph(expr) => { let txt = fetch_ph(&expr); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Forecast(city) => { let txt = fetch_forecast(&city).await.unwrap_or_else(|e| format!("forecast err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Tags => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -452,17 +446,17 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = create_note(&app.memos_url, &tok, &content).await;
             bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
         }
-        Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Yt(url) => { let txt = fetch_yt(&url).await.unwrap_or_else(|e| format!("yt err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Ghrepo(repo) => { let txt = fetch_ghrepo(&repo).await.unwrap_or_else(|e| format!("ghrepo err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Clip(args) => { let txt = create_clip(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Stocksave(ticker) => { let txt = fetch_stocksave(&ticker).await.unwrap_or_else(|e| format!("stocksave err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Weather7(city) => { let txt = fetch_weather7(&city).await.unwrap_or_else(|e| format!("weather7 err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Img(url) => { let txt = fetch_img(&url).await.unwrap_or_else(|e| format!("img err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Drug(name) => { let txt = fetch_drug(&name).await.unwrap_or_else(|e| format!("drug err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Genome(q) => { let txt = fetch_genome(&q).await.unwrap_or_else(|e| format!("genome err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Ip(ip) => { let txt = fetch_ip(&ip).await.unwrap_or_else(|e| format!("ip err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Protein(q) => { let txt = fetch_protein(&q).await.unwrap_or_else(|e| format!("protein err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Joke(args) => { let txt = fetch_joke(&args).await.unwrap_or_else(|e| format!("joke err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Chuck => { let txt = fetch_chuck().await.unwrap_or_else(|e| format!("chuck err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Mood(note) => { let txt = create_mood_entry(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Gratitude(note) => { let txt = create_gratitude_entry(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Habit(args) => { let txt = create_habit_entry(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
@@ -478,7 +472,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Airquality(loc) => { let txt = fetch_airquality(&loc).await.unwrap_or_else(|e| format!("airquality err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sunrise(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sunset(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Math(expr) => { let txt = eval_math(&expr); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Insult(topic) => { let txt = fetch_insult(&topic).await.unwrap_or_else(|e| format!("insult err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Etymology(word) => { let txt = fetch_etymology(&word).await.unwrap_or_else(|e| format!("etymology err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Synonym(word) => { let txt = fetch_synonym(&word).await.unwrap_or_else(|e| format!("synonym err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Philosophy => { let txt = fetch_philosophy_quote().await.unwrap_or_else(|e| format!("philosophy err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
@@ -489,24 +483,24 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Affirmation(note) => { let txt = create_affirmation(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Reflection(note) => { let txt = create_reflection(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Wisdom => { let txt = fetch_wisdom().await.unwrap_or_else(|e| format!("wisdom err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Zen => { let txt = fetch_zen().await.unwrap_or_else(|e| format!("zen err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Journal(note) => { let txt = create_journal(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = create_goal(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = create_deadline(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Plan(args) => { let txt = create_plan(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Astro(sign) => { let txt = fetch_astro(&sign).await.unwrap_or_else(|e| format!("astro err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Review(args) => { let txt = create_review(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Priority(args) => { let txt = create_priority(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Idea(args) => { let txt = create_idea(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Link(args) => { let txt = create_link(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Snippet(args) => { let txt = create_snippet(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Qr(text) => { let txt = fetch_qr(&text); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Save(args) => { let txt = create_save(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Morning(args) => { let txt = create_morning(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Checkin(args) => { let txt = create_checkin(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Dogs => { let txt = fetch_dogs().await.unwrap_or_else(|e| format!("dogs err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Cats => { let txt = fetch_cats().await.unwrap_or_else(|e| format!("cats err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Useless => { let txt = fetch_useless().await.unwrap_or_else(|e| format!("useless err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Number(num) => { let txt = fetch_number(&num).await.unwrap_or_else(|e| format!("number err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Activities => { let txt = fetch_activities().await.unwrap_or_else(|e| format!("activities err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Bmi(args) => { let txt = fetch_bmi(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
@@ -524,13 +518,13 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Recap(q) => { let txt = create_recap(&q).await; create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Trivia(args) => { let txt = fetch_trivia(&args).await.unwrap_or_else(|e| format!("trivia err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Story(args) => { let txt = fetch_story(&args).await.unwrap_or_else(|e| format!("story err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Fortune(args) => { let txt = fetch_fortune(&args).await.unwrap_or_else(|e| format!("fortune err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Hello(lang) => { let txt = fetch_hello(&lang).await.unwrap_or_else(|e| format!("hello err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Wordoftheday => { let txt = fetch_wordoftheday().await.unwrap_or_else(|e| format!("word err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Quote(args) => { let txt = fetch_quote(&args).await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Truth => { let txt = fetch_truth().await.unwrap_or_else(|e| format!("truth err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Fact => { let txt = fetch_fact().await.unwrap_or_else(|e| format!("fact err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Dadjoke => { let txt = fetch_dadjoke().await.unwrap_or_else(|e| format!("dadjoke err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Bored(args) => { let txt = fetch_bored(&args).await.unwrap_or_else(|e| format!("bored err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Kanye => { let txt = fetch_kanye().await.unwrap_or_else(|e| format!("kanye err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Wouldyourather => { let txt = fetch_wouldyourather().await.unwrap_or_else(|e| format!("wyr err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Catfact => { let txt = fetch_catfact().await.unwrap_or_else(|e| format!("catfact err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Affirmation2(mood) => { let txt = fetch_affirmation2(&mood).await.unwrap_or_else(|e| format!("affirmation2 err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Advice => { let txt = fetch_advice().await.unwrap_or_else(|e| format!("advice err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Ticker(q) => { let txt = fetch_ticker(&q).await.unwrap_or_else(|e| format!("ticker err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Dividend(q) => { let txt = fetch_dividend(&q).await.unwrap_or_else(|e| format!("dividend err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Etf(q) => { let txt = fetch_etf(&q).await.unwrap_or_else(|e| format!("etf err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
@@ -742,6 +736,89 @@ fn tg_footer(source: &str, tag: &str) -> String {
 }
 fn tg_truncate(s: &str, n: usize) -> String {
     if s.len() > n { format!("{}...", &s[..n]) } else { s.to_string() }
+}
+
+// --- Markdown Builder (stolen from tgcli + markdown-builder patterns) ---
+
+struct Md {
+    lines: Vec<String>,
+}
+
+impl Md {
+    fn new() -> Self { Self { lines: Vec::new() } }
+
+    fn h1(mut self, text: &str) -> Self { self.lines.push(format!("# {}", text)); self }
+    fn h2(mut self, text: &str) -> Self { self.lines.push(format!("## {}", text)); self }
+    fn h3(mut self, text: &str) -> Self { self.lines.push(format!("### {}", text)); self }
+    fn h4(mut self, text: &str) -> Self { self.lines.push(format!("#### {}", text)); self }
+
+    fn p(mut self, text: &str) -> Self { self.lines.push(text.to_string()); self }
+    fn pi(mut self, key: &str, val: &str) -> Self {
+        if !val.is_empty() { self.lines.push(format!("**{}:** {}", key, val)); }
+        self
+    }
+    fn pi_num<T: std::fmt::Display>(mut self, key: &str, val: T) -> Self {
+        self.lines.push(format!("**{}:** {}", key, val));
+        self
+    }
+
+    fn bullet(mut self, text: &str) -> Self { self.lines.push(format!("- {}", text)); self }
+    fn bullet_bold(mut self, key: &str, val: &str) -> Self { self.lines.push(format!("- **{}**: {}", key, val)); self }
+    fn numbered(mut self, n: usize, text: &str) -> Self { self.lines.push(format!("{}. {}", n, text)); self }
+
+    fn blank(mut self) -> Self { self.lines.push(String::new()); self }
+    fn hr(mut self) -> Self { self.lines.push(String::new()); self.lines.push("---".into()); self.lines.push(String::new()); self }
+
+    fn code_block(mut self, lang: &str, code: &str) -> Self {
+        self.lines.push(format!("```{}", lang));
+        self.lines.push(code.to_string());
+        self.lines.push("```".into());
+        self
+    }
+    fn quote(mut self, text: &str) -> Self {
+        for line in text.lines() { self.lines.push(format!("> {}", line)); }
+        self
+    }
+    fn table(mut self, headers: &[&str], rows: &[Vec<String>]) -> Self {
+        if headers.is_empty() { return self; }
+        let num_cols = headers.len();
+        let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
+        for row in rows {
+            for (i, cell) in row.iter().enumerate() {
+                if i < num_cols { widths[i] = widths[i].max(cell.len()); }
+            }
+        }
+        let sep: Vec<String> = widths.iter().map(|w| "-".repeat(*w)).collect();
+        let header_row: Vec<String> = headers.iter().enumerate().map(|(i, h)| format!("{:pad$}", h, pad = widths[i])).collect();
+        self.lines.push(format!("| {} |", header_row.join(" | ")));
+        self.lines.push(format!("| {} |", sep.join(" | ")));
+        for row in rows {
+            let cells: Vec<String> = row.iter().enumerate().map(|(i, c)| {
+                let pad = if i < num_cols { widths[i] } else { 0 };
+                format!("{:pad$}", c, pad = pad)
+            }).collect();
+            self.lines.push(format!("| {} |", cells.join(" | ")));
+        }
+        self
+    }
+    fn table_md(mut self, headers: &[&str], rows: &[Vec<String>]) -> Self {
+        if headers.is_empty() { return self; }
+        self.lines.push(format!("| {} |", headers.join(" | ")));
+        self.lines.push(format!("|{}|", headers.iter().map(|_| "---".to_string()).collect::<Vec<_>>().join("|")));
+        for row in rows {
+            self.lines.push(format!("| {} |", row.join(" | ")));
+        }
+        self
+    }
+
+    fn push(mut self, text: &str) -> Self { self.lines.push(text.to_string()); self }
+    fn push_fmt(mut self, s: String) -> Self { self.lines.push(s); self }
+
+    fn build(self) -> String { self.lines.join("\n") }
+    fn build_trunc(self, max: usize) -> String {
+        let s = self.lines.join("\n");
+        if s.len() > max { format!("{}...", &s[..max]) } else { s }
+    }
 }
 
 async fn fetch_hn() -> Result<String> {
@@ -2091,10 +2168,98 @@ fn create_meeting(args: &str) -> String {
     let topic = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
     let notes = parts.get(1).unwrap_or(&"");
     let date = Local::now().format("%Y-%m-%d").to_string();
-    format!(
-        "# Meeting: {topic}\n\n**Date:** {date}\n\n## Attendees\n- \n\n## Agenda\n- \n\n## Discussion\n{notes}\n\n## Action Items\n- [ ] \n\n## Next Steps\n- \n\n#meeting #notes {date}",
-        topic = topic, date = date, notes = notes
-    )
+    let time = Local::now().format("%H:%M").to_string();
+    Md::new()
+        .h2(&format!("🤝 Meeting"))
+        .blank()
+        .pi("Topic", topic)
+        .pi("Date", &date)
+        .pi("Time", &time)
+        .blank()
+        .push("## 👥 Attendees")
+        .blank()
+        .push("- _Add attendees_")
+        .blank()
+        .push("## 📋 Agenda")
+        .blank()
+        .push(&if notes.is_empty() { "- _Add agenda items_".to_string() } else { notes.lines().map(|l| format!("- {}", l)).collect::<Vec<_>>().join("\n") })
+        .blank()
+        .push("## 💬 Discussion")
+        .blank()
+        .push("_Notes go here_")
+        .blank()
+        .push("## ✅ Action Items")
+        .blank()
+        .push("- [ ] _Owner: Task description_")
+        .blank()
+        .push("## ➡️ Next Steps")
+        .blank()
+        .push("- _Schedule follow-up_")
+        .blank()
+        .table(&["Item", "Owner", "Due"], &[vec!["_Add items_".into(), "_Name_".into(), "_Date_".into()]])
+        .blank()
+        .push(&format!("{}\n\n`{}` · #meeting #notes", tg_footer("memogram", "meeting"), date))
+        .build()
+}
+
+fn create_review(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let words = args.split_whitespace().count();
+    Md::new()
+        .h2(&format!("📊 Review"))
+        .blank()
+        .pi("Period", &now)
+        .pi("Entries", &words.to_string())
+        .blank()
+        .push("## 📝 Summary")
+        .blank()
+        .p(args)
+        .blank()
+        .push("## ✅ Wins")
+        .blank()
+        .push("- _Add wins_")
+        .blank()
+        .push("## 🔧 Gaps")
+        .blank()
+        .push("- _Add gaps_")
+        .blank()
+        .push("## 📈 Metrics")
+        .blank()
+        .table(&["Metric", "Target", "Actual"], &[vec!["_Add metrics_".into(), "_Target_".into(), "_Actual_".into()]])
+        .blank()
+        .push("## ➡️ Next")
+        .blank()
+        .push("- _Add next actions_")
+        .blank()
+        .push("> _Tip: Review weekly. Keep wins visible, gaps actionable._")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #review #planning", tg_footer("memogram", "review"), now))
+        .build()
+}
+
+fn create_summary(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let words = args.split_whitespace().count();
+    Md::new()
+        .h2(&format!("📋 Summary"))
+        .blank()
+        .pi("Date", &now)
+        .pi("Entries", &words.to_string())
+        .blank()
+        .push("## 📝 Content")
+        .blank()
+        .p(args)
+        .blank()
+        .push("## 📊 Stats")
+        .blank()
+        .table(&["Metric", "Value"], &[vec!["Words".into(), words.to_string()], vec!["Chars".into(), args.len().to_string()]])
+        .blank()
+        .push("## 🏷️ Tags")
+        .blank()
+        .push("- #summary #daily")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #summary", tg_footer("memogram", "summary"), now))
+        .build()
 }
 
 fn create_project(args: &str) -> String {
@@ -2123,39 +2288,143 @@ fn create_book(args: &str) -> String {
 fn create_todo(args: &str) -> String {
     let items: Vec<&str> = args.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
     if items.is_empty() { return "usage: `/todo buy milk, write report, call mom`".into(); }
-    let mut out = format!("{}\n\n", tg_header("✅", "Todo List", ""));
-    for item in items {
-        out.push_str(&format!("- [ ] {}\n", item));
-    }
-    out.push_str(&format!("\n{}", tg_footer("todo", "tasks")));
-    out
+    let total = items.len();
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    Md::new()
+        .h2(&format!("✅ Todo List"))
+        .blank()
+        .pi("Total", &format!("{} items", total))
+        .pi("Created", &now)
+        .blank()
+        .push("## 📋 Tasks")
+        .blank()
+        .push(&items.iter().enumerate().map(|(i, item)| format!("- [ ] **{}.** {}", i + 1, item)).collect::<Vec<_>>().join("\n"))
+        .blank()
+        .table(&["#", "Task", "Status"], &items.iter().enumerate().map(|(i, item)| vec![(i+1).to_string(), item.to_string(), "⏳ Pending".to_string()]).collect::<Vec<_>>())
+        .blank()
+        .push("## 📊 Stats")
+        .blank()
+        .table(&["Metric", "Value"], &[vec!["Total".into(), total.to_string()], vec!["Pending".into(), total.to_string()], vec!["Done".into(), "0".into()]])
+        .blank()
+        .push("> _Tip: Start with the hardest task first (Eat the Frog 🐸)_")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #todo #tasks", tg_footer("memogram", "todo"), now))
+        .build()
 }
 
 fn create_list(args: &str) -> String {
     let items: Vec<&str> = args.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
     if items.is_empty() { return "usage: `/list apples, bananas, oranges`".into(); }
-    let mut out = "# List\n\n".to_string();
-    for item in items {
-        out.push_str(&format!("- {}\n", item));
-    }
-    out.push_str("\n#list #notes");
-    out
+    let total = items.len();
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    Md::new()
+        .h2(&format!("📝 List"))
+        .blank()
+        .pi("Items", &total.to_string())
+        .pi("Created", &now)
+        .blank()
+        .push("## 📋 Items")
+        .blank()
+        .push(&items.iter().enumerate().map(|(i, item)| format!("{}. {}", i + 1, item)).collect::<Vec<_>>().join("\n"))
+        .blank()
+        .push("## 📊 Summary")
+        .blank()
+        .table(&["#", "Item"], &items.iter().enumerate().map(|(i, item)| vec![(i+1).to_string(), item.to_string()]).collect::<Vec<_>>())
+        .blank()
+        .push(&format!("{}\n\n`{}` · #list", tg_footer("memogram", "list"), now))
+        .build()
 }
 
 fn create_clip(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let url = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("");
     let notes = parts.get(1).unwrap_or(&"");
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    format!(
-        "# Bookmark\n\n**URL:** {url}\n**Saved:** {date}\n\n## Notes\n{notes}\n\n#bookmark #save",
-        url = url, date = date, notes = notes
-    )
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let domain = url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or(url);
+    let is_code = url.contains("github.com") || url.contains("crates.io") || url.contains("docs.rs") || url.contains("stackoverflow.com");
+    let category = if is_code { "💻 Code" } else if url.contains("youtube.com") || url.contains("youtu.be") { "🎬 Video" } else if url.contains("arxiv.org") || url.contains("pubmed") { "📚 Paper" } else { "🌐 Article" };
+    Md::new()
+        .h2(&format!("🔗 Bookmark"))
+        .blank()
+        .pi("URL", &format!("[{}]({})", domain, url))
+        .pi("Category", category)
+        .pi("Saved", &now)
+        .blank()
+        .push("## 📝 Notes")
+        .blank()
+        .p(notes)
+        .blank()
+        .push("## 🏷️ Tags")
+        .blank()
+        .push(&format!("- #bookmark #{}", if is_code { "code" } else { "read" }))
+        .blank()
+        .push("## 🔗 Related")
+        .blank()
+        .push("- _Add related links here_")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #bookmark", tg_footer("memogram", "clip"), now))
+        .build()
 }
 
+fn create_link(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let url = parts.first().unwrap_or(&"https://example.com");
+    let desc = parts.get(1).unwrap_or(&"");
+    let domain = url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or(url);
+    Md::new()
+        .h2(&format!("🔗 Link"))
+        .blank()
+        .pi("URL", &format!("[{}]({})", domain, url))
+        .pi("Saved", &now)
+        .blank()
+        .push("## 📝 Why")
+        .blank()
+        .p(desc)
+        .blank()
+        .push("## 🏷️ Tags")
+        .blank()
+        .push("- #link #inbox")
+        .blank()
+        .push("## 🔗 Related")
+        .blank()
+        .push("- _Add related links here_")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #link", tg_footer("memogram", "link"), now))
+        .build()
+}
 
-
-
+fn create_snippet(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let lang = if args.contains("fn ") || args.contains("let ") || args.contains("impl ") { "rust" }
+        else if args.contains("def ") || args.contains("import ") || args.contains("class ") { "python" }
+        else if args.contains("function ") || args.contains("const ") || args.contains("=> ") { "javascript" }
+        else if args.contains("SELECT ") || args.contains("FROM ") { "sql" }
+        else { "text" };
+    let lines = args.lines().count();
+    let chars = args.len();
+    Md::new()
+        .h2(&format!("📝 Snippet"))
+        .blank()
+        .pi("Language", lang)
+        .pi("Saved", &now)
+        .pi("Size", &format!("{} lines, {} chars", lines, chars))
+        .blank()
+        .push("## 📋 Code")
+        .blank()
+        .code_block(lang, args)
+        .blank()
+        .push("## 💡 Context")
+        .blank()
+        .push("- _Add usage context here_")
+        .blank()
+        .push("## 🔗 Source")
+        .blank()
+        .push("- _Add source URL here_")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #snippet #{}", tg_footer("memogram", "snippet"), now, lang))
+        .build()
+}
 
 
 // === NEW COMMANDS: Bioengineering ===
@@ -2286,7 +2555,35 @@ async fn fetch_stoic_quote() -> Result<String> {
             (q.to_string(), a.to_string())
         }
     };
-    Ok(format!("{}\n\n> \"{}\"\n\n— **{}**\n\n{}", tg_header("🏛️", "Stoic Wisdom", ""), text, author, tg_footer("stoic", "stoic")))
+    Ok(Md::new()
+        .h2("🏛️ Stoic Wisdom")
+        .blank()
+        .pi("Source", "stoic-quotes.com")
+        .pi("Author", &author)
+        .blank()
+        .push("## 📜 Quote")
+        .blank()
+        .quote(&text)
+        .blank()
+        .push(&format!("— **{}**", author))
+        .blank()
+        .push("## 📖 About the Author")
+        .blank()
+        .push(&match author.as_str() {
+            "Marcus Aurelius" => "- Roman Emperor (161-180 AD), philosopher-king, wrote *Meditations*",
+            "Seneca" => "- Roman Stoic philosopher, statesman, wrote *Letters from a Stoic*",
+            "Epictetus" => "- Greek Stoic philosopher, former slave, taught *dichotomy of control*",
+            _ => "- Ancient Greek or Roman Stoic philosopher",
+        })
+        .blank()
+        .push("## 💡 Stoic Principles")
+        .blank()
+        .push("- **Dichotomy of Control** — Focus only on what you can control")
+        .push("- **Amor Fati** — Love your fate, embrace what happens")
+        .push("- **Memento Mori** — Remember death to live fully")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #stoic #wisdom", tg_footer("stoic-quotes.com", "stoic"), Local::now().format("%Y-%m-%d %H:%M")))
+        .build())
 }
 
 fn create_mood_entry(args: &str) -> String {
@@ -3465,11 +3762,33 @@ fn create_move(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let bucket = parts.first().unwrap_or(&"");
     let content = parts.get(1).unwrap_or(&"");
-    let mut out = format!("{}\n\n", tg_header("↗️", "Moved", bucket));
-    out.push_str(&format!("**Moved to:** `#{}`\n**Time:** `{}`\n\n", bucket, now));
-    out.push_str(&format!("## 📝 Content\n\n{}\n\n", content));
-    out.push_str(&format!("{}\n\n`{}` · #move #inbox", tg_footer("memos", "move"), now));
-    out
+    let word_count = content.split_whitespace().count();
+    Md::new()
+        .h2("↗️ Memo Moved")
+        .blank()
+        .pi("Destination", &format!("#{}", bucket))
+        .pi("Time", &now)
+        .pi("Words", &word_count.to_string())
+        .blank()
+        .push("## 📝 Content")
+        .blank()
+        .push(content)
+        .blank()
+        .push("## 📊 Move Details")
+        .blank()
+        .table(&["Property", "Value"], &[
+            vec!["Bucket".into(), format!("#{}", bucket)],
+            vec!["Time".into(), now.clone()],
+            vec!["Words".into(), word_count.to_string()],
+        ])
+        .blank()
+        .push("## 💡 Tips")
+        .blank()
+        .push(&format!("- Check `#{}` for new memos", bucket))
+        .push("- Use `/archive` to clean up old memos")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #move #inbox", tg_footer("memogram", "move"), now))
+        .build()
 }
 
 async fn fetch_ticker(ticker: &str) -> Result<String> {
@@ -4180,14 +4499,6 @@ fn create_plan(args: &str) -> String {
     )
 }
 
-fn create_review(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
-    format!(
-        "# 📊 Review — `{}`\n\n**Date:** `{}`\n\n## 📝 Summary\n\n{}\n\n## ✅ Wins\n\n- \n\n## 🔧 Gaps\n\n- \n\n## 📈 Metrics\n\n| Metric | Target | Actual |\n|---|---|---|\n|  |  |  |\n\n## ➡️ Next\n\n- \n\n{}\n\n`{}` · #{}",
-        now, now, args, tg_header("📊", "Review", &now), now, "planning"
-    )
-}
-
 fn create_priority(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d").to_string();
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
@@ -4217,25 +4528,6 @@ fn create_braindump(args: &str) -> String {
     )
 }
 
-fn create_link(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let url = parts.first().unwrap_or(&"https://example.com");
-    let desc = parts.get(1).unwrap_or(&"");
-    format!(
-        "# 🔗 Link — `{}`\n\n**URL:** {}\n**Saved:** `{}`\n\n## 📝 Why\n\n{}\n\n## 🏷️ Tags\n\n- \n\n## 🔗 Related\n\n- \n\n{}\n\n`{}` · #{}",
-        now, url, now, desc, tg_header("🔗", "Link", url), now, "inbox"
-    )
-}
-
-fn create_snippet(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    format!(
-        "# 📝 Snippet — `{}`\n\n**Saved:** `{}`\n\n## 📋 Code\n\n{}\n\n## 💡 Context\n\n- \n\n## 🔗 Source\n\n- \n\n{}\n\n`{}` · #{}",
-        now, now, tg_code_block(args), tg_header("📝", "Snippet", &now), now, "inbox"
-    )
-}
-
 fn create_save(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     format!(
@@ -4247,56 +4539,187 @@ fn create_save(args: &str) -> String {
 // === DAILY COMMANDS ===
 
 fn create_morning(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
-    let date = now.clone();
-    format!(
-        "# 🌅 Morning — `{}`\n\n**Date:** `{}`\n\n## 🎯 Intent\n\n{}\n\n## ✅ Top 3\n\n- [ ] \n- [ ] \n- [ ] \n\n## 💧 Health\n\n- Sleep: \n- Water: \n- Energy: /10\n\n## 📝 Note\n\n{}\n\n{}\n\n`{}` · #{}",
-        date, now, args, if args.trim().is_empty() { "_Set 1 intent for today._" } else { "" }, tg_header("🌅", "Morning", &date), now, "daily"
-    )
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let intent = if args.trim().is_empty() { "Set 1 intent for today." } else { args };
+    Md::new()
+        .h2("🌅 Morning")
+        .blank()
+        .pi("Date", &date)
+        .pi("Time", &now)
+        .blank()
+        .push("## 🎯 Intent")
+        .blank()
+        .push(intent)
+        .blank()
+        .push("## ✅ Top 3")
+        .blank()
+        .push("- [ ] ")
+        .push("- [ ] ")
+        .push("- [ ] ")
+        .blank()
+        .push("## 💧 Health")
+        .blank()
+        .table(&["Metric", "Value"], &[
+            vec!["Sleep".into(), "".into()],
+            vec!["Water".into(), "".into()],
+            vec!["Energy".into(), "/10".into()],
+        ])
+        .blank()
+        .push("## 💡 Morning Tips")
+        .blank()
+        .push("- Hydrate before coffee")
+        .push("- 5m sunlight for circadian rhythm")
+        .push("- Review top 3 priorities")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #morning #daily", tg_footer("memogram", "morning"), now))
+        .build()
 }
 
 fn create_evening(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
-    let date = now.clone();
-    format!(
-        "# 🌙 Evening — `{}`\n\n**Date:** `{}`\n\n## 📝 Reflection\n\n{}\n\n## ✅ Wins\n\n- \n\n## 🔧 Improves\n\n- \n\n## 🙏 Gratitude\n\n- \n\n{}\n\n`{}` · #{}",
-        date, now, args, tg_header("🌙", "Evening", &date), now, "daily"
-    )
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    Md::new()
+        .h2("🌙 Evening")
+        .blank()
+        .pi("Date", &date)
+        .pi("Time", &now)
+        .blank()
+        .push("## 📝 Reflection")
+        .blank()
+        .push(if args.trim().is_empty() { "How was your day?" } else { args })
+        .blank()
+        .push("## ✅ Wins")
+        .blank()
+        .push("- ")
+        .blank()
+        .push("## 🔧 Improvements")
+        .blank()
+        .push("- ")
+        .blank()
+        .push("## 🙏 Gratitude")
+        .blank()
+        .push("- ")
+        .blank()
+        .push("## 💡 Evening Tips")
+        .blank()
+        .push("- Review wins from today")
+        .push("- Set 1 intention for tomorrow")
+        .push("- Avoid screens 1h before bed")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #evening #daily", tg_footer("memogram", "evening"), now))
+        .build()
 }
 
 fn create_checkin(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    format!(
-        "# ✅ Check-in — `{}`\n\n**Time:** `{}`\n\n## 💭 State\n\n{}\n\n## 📊 Quick\n\n| Focus | Energy | Stress |\n|---|---|---|\n|  | /10 | /10 |\n\n> _Tip: 1 breath, note 1 win._\n\n{}\n\n`{}` · #{}",
-        now, now, args, tg_header("✅", "Check-in", &now), now, "daily"
-    )
+    let parts: Vec<&str> = args.splitn(3, ' ').collect();
+    let mood = parts.first().unwrap_or(&"?");
+    let energy = parts.get(1).unwrap_or(&"?");
+    let note = parts.get(2).unwrap_or(&"");
+    Md::new()
+        .h2("✅ Check-in")
+        .blank()
+        .pi("Time", &now)
+        .pi("Mood", mood)
+        .pi("Energy", energy)
+        .blank()
+        .push("## 💭 State")
+        .blank()
+        .push(if note.is_empty() { "How are you feeling?" } else { note })
+        .blank()
+        .push("## 📊 Quick Check")
+        .blank()
+        .table(&["Metric", "Value"], &[
+            vec!["Mood".into(), mood.to_string()],
+            vec!["Energy".into(), format!("{}/10", energy)],
+            vec!["Time".into(), now.clone()],
+        ])
+        .blank()
+        .push("## 💡 Tips")
+        .blank()
+        .push("- 1 breath, note 1 win")
+        .push("- Name it to tame it")
+        .push("- Hydrate + stretch")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #checkin #daily", tg_footer("memogram", "checkin"), now))
+        .build()
 }
 
 fn create_log(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    format!(
-        "# 📋 Log — `{}`\n\n**Time:** `{}`\n\n## 📝 Entry\n\n{}\n\n## 🏷️ Tags\n\n- \n\n## 🔗 Links\n\n- \n\n{}\n\n`{}` · #{}",
-        now, now, args, tg_header("📋", "Log", &now), now, "daily"
-    )
-}
-
-fn create_summary(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
-    let date = now.clone();
-    format!(
-        "# 📝 Summary — `{}`\n\n**Date:** `{}`\n\n## 📌 TL;DR\n\n{}\n\n## ✅ Done\n\n- \n\n## 📊 Stats\n\n| Metric | Value |\n|---|---|\n| Tasks |  |\n| Focus | /10 |\n\n## 🔜 Next\n\n- \n\n{}\n\n`{}` · #{}",
-        date, now, args, tg_header("📝", "Summary", &date), now, "daily"
-    )
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let word_count = args.split_whitespace().count();
+    let char_count = args.len();
+    Md::new()
+        .h2("📋 Daily Log")
+        .blank()
+        .pi("Date", &date)
+        .pi("Words", &word_count.to_string())
+        .pi("Chars", &char_count.to_string())
+        .blank()
+        .push("## 📝 Entry")
+        .blank()
+        .push(args)
+        .blank()
+        .push("## 📊 Stats")
+        .blank()
+        .table(&["Metric", "Value"], &[
+            vec!["Words".into(), word_count.to_string()],
+            vec!["Characters".into(), char_count.to_string()],
+            vec!["Lines".into(), args.lines().count().to_string()],
+        ])
+        .blank()
+        .push("## 🏷️ Tags")
+        .blank()
+        .push("- #daily")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #log #daily", tg_footer("memogram", "log"), now))
+        .build()
 }
 
 // === LIFE COMMANDS ===
 
 fn create_sleep(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let hours = parts.first().unwrap_or(&"?");
     let quality = parts.get(1).unwrap_or(&"");
-    format!("{}\n\n**Hours:** {}\n**Quality:** {}\n**Date:** `{}`\n\n{}", tg_header("😴", "Sleep", ""), hours, quality, now, tg_footer("sleep", "life"))
+    let hrs: f64 = hours.parse().unwrap_or(0.0);
+    let score = if hrs >= 8.0 { "Excellent" } else if hrs >= 7.0 { "Good" } else if hrs >= 6.0 { "Fair" } else { "Poor" };
+    let emoji = if hrs >= 8.0 { "🟢" } else if hrs >= 7.0 { "🟡" } else if hrs >= 6.0 { "🟠" } else { "🔴" };
+    Md::new()
+        .h2("😴 Sleep")
+        .blank()
+        .pi("Date", &date)
+        .pi("Hours", hours)
+        .pi("Quality", quality)
+        .pi("Score", &format!("{} {}", emoji, score))
+        .blank()
+        .push("## 📊 Sleep Analysis")
+        .blank()
+        .table(&["Metric", "Value"], &[
+            vec!["Hours".into(), hours.to_string()],
+            vec!["Quality".into(), quality.to_string()],
+            vec!["Score".into(), format!("{} {}", emoji, score)],
+            vec!["Target".into(), "7-9 hours".into()],
+        ])
+        .blank()
+        .push("## 💡 Tips")
+        .blank()
+        .push(&if hrs >= 8.0 {
+            "- Great sleep! Keep this schedule consistent."
+        } else if hrs >= 7.0 {
+            "- Good sleep. Try for 8h for optimal recovery."
+        } else if hrs >= 6.0 {
+            "- Below target. Avoid screens 1h before bed."
+        } else {
+            "- Sleep deficit! Prioritize rest tonight."
+        })
+        .blank()
+        .push(&format!("{}\n\n`{}` · #sleep #wellness", tg_footer("memogram", "sleep"), now))
+        .build()
 }
 
 fn create_energy(args: &str) -> String {
@@ -4363,6 +4786,672 @@ fn create_read(args: &str) -> String {
         "# 📚 Reading — `{}`\n\n**Title:** `{}` · **Author:** `{}` · **Date:** `{}`\n\n## 📝 Summary\n\n- \n\n## 💡 Takeaways\n\n1. \n2. \n3. \n\n## 💬 Quotes\n\n> \"\" — {}\n\n## 📊 Progress\n\n| Pages | % | Notes |\n|---|---|---|\n|  |  |  |\n\n{}\n\n`{}` · #{}",
         title, title, author, now, author, tg_header("📚", "Reading", title), now, "wellness"
     )
+}
+
+// ============= NEW COMMANDS =============
+
+fn fetch_ph(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.is_empty() { return format!("{}\n\n_Usage:_ `/ph <number>` — calculates pH, pOH, [H+], [OH-]\n\n**Example:** `/ph 0.001`\n\n`{}` · #ph", tg_header("⚗️", "pH Calculator", "help"), now); }
+    let val: f64 = match parts[0].parse() { Ok(v) => v, Err(_) => return format!("{}\n\n_Invalid number: `{}`_\n\n`{}` · #ph", tg_header("⚗️", "pH Calculator", "error"), parts[0], now) };
+    let ph_val = if val > 14.0 { -val.log10() } else { val };
+    let h_conc = 10f64.powf(-ph_val);
+    let poh = 14.0 - ph_val;
+    let oh_conc = 10f64.powf(-poh);
+    let category = if ph_val < 1.0 { "🔴 Strong Acid" } else if ph_val < 3.0 { "🟠 Weak Acid" } else if ph_val < 6.0 { "🟡 Slightly Acidic" } else if ph_val < 8.0 { "🟢 Neutral" } else if ph_val < 10.0 { "🟡 Slightly Basic" } else if ph_val < 13.0 { "🟠 Weak Base" } else { "🔴 Strong Base" };
+    let emoji = if ph_val < 3.0 { "🧪" } else if ph_val < 7.0 { "💧" } else if ph_val < 11.0 { "🧴" } else { "⚗️" };
+    let mut out = format!("{}\n\n", tg_header(&emoji, "pH Calculator", &format!("{:.2}", ph_val)));
+    out.push_str(&format!("**Input:** `{}`\n\n", args));
+    out.push_str(&format!("## 📊 Results\n\n| Metric | Value |\n|---|---|\n| pH | `{:.4}` |\n| [H⁺] | `{:.2e} M` |\n| pOH | `{:.4}` |\n| [OH⁻] | `{:.2e} M` |\n| Category | {} |\n\n", ph_val, h_conc, poh, oh_conc, category));
+    out.push_str(&format!("## 📚 Reference\n\n| pH | Substance |\n|---|---|\n| 0 | Battery acid |\n| 1 | Stomach acid |\n| 2 | Lemon juice |\n| 3 | Vinegar |\n| 4 | Tomato |\n| 5 | Black coffee |\n| 6 | Milk |\n| 7 | Pure water |\n| 8 | Sea water |\n| 9 | Baking soda |\n| 10 | Soap |\n| 11 | Ammonia |\n| 12 | Bleach |\n| 13 | Lye |\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #ph #science", tg_footer("memogram", "ph"), now));
+    out
+}
+
+async fn fetch_yt(url: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let video_id = url.trim().split("v=").last().unwrap_or(url).split('&').next().unwrap_or(url);
+    let api_url = format!("https://noembed.com/embed?url=https://www.youtube.com/watch?v={}", video_id);
+    let v: serde_json::Value = HTTP.get(&api_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let title = v["title"].as_str().unwrap_or("Unknown");
+    let author = v["author_name"].as_str().unwrap_or("Unknown");
+    let thumbnail = v["thumbnail_url"].as_str().unwrap_or("");
+    let mut out = format!("{}\n\n", tg_header("📺", "YouTube", title));
+    out.push_str(&format!("**Title:** {}\n**Channel:** `{}`\n\n", title, author));
+    if !thumbnail.is_empty() { out.push_str(&format!("![thumb]({})\n\n", thumbnail)); }
+    out.push_str(&format!("🔗 [Watch on YouTube](https://www.youtube.com/watch?v={})\n\n", video_id));
+    out.push_str(&format!("{}\n\n`{}` · #yt", tg_footer("youtube.com", "yt"), now));
+    Ok(out)
+}
+
+async fn fetch_ghrepo(repo: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = format!("https://api.github.com/repos/{}", repo.trim());
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").header("Accept", "application/vnd.github.v3+json").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let name = v["full_name"].as_str().unwrap_or(repo);
+    let desc = v["description"].as_str().unwrap_or("No description");
+    let stars = v["stargazers_count"].as_u64().unwrap_or(0);
+    let forks = v["forks_count"].as_u64().unwrap_or(0);
+    let issues = v["open_issues_count"].as_u64().unwrap_or(0);
+    let lang = v["language"].as_str().unwrap_or("Unknown");
+    let license = v["license"]["spdx_id"].as_str().unwrap_or("None");
+    let created = v["created_at"].as_str().unwrap_or("?").chars().take(10).collect::<String>();
+    let updated = v["updated_at"].as_str().unwrap_or("?").chars().take(10).collect::<String>();
+    let topics: Vec<String> = v["topics"].as_array().map(|t| t.iter().take(5).filter_map(|x| x.as_str()).map(|s| format!("`{}`", s)).collect()).unwrap_or_default();
+    let mut out = format!("{}\n\n", tg_header("📦", "GitHub Repo", name));
+    out.push_str(&format!("**{}**\n\n{}\n\n", name, desc));
+    out.push_str(&format!("| Stat | Value |\n|---|---|\n| ⭐ Stars | `{}` |\n| 🍴 Forks | `{}` |\n| 🐛 Issues | `{}` |\n| 💻 Language | `{}` |\n| 📜 License | `{}` |\n| 📅 Created | `{}` |\n| 🔄 Updated | `{}` |\n\n", stars, forks, issues, lang, license, created, updated));
+    if !topics.is_empty() { out.push_str(&format!("### 🏷️ Topics\n\n{}\n\n", topics.join(" · "))); }
+    out.push_str(&format!("🔗 [View on GitHub](https://github.com/{})\n\n", repo.trim()));
+    out.push_str(&format!("{}\n\n`{}` · #ghrepo", tg_footer("api.github.com", "ghrepo"), now));
+    Ok(out)
+}
+
+async fn fetch_stocksave(ticker: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}?interval=1d&range=1d", ticker.trim().to_uppercase());
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let result = &v["chart"]["result"][0];
+    let meta = &result["meta"];
+    let sym = meta["symbol"].as_str().unwrap_or(ticker);
+    let price = meta["regularMarketPrice"].as_f64().unwrap_or(0.0);
+    let prev = meta["previousClose"].as_f64().unwrap_or(price);
+    let change = price - prev;
+    let pct = if prev > 0.0 { (change / prev) * 100.0 } else { 0.0 };
+    let emoji = if change >= 0.0 { "📈" } else { "📉" };
+    let mut out = format!("{}\n\n", tg_header(&emoji, "Stock Saved", sym));
+    out.push_str(&format!("**{}** — `${:.2}`\n\n", sym, price));
+    out.push_str(&format!("| Metric | Value |\n|---|---|\n| Price | `${:.2}` |\n| Change | `{:+.2} ({:+.2}%)` |\n| Previous Close | `${:.2}` |\n| Saved | `{}` |\n\n", price, change, pct, prev, now));
+    out.push_str(&format!("{}\n\n`{}` · #stocksave #money", tg_footer("finance.yahoo.com", "stocksave"), now));
+    Ok(out)
+}
+
+async fn fetch_weather7(city: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = format!("https://wttr.in/{}?format=j1", urlencoding::encode(city));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let current = &v["current_condition"][0];
+    let temp = current["temp_C"].as_str().unwrap_or("?");
+    let desc = current["weatherDesc"][0]["value"].as_str().unwrap_or("?");
+    let humidity = current["humidity"].as_str().unwrap_or("?");
+    let wind = current["windspeedKmph"].as_str().unwrap_or("?");
+    let mut out = format!("{}\n\n", tg_header("🌤️", "7-Day Forecast", city));
+    out.push_str(&format!("**Current:** {}°C — {} · 💧 {}% · 💨 {} km/h\n\n", temp, desc, humidity, wind));
+    out.push_str("| Day | High | Low | Condition |\n|---|---|---|---|\n");
+    for (i, day) in v["weather"].as_array().unwrap_or(&vec![]).iter().take(7).enumerate() {
+        let date = day["date"].as_str().unwrap_or("?");
+        let max = day["maxtempC"].as_str().unwrap_or("?");
+        let min = day["mintempC"].as_str().unwrap_or("?");
+        let cond = day["hourly"][4]["weatherDesc"][0]["value"].as_str().unwrap_or("?");
+        let emoji = if cond.contains("Sun") { "☀️" } else if cond.contains("Cloud") { "☁️" } else if cond.contains("Rain") { "🌧️" } else if cond.contains("Snow") { "❄️" } else { "🌤️" };
+        out.push_str(&format!("| {}{} | {}°C | {}°C | {} {} |\n", if i==0{"📍 "}else{""}, date, max, min, emoji, cond));
+    }
+    out.push_str(&format!("\n{}\n\n`{}` · #weather7", tg_footer("wttr.in", "weather7"), now));
+    Ok(out)
+}
+
+async fn fetch_img(url: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let head = HTTP.head(url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?;
+    let content_type = head.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
+    let content_len = head.headers().get("content-length").and_then(|v| v.to_str().ok()).unwrap_or("unknown");
+    let size_kb = content_len.parse::<u64>().map(|b| b / 1024).unwrap_or(0);
+    let is_image = content_type.starts_with("image/");
+    let ext = if content_type.contains("png") { ".png" } else if content_type.contains("jpeg") || content_type.contains("jpg") { ".jpg" } else if content_type.contains("gif") { ".gif" } else if content_type.contains("webp") { ".webp" } else if content_type.contains("svg") { ".svg" } else { ".bin" };
+    let mut out = format!("{}\n\n", tg_header("🖼️", "Image Info", &format!("{}{}", if is_image{"Image"}else{"File"}, ext)));
+    out.push_str(&format!("**URL:** `{}`\n\n", url.chars().take(60).collect::<String>()));
+    out.push_str(&format!("| Property | Value |\n|---|---|\n| Type | `{}` |\n| Extension | `{}` |\n| Size | `{} KB` |\n| Is Image | `{}` |\n\n", content_type, ext, size_kb, is_image));
+    if is_image { out.push_str("### 📐 Dimensions\n\n_File HEAD doesn't include dimensions. Download to analyze._\n\n"); }
+    out.push_str(&format!("{}\n\n`{}` · #img", tg_footer("memogram", "img"), now));
+    Ok(out)
+}
+
+async fn fetch_ip(ip: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = if ip.trim().is_empty() || ip.trim() == "me" { "http://ip-api.com/json/".to_string() } else { format!("http://ip-api.com/json/{}", ip.trim()) };
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let status = v["status"].as_str().unwrap_or("fail");
+    if status != "success" { return Ok(format!("{}\n\n_Lookup failed for `{}`_\n\n{}", tg_header("🌐", "IP Lookup", "error"), ip, tg_footer("ip-api.com", "ip"))); }
+    let query = v["query"].as_str().unwrap_or("?");
+    let country = v["country"].as_str().unwrap_or("?");
+    let region = v["regionName"].as_str().unwrap_or("?");
+    let city = v["city"].as_str().unwrap_or("?");
+    let isp = v["isp"].as_str().unwrap_or("?");
+    let org = v["org"].as_str().unwrap_or("?");
+    let asname = v["as"].as_str().unwrap_or("?");
+    let lat = v["lat"].as_f64().unwrap_or(0.0);
+    let lon = v["lon"].as_f64().unwrap_or(0.0);
+    let timezone = v["timezone"].as_str().unwrap_or("?");
+    let mut out = format!("{}\n\n", tg_header("🌐", "IP Lookup", query));
+    out.push_str(&format!("**IP:** `{}`\n\n", query));
+    out.push_str(&format!("## 📍 Location\n\n| Property | Value |\n|---|---|\n| Country | `{}` |\n| Region | `{}` |\n| City | `{}` |\n| Coordinates | `{}, {}` |\n| Timezone | `{}` |\n\n", country, region, city, lat, lon, timezone));
+    out.push_str(&format!("## 🌐 Network\n\n| Property | Value |\n|---|---|\n| ISP | `{}` |\n| Organization | `{}` |\n| AS | `{}` |\n\n", isp, org, asname));
+    out.push_str(&format!("🔗 [View on map](https://www.google.com/maps?q={},{}{}\n\n", lat, lon, ")"));
+    out.push_str(&format!("{}\n\n`{}` · #ip", tg_footer("ip-api.com", "ip"), now));
+    Ok(out)
+}
+
+async fn fetch_chuck() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://api.chucknorris.io/jokes/random").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let joke = v["value"].as_str().unwrap_or("Chuck Norris doesn't tell jokes. The world just amuses him.");
+    let cat = v["categories"].as_array().and_then(|c| c.first()).and_then(|c| c.as_str()).unwrap_or("dev");
+    let id = v["id"].as_str().unwrap_or("?");
+    let mut out = format!("{}\n\n", tg_header("🥋", "Chuck Norris", cat));
+    out.push_str(&format!("## 🥋 Chuck Norris Fact\n\n> {}\n\n", joke));
+    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Category | `{}` |\n| ID | `{}` |\n\n", cat, id));
+    out.push_str(&format!("{}\n\n`{}` · #chuck #fun", tg_footer("chucknorris.io", "chuck"), now));
+    Ok(out)
+}
+
+async fn fetch_insult(topic: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let q = if topic.trim().is_empty() { "" } else { topic };
+    let url = format!("https://insult.mattbas.org/api/insult/{}", if q.is_empty() { "generate".to_string() } else { format!("?Additional={}", urlencoding::encode(q)) });
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(_) => serde_json::Value::Null },
+        _ => serde_json::Value::Null,
+    };
+    if let Some(insult) = v["insult"].as_str() {
+        let mut out = format!("{}\n\n", tg_header("🗣️", "Insult Generator", "creative"));
+        out.push_str(&format!("## 🗣️ Your Insult\n\n> {}\n\n", insult));
+        out.push_str("_For entertainment purposes only! 😄_\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #insult #fun", tg_footer("insult.mattbas.org", "insult"), now));
+        return Ok(out);
+    }
+    // Fallback
+    let insults = [
+        "You have the charm of a wet sock.",
+        "You're the reason God created the middle finger.",
+        "If you were any more inbred, you'd be a sandwich.",
+        "You're like a cloud. When you disappear, it's a beautiful day.",
+        "You bring everyone a lot of joy... when you leave.",
+        "I'd agree with you, but then we'd both be wrong.",
+        "You're proof that evolution can go in reverse.",
+        "You have the right to remain silent, and I highly recommend it.",
+    ];
+    let idx = (chrono::Utc::now().timestamp() as usize) % insults.len();
+    let mut out = format!("{}\n\n", tg_header("🗣️", "Insult Generator", "creative"));
+    out.push_str(&format!("## 🗣️ Your Insult\n\n> {}\n\n", insults[idx]));
+    out.push_str("_For entertainment purposes only! 😄_\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #insult #fun", tg_footer("insult.mattbas.org", "insult"), now));
+    Ok(out)
+}
+
+async fn fetch_zen() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    if let Some(arr) = v.as_array() {
+        if let Some(first) = arr.first() {
+            let quote = first["q"].as_str().unwrap_or("The journey of a thousand miles begins with a single step.");
+            let author = first["a"].as_str().unwrap_or("Lao Tzu");
+            let char_count = quote.len();
+            let word_count = quote.split_whitespace().count();
+            return Ok(Md::new()
+                .h2("🧘 Zen Wisdom")
+                .blank()
+                .pi("Author", author)
+                .pi("Words", &word_count.to_string())
+                .pi("Source", "zenquotes.io")
+                .blank()
+                .push("## 📜 Quote")
+                .blank()
+                .quote(quote)
+                .blank()
+                .push(&format!("— **{}**", author))
+                .blank()
+                .push("## 📊 Quote Stats")
+                .blank()
+                .table(&["Metric", "Value"], &[
+                    vec!["Words".into(), word_count.to_string()],
+                    vec!["Characters".into(), char_count.to_string()],
+                    vec!["Source".into(), "zenquotes.io".into()],
+                ])
+                .blank()
+                .push("## 🧘 Zen Principles")
+                .blank()
+                .push("- **Mindfulness** — Be present in this moment")
+                .push("- **Acceptance** — Embrace what is, not what should be")
+                .push("- **Simplicity** — Find peace in less")
+                .blank()
+                .push(&format!("{}\n\n`{}` · #zen #wellness", tg_footer("zenquotes.io", "zen"), now))
+                .build());
+        }
+    }
+    Ok(Md::new()
+        .h2("🧘 Zen Wisdom")
+        .blank()
+        .pi("Author", "Alan Watts")
+        .pi("Source", "zenquotes.io")
+        .blank()
+        .push("## 📜 Quote")
+        .blank()
+        .quote("The only way to make sense out of change is to plunge into it, move with it, and join the dance.")
+        .blank()
+        .push("— **Alan Watts**")
+        .blank()
+        .push("## 🧘 Zen Principles")
+        .blank()
+        .push("- **Mindfulness** — Be present in this moment")
+        .push("- **Acceptance** — Embrace what is, not what should be")
+        .push("- **Simplicity** — Find peace in less")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #zen #wellness", tg_footer("zenquotes.io", "zen"), now))
+        .build())
+}
+
+async fn fetch_astro(sign: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let q = if sign.trim().is_empty() { "aries" } else { sign.trim() };
+    let url = format!("https://horoscope-api.herokuapp.com/horoscope/today/{}", q.to_lowercase());
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(_) => serde_json::Value::Null },
+        _ => serde_json::Value::Null,
+    };
+    if let Some(horoscope) = v["horoscope"].as_str() {
+        let sign_name = v["sunsign"].as_str().unwrap_or(q);
+        let mut out = format!("{}\n\n", tg_header("🔮", "Daily Horoscope", sign_name));
+        out.push_str(&format!("**Sign:** `{}` · **Date:** `{}`\n\n", sign_name, now));
+        out.push_str(&format!("## 🔮 Your Horoscope\n\n> {}\n\n", horoscope));
+        out.push_str(&format!("{}\n\n`{}` · #astro #fun", tg_footer("horoscope-api.herokuapp.com", "astro"), now));
+        return Ok(out);
+    }
+    // Fallback
+    let horoscopes = [
+        ("aries", "A bold move today will pay off. Trust your instincts and take the leap."),
+        ("taurus", "Financial matters align in your favor. A practical solution emerges."),
+        ("gemini", "Communication flows easily. An important conversation brings clarity."),
+        ("cancer", "Home and family bring comfort. A nurturing gesture strengthens bonds."),
+        ("leo", "Your creativity shines. A leadership opportunity presents itself."),
+        ("virgo", "Details matter today. Your analytical skills solve a complex problem."),
+        ("libra", "Balance is key. A partnership or relationship reaches new harmony."),
+        ("scorpio", "Deep insights surface. Trust your intuition on a mysterious matter."),
+        ("sagittarius", "Adventure calls. An unexpected opportunity expands your horizons."),
+        ("capricorn", "Discipline pays off. A long-term goal moves closer to completion."),
+        ("aquarius", "Innovation wins. Your unique perspective inspires those around you."),
+        ("pisces", "Creativity flows. A dream or intuition leads to a meaningful discovery."),
+    ];
+    let idx = horoscopes.iter().position(|(s, _)| s == &q.to_lowercase()).unwrap_or(0);
+    let (sign_name, horoscope) = horoscopes[idx];
+    let mut out = format!("{}\n\n", tg_header("🔮", "Daily Horoscope", sign_name));
+    out.push_str(&format!("**Sign:** `{}` · **Date:** `{}`\n\n", sign_name, now));
+    out.push_str(&format!("## 🔮 Your Horoscope\n\n> {}\n\n", horoscope));
+    out.push_str(&format!("{}\n\n`{}` · #astro #fun", tg_footer("horoscope-api.herokuapp.com", "astro"), now));
+    Ok(out)
+}
+
+async fn fetch_summarize(url: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let resp = HTTP.get(url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(10)).send().await?;
+    let html = resp.text().await.unwrap_or_default();
+    let title = html.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).unwrap_or("No title").trim();
+    let body = html.split("<body>").nth(1).unwrap_or(&html);
+    let text: String = body.chars().filter(|c| !c.is_control() || *c == '\n').collect();
+    let sentences: Vec<&str> = text.split(|c| c == '.' || c == '!' || c == '?').filter(|s| s.len() > 30 && s.len() < 200).take(5).collect();
+    let mut out = format!("{}\n\n", tg_header("📄", "Page Summary", title));
+    out.push_str(&format!("**Title:** {}\n**URL:** `{}`\n\n", title, url.chars().take(50).collect::<String>()));
+    if !sentences.is_empty() {
+        out.push_str("## 📝 Summary\n\n");
+        for s in &sentences { out.push_str(&format!("- {}\n", s.trim())); }
+        out.push('\n');
+    } else {
+        out.push_str("_Could not extract meaningful content from this page._\n\n");
+    }
+    out.push_str(&format!("🔗 [Read full article]({})\n\n", url));
+    out.push_str(&format!("{}\n\n`{}` · #summarize", tg_footer("memogram", "summarize"), now));
+    Ok(out)
+}
+
+fn fetch_qr(text: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let data = if text.trim().is_empty() { "https://memogram.junilab.xyz" } else { text };
+    let qr_url = format!("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={}", urlencoding::encode(data));
+    let mut out = format!("{}\n\n", tg_header("📱", "QR Code", "generated"));
+    out.push_str(&format!("**Data:** `{}`\n\n", data.chars().take(60).collect::<String>()));
+    out.push_str(&format!("![QR Code]({})\n\n", qr_url));
+    out.push_str(&format!("🔗 [Download QR]({})\n\n", qr_url));
+    out.push_str(&format!("{}\n\n`{}` · #qr", tg_footer("qrserver.com", "qr"), now));
+    out
+}
+
+async fn fetch_dogs() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let facts: Vec<serde_json::Value> = HTTP.get("https://dog-api.kinduff.com/api/facts?number=1").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let fact = facts.first().and_then(|f| f["fact"].as_str()).unwrap_or("Dogs can understand up to 250 words and gestures.");
+    let img_url = "https://dog.ceo/api/breeds/image/random";
+    let img_v: serde_json::Value = HTTP.get(img_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(5)).send().await?.json().await?;
+    let img = img_v["message"].as_str().unwrap_or("");
+    let breed = img_v["message"].as_str().unwrap_or("").split('/').nth(4).unwrap_or("unknown");
+    Ok(Md::new()
+        .h2("🐕 Dog Fact")
+        .blank()
+        .pi("Source", "dog-api.kinduff.com")
+        .pi("Breed Hint", breed)
+        .blank()
+        .push("## 🐕 Did You Know?")
+        .blank()
+        .quote(fact)
+        .blank()
+        .push("## 📊 Stats")
+        .blank()
+        .table(&["Stat", "Value"], &[
+            vec!["Topic".into(), "Dogs".into()],
+            vec!["Category".into(), "Animals".into()],
+            vec!["Fun Level".into(), "🐾🐾🐾".into()],
+        ])
+        .blank()
+        .push("## 🐾 More Dog Facts")
+        .blank()
+        .push("- Dogs have 18 muscles to move their ears")
+        .push("- A Greyhound can run up to 45 mph")
+        .push("- Dogs dream just like humans do")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #dogs #fun", tg_footer("dog-api.kinduff.com", "dogs"), now))
+        .build())
+}
+
+async fn fetch_cats() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://catfact.ninja/fact").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let fact = v["fact"].as_str().unwrap_or("Cats sleep for 12-16 hours per day.");
+    let len = v["length"].as_u64().unwrap_or(0);
+    let img_url = "https://api.thecatapi.com/v1/images/search";
+    let img_v: serde_json::Value = HTTP.get(img_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(5)).send().await?.json().await?;
+    let img = img_v.as_array().and_then(|a| a.first()).and_then(|o| o["url"].as_str()).unwrap_or("");
+    let mut out = format!("{}\n\n", tg_header("🐱", "Cat Fact", "random"));
+    out.push_str(&format!("## 🐱 Did You Know?\n\n> {}\n\n", fact));
+    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Characters | `{}` |\n\n", len));
+    if !img.is_empty() { out.push_str(&format!("![cat]({})\n\n", img)); }
+    out.push_str(&format!("{}\n\n`{}` · #cats #fun", tg_footer("catfact.ninja", "cats"), now));
+    Ok(out)
+}
+
+async fn fetch_useless() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let facts = [
+        "A group of flamingos is called a 'flamboyance'.",
+        "Octopuses have three hearts.",
+        "Honey never spoils. Archaeologists found 3000-year-old honey in Egyptian tombs that was still edible.",
+        "Bananas are berries, but strawberries aren't.",
+        "A jiffy is an actual unit of time: 1/100th of a second.",
+        "The inventor of the Pringles can is buried in one.",
+        "Wombat poop is cube-shaped.",
+        "Cows have best friends and get stressed when separated.",
+        "The unicorn is Scotland's national animal.",
+        "Hot water freezes faster than cold water (Mpemba effect).",
+        "A day on Venus is longer than a year on Venus.",
+        "Humans share 60% of their DNA with bananas.",
+        "The shortest war in history lasted 38 minutes (Anglo-Zanzibar War).",
+        "There are more possible chess games than atoms in the observable universe.",
+    ];
+    let idx = (chrono::Utc::now().timestamp() as usize) % facts.len();
+    let mut out = format!("{}\n\n", tg_header("🤓", "Useless Fact", "random"));
+    out.push_str(&format!("## 🤓 Did You Know?\n\n> {}\n\n", facts[idx]));
+    out.push_str("_Completely useless but absolutely true!_\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #useless #fun", tg_footer("memogram", "useless"), now));
+    Ok(out)
+}
+
+async fn fetch_number(num: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = if num.trim().is_empty() { "http://numbersapi.com/random/trivia?json".to_string() } else { format!("http://numbersapi.com/{}/trivia?json", num.trim()) };
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let text = v["text"].as_str().unwrap_or("42 is the answer to life, the universe, and everything.");
+    let number = v["number"].as_i64().unwrap_or(0);
+    let found = v["found"].as_bool().unwrap_or(true);
+    let typ = v["type"].as_str().unwrap_or("trivia");
+    Ok(Md::new()
+        .h2(&format!("🔢 Number Trivia"))
+        .blank()
+        .pi("Number", &number.to_string())
+        .pi("Type", typ)
+        .pi("Found", if found { "Yes" } else { "No" })
+        .blank()
+        .push("## 🔢 Trivia")
+        .blank()
+        .quote(text)
+        .blank()
+        .push("## 📊 Number Facts")
+        .blank()
+        .table(&["Fact", "Value"], &[
+            vec!["Number".into(), number.to_string()],
+            vec!["Type".into(), typ.to_string()],
+            vec!["Status".into(), if found { "Found".into() } else { "Not found".into() }],
+            vec!["Source".into(), "numbersapi.com".into()],
+        ])
+        .blank()
+        .push("## 🔗 Try More")
+        .blank()
+        .push(&format!("- `/number {}` — Get another fact", number))
+        .push(&format!("- `/number {}` — Try a different number", number + 1))
+        .blank()
+        .push(&format!("{}\n\n`{}` · #number #fun", tg_footer("numbersapi.com", "number"), now))
+        .build())
+}
+
+async fn fetch_activities() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://www.boredapi.com/api/activity").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let activity = v["activity"].as_str().unwrap_or("Take a walk");
+    let typ = v["type"].as_str().unwrap_or("recreational");
+    let participants = v["participants"].as_u64().unwrap_or(1);
+    let price = v["price"].as_f64().unwrap_or(0.0);
+    let accessibility = v["accessibility"].as_f64().unwrap_or(0.5);
+    let price_str = if price == 0.0 { "Free!".to_string() } else { format!("${:.1}", price) };
+    let emoji = match typ {
+        "education" => "📚", "recreational" => "🎮", "social" => "👥",
+        "diy" => "🔧", "charity" => "💝", "cooking" => "🍳",
+        "relaxation" => "🧘", "music" => "🎵", "busywork" => "💼", _ => "🎯",
+    };
+    Ok(Md::new()
+        .h2("🎯 Activity")
+        .blank()
+        .pi("Type", typ)
+        .pi("Price", &price_str)
+        .pi("Accessibility", &format!("{:.0}%", accessibility * 100.0))
+        .blank()
+        .push("## 🎯 Try This")
+        .blank()
+        .quote(activity)
+        .blank()
+        .push("## 📊 Activity Details")
+        .blank()
+        .table(&["Stat", "Value"], &[
+            vec!["Emoji".into(), emoji.to_string()],
+            vec!["Type".into(), typ.to_string()],
+            vec!["Participants".into(), participants.to_string()],
+            vec!["Price".into(), price_str.clone()],
+            vec!["Accessibility".into(), format!("{:.0}%", accessibility * 100.0)],
+            vec!["Difficulty".into(), if accessibility < 0.3 { "Easy".into() } else if accessibility < 0.7 { "Medium".into() } else { "Hard".into() }],
+        ])
+        .blank()
+        .push("## 💡 Why Try This?")
+        .blank()
+        .push(&match typ {
+            "education" => "- Learn something new today!",
+            "recreational" => "- Perfect for downtime and fun!",
+            "social" => "- Great way to connect with others!",
+            "diy" => "- Get hands-on and create something!",
+            "cooking" => "- Delicious results guaranteed!",
+            "relaxation" => "- Take a breather, you deserve it!",
+            "music" => "- Let the rhythm move you!",
+            _ => "- Something different, something fun!",
+        })
+        .blank()
+        .push(&format!("{}\n\n`{}` · #activities #fun", tg_footer("boredapi.com", "activities"), now))
+        .build())
+}
+
+fn fetch_bmi(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 2 { return format!("{}\n\n_Usage:_ `/bmi <height_cm> <weight_kg>`\n\n**Example:** `/bmi 175 70`\n\n`{}` · #bmi", tg_header("⚖️", "BMI Calculator", "help"), now); }
+    let height: f64 = match parts[0].parse() { Ok(v) => v, Err(_) => return format!("{}\n\n_Invalid height: `{}`_\n\n{}", tg_header("⚖️", "BMI Calculator", "error"), parts[0], now) };
+    let weight: f64 = match parts[1].parse() { Ok(v) => v, Err(_) => return format!("{}\n\n_Invalid weight: `{}`_\n\n{}", tg_header("⚖️", "BMI Calculator", "error"), parts[1], now) };
+    let height_m = height / 100.0;
+    let bmi = weight / (height_m * height_m);
+    let category = if bmi < 18.5 { "Underweight" } else if bmi < 25.0 { "Normal weight" } else if bmi < 30.0 { "Overweight" } else { "Obese" };
+    let emoji = if bmi < 18.5 { "🟡" } else if bmi < 25.0 { "🟢" } else if bmi < 30.0 { "🟠" } else { "🔴" };
+    let ideal_min = 18.5 * height_m * height_m;
+    let ideal_max = 24.9 * height_m * height_m;
+    let mut out = format!("{}\n\n", tg_header(&emoji, "BMI Calculator", &format!("{:.1}", bmi)));
+    out.push_str(&format!("**Height:** `{}` cm · **Weight:** `{}` kg\n\n", height, weight));
+    out.push_str(&format!("## 📊 Results\n\n| Metric | Value |\n|---|---|\n| BMI | `{:.1}` |\n| Category | {} {} |\n| Ideal Range | `{:.1} - {:.1} kg` |\n\n", bmi, emoji, category, ideal_min, ideal_max));
+    out.push_str(&format!("## 📚 BMI Categories\n\n| BMI | Category |\n|---|---|\n| < 18.5 | 🟡 Underweight |\n| 18.5 - 24.9 | 🟢 Normal weight |\n| 25.0 - 29.9 | 🟠 Overweight |\n| ≥ 30.0 | 🔴 Obese |\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #bmi #wellness", tg_footer("memogram", "bmi"), now));
+    out
+}
+
+async fn fetch_hello(_lang: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://restcountries.com/v3.1/all?fields=name,languages").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let mut greetings: Vec<(String, String)> = Vec::new();
+    if let Some(countries) = v.as_array() {
+        for c in countries.iter().take(50) {
+            if let Some(langs) = c["languages"].as_object() {
+                for (lang_name, _) in langs.iter().take(1) {
+                    let country = c["name"]["common"].as_str().unwrap_or("?");
+                    greetings.push((lang_name.clone(), country.to_string()));
+                }
+            }
+        }
+    }
+    greetings.sort_by(|a, b| a.0.cmp(&b.0));
+    greetings.dedup_by(|a, b| a.0 == b.0);
+    let mut out = format!("{}\n\n", tg_header("🌍", "Hello in Languages", &format!("{} languages", greetings.len())));
+    out.push_str("| Language | Country |\n|---|---|\n");
+    for (lang, country) in greetings.iter().take(30) {
+        out.push_str(&format!("| {} | {} |\n", lang, country));
+    }
+    out.push_str(&format!("\n{}\n\n`{}` · #hello", tg_footer("restcountries.com", "hello"), now));
+    Ok(out)
+}
+
+async fn fetch_kanye() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://api.kanye.rest").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let quote = v["quote"].as_str().unwrap_or("I am God's favorite.");
+    let char_count = quote.len();
+    let word_count = quote.split_whitespace().count();
+    Ok(Md::new()
+        .h2("🎤 Kanye West")
+        .blank()
+        .pi("Source", "kanye.rest")
+        .pi("Words", &word_count.to_string())
+        .pi("Chars", &char_count.to_string())
+        .blank()
+        .push("## 🎤 Kanye Says")
+        .blank()
+        .quote(quote)
+        .blank()
+        .push("— **Kanye West**")
+        .blank()
+        .push("## 📊 Quote Stats")
+        .blank()
+        .table(&["Metric", "Value"], &[
+            vec!["Words".into(), word_count.to_string()],
+            vec!["Characters".into(), char_count.to_string()],
+            vec!["Vibes".into(), "Immaculate".into()],
+        ])
+        .blank()
+        .push("## 🎵 Fun Facts")
+        .blank()
+        .push("- Kanye has won 24 Grammy Awards")
+        .push("- He produced for Jay-Z before going solo")
+        .push("- His first album was 'The College Dropout'")
+        .blank()
+        .push(&format!("{}\n\n`{}` · #kanye #fun", tg_footer("kanye.rest", "kanye"), now))
+        .build())
+}
+
+async fn fetch_wouldyourather() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://api.truthordareapi.xyz/wyr?filter=pg").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    if let Some(question) = v["question"].as_str() {
+        let mut out = format!("{}\n\n", tg_header("🤔", "Would You Rather", "wyr"));
+        out.push_str(&format!("## 🤔 Would You Rather?\n\n> {}\n\n", question));
+        out.push_str("_Pick one! No wrong answers._\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #wyr #fun", tg_footer("truthordareapi.xyz", "wyr"), now));
+        return Ok(out);
+    }
+    // Fallback
+    let questions = [
+        "Be able to fly or be invisible?",
+        "Live without music or live without movies?",
+        "Have unlimited money or unlimited time?",
+        "Be famous or be incredibly wealthy?",
+        "Know how you die or when you die?",
+        "Give up your phone or give up AC/heating?",
+        "Be the funniest or smartest person in the room?",
+        "Travel the world or have a dream house?",
+    ];
+    let idx = (chrono::Utc::now().timestamp() as usize) % questions.len();
+    let mut out = format!("{}\n\n", tg_header("🤔", "Would You Rather", "wyr"));
+    out.push_str(&format!("## 🤔 Would You Rather?\n\n> {}\n\n", questions[idx]));
+    out.push_str("_Pick one! No wrong answers._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #wyr #fun", tg_footer("truthordareapi.xyz", "wyr"), now));
+    Ok(out)
+}
+
+async fn fetch_catfact() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://catfact.ninja/fact").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let fact = v["fact"].as_str().unwrap_or("Cats have over 20 vocalizations, including the purr.");
+    let len = v["length"].as_u64().unwrap_or(0);
+    let mut out = format!("{}\n\n", tg_header("🐱", "Cat Fact", "random"));
+    out.push_str(&format!("## 🐱 Cat Fact\n\n> {}\n\n", fact));
+    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Characters | `{}` |\n\n", len));
+    out.push_str(&format!("{}\n\n`{}` · #catfact #fun", tg_footer("catfact.ninja", "catfact"), now));
+    Ok(out)
+}
+
+async fn fetch_affirmation2(mood: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let affirmations = [
+        "You are capable of amazing things.",
+        "Your potential is limitless.",
+        "Today is a fresh start.",
+        "You are worthy of love and respect.",
+        "Your hard work is paying off.",
+        "You bring light to those around you.",
+        "You are stronger than you think.",
+        "Every step forward is progress.",
+        "You deserve happiness and peace.",
+        "Your creativity knows no bounds.",
+        "You are making a difference.",
+        "Trust the journey, even when it's hard.",
+        "You are enough, exactly as you are.",
+        "Your kindness changes the world.",
+        "You have the power to create change.",
+    ];
+    let idx = (chrono::Utc::now().timestamp() as usize) % affirmations.len();
+    let aff = affirmations[idx];
+    let mood_str = if mood.trim().is_empty() { "general".to_string() } else { mood.trim().to_string() };
+    let mut out = format!("{}\n\n", tg_header("✨", "Affirmation", &mood_str));
+    out.push_str(&format!("## ✨ Daily Affirmation\n\n> _\"{}\"_\n\n", aff));
+    out.push_str(&format!("**Mood:** `{}`\n\n", mood_str));
+    out.push_str("Repeat this to yourself 3 times. You deserve it.\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #affirmation2 #wellness", tg_footer("memogram", "affirmation2"), now));
+    Ok(out)
+}
+
+async fn fetch_advice() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://api.adviceslip.com/advice").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    if let Some(slip) = v["slip"].as_object() {
+        let advice = slip["advice"].as_str().unwrap_or("Give people more than they expect and do it cheerfully.");
+        let id = slip.get("id").map(|v| v.to_string()).unwrap_or_else(|| "?".to_string());
+        let mut out = format!("{}\n\n", tg_header("💡", "Advice", &format!("#{}", id)));
+        out.push_str(&format!("## 💡 Advice Slip\n\n> {}\n\n", advice));
+        out.push_str(&format!("| Stat | Value |\n|---|---|\n| Slip ID | `{}` |\n\n", id));
+        out.push_str(&format!("{}\n\n`{}` · #advice #fun", tg_footer("adviceslip.com", "advice"), now));
+        return Ok(out);
+    }
+    let mut out = format!("{}\n\n", tg_header("💡", "Advice", "general"));
+    out.push_str(&format!("## 💡 Advice\n\n> The best time to plant a tree was 20 years ago. The second best time is now.\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #advice #fun", tg_footer("adviceslip.com", "advice"), now));
+    Ok(out)
 }
 
 async fn run_preview() -> Result<()> {
@@ -4484,6 +5573,57 @@ async fn run_preview() -> Result<()> {
         ("etf", try_fetch("etf", fetch_etf("SPY")).await.1),
         ("earnings", try_fetch("earnings", fetch_earnings("this week")).await.1),
         ("recap", create_recap("7").await),
+        // NEW: missing template commands
+        ("color", fetch_color("#FF5733")),
+        ("math", eval_math("2+2*3")),
+        ("meeting", create_meeting("Sprint planning 10am discuss Q3 goals and blockers")),
+        ("project", create_project("Memogram v2 — Telegram bot for Memos")),
+        ("book", create_book("Dune by Frank Herbert — sci-fi masterpiece about spice and power")),
+        ("todo", create_todo("Fix weather API, deploy v2, write tests")),
+        ("list", create_list("Groceries: milk, eggs, bread, coffee")),
+        ("clip", create_clip("https://example.com article about rust async")),
+        ("mood", create_mood_entry("7 productive day, shipped features")),
+        ("gratitude", create_gratitude_entry("Good coffee, clean code, team support")),
+        ("habit", create_habit_entry("meditation 10m done, reading 20m done")),
+        ("wisdom", fetch_wisdom().await.unwrap_or_else(|e| format!("wisdom err: {e}"))),
+        ("review", create_review("Shipped 3 features, fixed 2 bugs, reviewed 4 PRs")),
+        ("priority", create_priority("1. Deploy v2 2. Fix weather 3. Write docs")),
+        ("link", create_link("https://github.com/rust-lang/rust The Rust programming language")),
+        ("snippet", create_snippet("fn main() { println!(\"hello\"); }")),
+        ("evening", create_evening("Reflection: good day, ship done, plans for tomorrow set")),
+        ("checkin", create_checkin("7 mood, 8 energy, slept well")),
+        ("log", create_log("ran 5k in 25m, 150bpm avg")),
+        ("summary", create_summary("Week 36: shipped memogram v2, fixed 12 bugs")),
+        ("genome", try_fetch("genome", fetch_genome("BRCA1")).await.1),
+        ("protein", try_fetch("protein", fetch_protein("insulin")).await.1),
+        ("sunset", try_fetch("sunset", fetch_sunrise("34.1706,-118.8376")).await.1),
+        ("containers", try_fetch("containers", fetch_containers("http://localhost:6100")).await.1),
+        // REPLACED COMMANDS
+        ("ph", fetch_ph("0.001")),
+        ("yt", try_fetch("yt", fetch_yt("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).await.1),
+        ("ghrepo", try_fetch("ghrepo", fetch_ghrepo("rust-lang/rust")).await.1),
+        ("stocksave", try_fetch("stocksave", fetch_stocksave("AAPL")).await.1),
+        ("weather7", try_fetch("weather7", fetch_weather7("London")).await.1),
+        ("img", try_fetch("img", fetch_img("https://httpbin.org/image/png")).await.1),
+        ("ip", try_fetch("ip", fetch_ip("8.8.8.8")).await.1),
+        ("chuck", try_fetch("chuck", fetch_chuck()).await.1),
+        ("insult", try_fetch("insult", fetch_insult("programmer")).await.1),
+        ("zen", try_fetch("zen", fetch_zen()).await.1),
+        ("astro", try_fetch("astro", fetch_astro("aries")).await.1),
+        ("summarize", try_fetch("summarize", fetch_summarize("https://example.com")).await.1),
+        ("qr", fetch_qr("https://memogram.junilab.xyz")),
+        ("dogs", try_fetch("dogs", fetch_dogs()).await.1),
+        ("cats", try_fetch("cats", fetch_cats()).await.1),
+        ("useless", try_fetch("useless", fetch_useless()).await.1),
+        ("number", try_fetch("number", fetch_number("42")).await.1),
+        ("activities", try_fetch("activities", fetch_activities()).await.1),
+        ("bmi", fetch_bmi("175 70")),
+        ("hello", try_fetch("hello", fetch_hello("all")).await.1),
+        ("kanye", try_fetch("kanye", fetch_kanye()).await.1),
+        ("wouldyourather", try_fetch("wouldyourather", fetch_wouldyourather()).await.1),
+        ("catfact", try_fetch("catfact", fetch_catfact()).await.1),
+        ("affirmation2", try_fetch("affirmation2", fetch_affirmation2("happy")).await.1),
+        ("advice", try_fetch("advice", fetch_advice()).await.1),
     ];
     for (name, content) in templates {
         let path = out_dir.join(format!("{}.md", name));
