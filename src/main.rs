@@ -35,13 +35,6 @@ enum Command {
     Translate(String),
     Color(String),
     Forecast(String),
-    Pass(String),
-    Uuid,
-    Ip(String),
-    Qr(String),
-    Hash(String),
-    Base64(String),
-    Json(String),
     Remind(String),
     Portfolio(String),
     Alerts(String),
@@ -236,13 +229,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "proscons".into(), description: "pros vs cons".into() },
         teloxide::types::BotCommand { command: "flashcard".into(), description: "Q | A".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
-        teloxide::types::BotCommand { command: "pass".into(), description: "generate password".into() },
-        teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
-        teloxide::types::BotCommand { command: "ip".into(), description: "IP lookup".into() },
-        teloxide::types::BotCommand { command: "qr".into(), description: "QR code".into() },
-        teloxide::types::BotCommand { command: "hash".into(), description: "SHA-256 hash".into() },
-        teloxide::types::BotCommand { command: "base64".into(), description: "encode/decode".into() },
-        teloxide::types::BotCommand { command: "json".into(), description: "pretty JSON".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "search PubMed papers".into() },
         teloxide::types::BotCommand { command: "drug".into(), description: "drug info".into() },
@@ -383,13 +369,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
             create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?;
         }
-        Command::Pass(len) => { let txt = gen_password(&len); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Uuid => { let txt = gen_uuid(); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Ip(addr) => { let txt = fetch_ip(&addr).await.unwrap_or_else(|e| format!("ip err: {e}")); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Qr(text) => { let txt = gen_qr(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Hash(text) => { let txt = gen_hash(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Base64(args) => { let txt = gen_base64(&args); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
-        Command::Json(text) => { let txt = gen_json_pretty(&text); bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Remind(args) => { let txt = set_reminder(&args, &app).await; bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Portfolio(args) => {
             let txt = handle_portfolio(&args, tid, &app.store_path).await;
@@ -400,8 +379,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
         }
         Command::Markets => { let txt = fetch_markets().await.unwrap_or_else(|e| format!("markets err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
-        Command::Arxiv(topic) => { let txt = fetch_arxiv(&topic).await.unwrap_or_else(|e| format!("arxiv err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
-        Command::Devto => { let txt = fetch_devto().await.unwrap_or_else(|e| format!("devto err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Inbox => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -428,7 +405,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
@@ -479,11 +456,11 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Checkin(args) => { let txt = create_checkin(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Read(args) => { let txt = create_read(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Read(args) => { let txt = create_read(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Itunes(q) => { let txt = fetch_itunes(&q).await.unwrap_or_else(|e| format!("itunes err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Deezer(q) => { let txt = fetch_deezer(&q).await.unwrap_or_else(|e| format!("deezer err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Mbrainz(q) => { let txt = fetch_mbrainz(&q).await.unwrap_or_else(|e| format!("mbrainz err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
@@ -682,7 +659,6 @@ fn tg_escape(s: &str) -> String {
 }
 
 // Keep esc() for backward compat in any remaining call sites
-fn esc(s: &str) -> String { tg_escape(s) }
 
 fn tg_code_block(s: &str) -> String {
     format!("```\n{}\n```", s)
@@ -1230,104 +1206,6 @@ async fn fetch_forecast(city: &str) -> Result<String> {
 // --- number trivia ---
 
 // --- utility functions ---
-
-fn gen_password(len: &str) -> String {
-    let n: usize = len.trim().parse().unwrap_or(16).min(128).max(4);
-    const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?";
-    let mut s = String::with_capacity(n);
-    for _ in 0..n {
-        let idx = (rand_byte() as usize) % CHARS.len();
-        s.push(CHARS[idx] as char);
-    }
-    format!("{}\n\n{}", tg_header("🔑", &format!("Password {} chars", n), ""), tg_code_block(&s))
-}
-
-fn rand_byte() -> u8 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    (t ^ (t >> 7) ^ (t >> 13)) as u8
-}
-
-fn gen_uuid() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let a = t.as_secs() as u32;
-    let b = t.subsec_nanos();
-    let c = rand_byte() as u16;
-    format!("{}\n\n{}", tg_header("🆔", "UUID v4", ""), tg_code_block(&format!("{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}", a, b & 0xFFFF, (b >> 16) & 0xFFF, c | 0x8000, (b as u64) & 0xFFFFFFFFFFFF)))
-}
-
-async fn fetch_ip(addr: &str) -> Result<String> {
-    let url = if addr.trim().is_empty() {
-        "http://ip-api.com/json/".to_string()
-    } else {
-        format!("http://ip-api.com/json/{}", addr.trim())
-    };
-    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
-    let status = v["status"].as_str().unwrap_or("fail");
-    if status != "success" { return Ok("*🌐 IP lookup failed*".into()); }
-    let ip = v["query"].as_str().unwrap_or("?");
-    let country = v["country"].as_str().unwrap_or("?");
-    let region = v["regionName"].as_str().unwrap_or("?");
-    let city = v["city"].as_str().unwrap_or("?");
-    let isp = v["isp"].as_str().unwrap_or("?");
-    let lat = v["lat"].as_f64().unwrap_or(0.0);
-    let lon = v["lon"].as_f64().unwrap_or(0.0);
-    let org = v["org"].as_str().unwrap_or("?");
-    Ok(format!("{}\n\n`Country:` {}\n`Region:` {}\n`City:` {}\n`ISP:` {}\n`Org:` {}\n`Coords:` {:.4}, {:.4}\n\n{}", tg_header("🌐", "IP", ip), country, region, city, isp, org, lat, lon, tg_footer("ip-api.com", "ip")))
-}
-
-fn gen_qr(text: &str) -> String {
-    if text.trim().is_empty() { return "usage: `/qr <text>`".into(); }
-    let url = format!("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={}", urlencoding::encode(text));
-    format!("{}\n\n![QR]({url})\n\n`{} chars` · #{}", tg_header("📱", "QR Code", ""), text.len().to_string(), "qr")
-}
-
-fn gen_hash(text: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    if text.trim().is_empty() { return "usage: `/hash <text>`".into(); }
-    let mut hasher = DefaultHasher::new();
-    text.hash(&mut hasher);
-    let hash = hasher.finish();
-    format!("*🔐 Hash*\n\n`SHA256:` {:064x}\n`Hash64:` {hash}\n\n> #hash", hash ^ (hash << 1))
-}
-
-fn gen_base64(args: &str) -> String {
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let mode = parts.first().copied().unwrap_or("e");
-    let text = parts.get(1).unwrap_or(&"");
-    if text.is_empty() { return "usage: `/base64 e <text>` or `/base64 d <text>`".into(); }
-    match mode {
-        "d" | "decode" => {
-            use base64::{Engine as _, engine::general_purpose};
-            match general_purpose::STANDARD.decode(text.trim()) {
-                Ok(bytes) => match String::from_utf8(bytes) {
-                    Ok(s) => format!("*🔓 Base64 Decoded*\n\n```\n{s}\n```"),
-                    Err(_) => "*⚠️ Invalid UTF-8*".into(),
-                },
-                Err(_) => "*⚠️ Invalid base64*".into(),
-            }
-        }
-        _ => {
-            use base64::{Engine as _, engine::general_purpose};
-            let encoded = general_purpose::STANDARD.encode(text.as_bytes());
-            format!("*🔒 Base64 Encoded*\n\n`{encoded}`")
-        }
-    }
-}
-
-fn gen_json_pretty(text: &str) -> String {
-    if text.is_empty() { return "usage: `/json <text>`".into(); }
-    match serde_json::from_str::<serde_json::Value>(text) {
-        Ok(v) => {
-            let pretty = serde_json::to_string_pretty(&v).unwrap_or_default();
-            let truncated = if pretty.len() > 1800 { format!("{}...", &pretty[..1800]) } else { pretty };
-            format!("*🔧 JSON*\n\n```json\n{truncated}\n```")
-        }
-        Err(e) => format!("*⚠️ Invalid JSON*\n\n`{e}`"),
-    }
-}
 
 async fn set_reminder(args: &str, _app: &App) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
@@ -2417,7 +2295,7 @@ async fn fetch_stackoverflow(query: &str) -> Result<String> {
     if let Some(items) = resp["items"].as_array() {
         if items.is_empty() { return Ok(format!("No results for **{query}**")); }
         let total = items.len();
-        let total_answers: i64 = items.iter().map(|i| i["answer_count"].as_i64().unwrap_or(0)).sum();
+        let _total_answers: i64 = items.iter().map(|i| i["answer_count"].as_i64().unwrap_or(0)).sum();
         let avg_score: f64 = items.iter().map(|i| i["score"].as_i64().unwrap_or(0) as f64).sum::<f64>() / total as f64;
         let mut out = format!("{}\n\n", tg_header("📖", "Stack Overflow", query));
         out.push_str(&format!("**Query:** `{}` · **Results:** {} · **Avg Score:** {:.0}\n\n", query, total, avg_score));
@@ -2751,7 +2629,7 @@ async fn fetch_food(query: &str) -> Result<String> {
     if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/food apple` or `/food oreo`\n\n{}", tg_header("🥗", "Food", "nutrition"), tg_footer("openfoodfacts.org", "food"))); }
     let url = format!("https://world.openfoodfacts.org/cgi/search.pl?search_terms={}&search_simple=1&action=process&json=true&page_size=3", urlencoding::encode(q));
     let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
-    let mut products = v["products"].as_array();
+    let products = v["products"].as_array();
     // Fallback to v2 search if empty (more reliable)
     if products.is_none() || products.unwrap().is_empty() {
         let url2 = format!("https://world.openfoodfacts.org/api/v2/search?search_terms={}&page_size=3&fields=product_name,brands,nutriscore_grade,nutriments", urlencoding::encode(q));
@@ -3239,7 +3117,7 @@ fn create_water(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let amount = parts.first().unwrap_or(&"500ml");
     let note = parts.get(1).unwrap_or(&"");
-    let date = Local::now().format("%Y-%m-%d").to_string();
+    let _date = Local::now().format("%Y-%m-%d").to_string();
     let ml: i32 = amount.replace("ml", "").replace("L", "").parse::<f32>().map(|v| if amount.contains('L') { (v*1000.0) as i32 } else { v as i32 }).unwrap_or(500);
     let bar = "█".repeat(((ml as f32/2500.0*10.0) as usize).clamp(0,10)) + &"░".repeat(10-((ml as f32/2500.0*10.0) as usize).clamp(0,10));
     let pct = (ml as f32/2500.0*100.0) as i32;
@@ -3254,7 +3132,7 @@ fn create_stress(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let level = parts.first().unwrap_or(&"?");
     let note = parts.get(1).unwrap_or(&"");
-    let date = Local::now().format("%Y-%m-%d").to_string();
+    let _date = Local::now().format("%Y-%m-%d").to_string();
     let lvl: i32 = level.parse().unwrap_or(5);
     let bar = "█".repeat((lvl as usize).clamp(0, 10)) + &"░".repeat(10 - (lvl as usize).clamp(0, 10));
     format!(
@@ -3326,7 +3204,6 @@ async fn run_preview() -> Result<()> {
         ("tldr", try_fetch("tldr", fetch_tldr()).await.1),
         ("reddit", try_fetch("reddit", fetch_reddit("selfhosted")).await.1),
         ("markets", try_fetch("markets", fetch_markets()).await.1),
-        ("ip", try_fetch("ip", fetch_ip("8.8.8.8")).await.1),
         ("itunes", try_fetch("itunes", fetch_itunes("drake")).await.1),
         ("deezer", try_fetch("deezer", fetch_deezer("drake")).await.1),
         ("mbrainz", try_fetch("mbrainz", fetch_mbrainz("beatles")).await.1),
