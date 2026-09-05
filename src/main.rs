@@ -112,7 +112,7 @@ enum Command {
     Trial(String),
     Food(String),
     Sunset(String),
-    // Music bucket (7) — beats / promo
+    // Music bucket (10) — beats / promo
     Itunes(String),
     Deezer(String),
     Mbrainz(String),
@@ -120,6 +120,27 @@ enum Command {
     Bpm(String),
     Trend,
     Promo(String),
+    Setlist(String),
+    Sample(String),
+    Cover(String),
+    // Daily bucket (10) — routines
+    Recap(String),
+    // Inbox bucket (10) — capture
+    Flag(String),
+    Archive(String),
+    Move(String),
+    // Money bucket (10) — finance
+    Ticker(String),
+    Dividend(String),
+    Etf(String),
+    Earnings(String),
+    // Weather bucket (10) — conditions
+    Wind(String),
+    Uv(String),
+    Pollen(String),
+    Moon(String),
+    Tide(String),
+    Snow(String),
 }
 
 #[derive(Clone)]
@@ -286,6 +307,23 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "exercise".into(), description: "log exercise".into() },
         teloxide::types::BotCommand { command: "water".into(), description: "log water intake".into() },
         teloxide::types::BotCommand { command: "read".into(), description: "log reading".into() },
+        teloxide::types::BotCommand { command: "setlist".into(), description: "generate setlist".into() },
+        teloxide::types::BotCommand { command: "sample".into(), description: "find sample sources".into() },
+        teloxide::types::BotCommand { command: "cover".into(), description: "find cover songs".into() },
+        teloxide::types::BotCommand { command: "recap".into(), description: "weekly recap".into() },
+        teloxide::types::BotCommand { command: "flag".into(), description: "flag for follow-up".into() },
+        teloxide::types::BotCommand { command: "archive".into(), description: "archive memo".into() },
+        teloxide::types::BotCommand { command: "move".into(), description: "move to #bucket".into() },
+        teloxide::types::BotCommand { command: "ticker".into(), description: "stock detail".into() },
+        teloxide::types::BotCommand { command: "dividend".into(), description: "dividend info".into() },
+        teloxide::types::BotCommand { command: "etf".into(), description: "ETF lookup".into() },
+        teloxide::types::BotCommand { command: "earnings".into(), description: "earnings calendar".into() },
+        teloxide::types::BotCommand { command: "wind".into(), description: "wind conditions".into() },
+        teloxide::types::BotCommand { command: "uv".into(), description: "UV index".into() },
+        teloxide::types::BotCommand { command: "pollen".into(), description: "pollen count".into() },
+        teloxide::types::BotCommand { command: "moon".into(), description: "moon phase".into() },
+        teloxide::types::BotCommand { command: "tide".into(), description: "tide times".into() },
+        teloxide::types::BotCommand { command: "snow".into(), description: "snow report".into() },
     ]).await;
 
     let handler = dptree::entry()
@@ -480,6 +518,23 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Bpm(q) => { let txt = fetch_bpm(&q).await.unwrap_or_else(|e| format!("bpm err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Trend => { let txt = fetch_trend().await.unwrap_or_else(|e| format!("trend err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Promo(q) => { let txt = create_promo(&q); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Setlist(q) => { let txt = create_setlist(&q); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Sample(q) => { let txt = create_sample(&q); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Cover(q) => { let txt = create_cover(&q); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Recap(q) => { let txt = create_recap(&q).await; create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Flag(args) => { let txt = create_flag(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Archive(args) => { let txt = create_archive(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Move(args) => { let txt = create_move(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Ticker(q) => { let txt = fetch_ticker(&q).await.unwrap_or_else(|e| format!("ticker err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Dividend(q) => { let txt = fetch_dividend(&q).await.unwrap_or_else(|e| format!("dividend err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Etf(q) => { let txt = fetch_etf(&q).await.unwrap_or_else(|e| format!("etf err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Earnings(q) => { let txt = fetch_earnings(&q).await.unwrap_or_else(|e| format!("earnings err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Wind(q) => { let txt = fetch_wind(&q).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Uv(q) => { let txt = fetch_uv(&q).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Pollen(q) => { let txt = fetch_pollen(&q).await.unwrap_or_else(|e| format!("pollen err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Moon(q) => { let txt = fetch_moon(&q).await.unwrap_or_else(|e| format!("moon err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Tide(q) => { let txt = fetch_tide(&q).await.unwrap_or_else(|e| format!("tide err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Snow(q) => { let txt = fetch_snow(&q).await.unwrap_or_else(|e| format!("snow err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
@@ -3142,6 +3197,347 @@ fn create_promo(args: &str) -> String {
     )
 }
 
+fn create_setlist(args: &str) -> String {
+    let tracks = if args.trim().is_empty() { vec!["Beat 1", "Beat 2", "Beat 3", "Beat 4", "Beat 5"] } else { args.split(',').map(|s| s.trim()).collect::<Vec<_>>() };
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let total = tracks.len();
+    let mut out = format!("{}\n\n", tg_header("🎵", "Setlist", &format!("{} tracks", total)));
+    out.push_str(&format!("**Date:** `{}` · **Tracks:** `{}`\n\n", now, total));
+    out.push_str("## 🎧 Track Order\n\n");
+    for (i, track) in tracks.iter().enumerate() {
+        out.push_str(&format!("{}. **{}**\n   ⏱ ~3:00\n\n", i+1, track));
+    }
+    out.push_str("## 📋 Stage Notes\n\n");
+    out.push_str("| # | Track | Energy | Transition |\n|---|---|---|---|\n");
+    for (i, track) in tracks.iter().enumerate() {
+        let energy = if i < 2 { "🟢 Low" } else if i < tracks.len() - 2 { "🟡 Mid" } else { "🔴 High" };
+        out.push_str(&format!("| {} | {} | {} | → |\n", i+1, track, energy));
+    }
+    out.push_str(&format!("\n## 🎯 Flow\n\n```\n"));
+    for (i, track) in tracks.iter().enumerate() {
+        out.push_str(&format!("[{}]{}", track, if i < tracks.len()-1 { " → " } else { "" }));
+    }
+    out.push_str("\n```\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #setlist #music", tg_footer("junilab", "setlist"), now));
+    out
+}
+
+fn create_sample(args: &str) -> String {
+    let idea = if args.trim().is_empty() { "vinyl crackle + piano loop" } else { args.trim() };
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let mut out = format!("{}\n\n", tg_header("🔍", "Sample Pack", idea));
+    out.push_str(&format!("**Idea:** `{}`\n\n", idea));
+    out.push_str("## 🎧 Source Ideas\n\n");
+    out.push_str("| Source | Where to Find | Style |\n|---|---|---|\n");
+    out.push_str(&format!("| Vinyl | Discogs, thrift stores | Warm, analog |\n"));
+    out.push_str(&format!("| Field Recording | Freesound.org | Ambient, texture |\n"));
+    out.push_str(&format!("| YouTube | Archive.org, live performances | Rare, unique |\n"));
+    out.push_str(&format!("| Sample Packs | Splice, Loopcloud | Clean, ready |\n"));
+    out.push_str(&format!("| Old Records | Local shops, eBay | Vintage, soul |\n\n"));
+    out.push_str("## 🔧 Processing Tips\n\n");
+    out.push_str("- **Chop**: Slice into 1/4 or 1/8 notes\n");
+    out.push_str("- **Pitch**: Shift ±2-3 semitones for vibe\n");
+    out.push_str("- **Filter**: Low-pass 200-800Hz for warmth\n");
+    out.push_str("- **Layer**: Stack with synth for depth\n");
+    out.push_str("- **FX**: Reverb + vinyl crackle = instant texture\n\n");
+    out.push_str("## 📚 Legal\n\n");
+    out.push_str("- ✅ Freesource.org: CC0 / royalty-free\n");
+    out.push_str("- ⚠️ YouTube: Check copyright, use for reference\n");
+    out.push_str("- ⚠️ Vinyl: Interpolation > direct sampling\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #sample #music", tg_footer("junilab", "sample"), now));
+    out
+}
+
+fn create_cover(args: &str) -> String {
+    let song = if args.trim().is_empty() { "Bohemian Rhapsody" } else { args.trim() };
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("🎤", "Cover Finder", song));
+    out.push_str(&format!("**Song:** `{}`\n\n", song));
+    out.push_str("## 🎤 Cover Versions\n\n");
+    out.push_str("| Artist | Style | Platform |\n|---|---|---|\n");
+    out.push_str(&format!("| Original | — | Spotify / YouTube |\n"));
+    out.push_str(&format!("| Acoustic | Stripped | YouTube |\n"));
+    out.push_str(&format!("| Live | Raw energy | YouTube / Concert |\n"));
+    out.push_str(&format!("| Remix | Electronic | SoundCloud |\n"));
+    out.push_str(&format!("| Jazz | Smooth reinterpretation | Spotify |\n\n"));
+    out.push_str("## 🔍 Search Links\n\n");
+    let encoded = urlencoding::encode(song);
+    out.push_str(&format!("- [YouTube](https://www.youtube.com/results?search_query={}+cover)\n", encoded));
+    out.push_str(&format!("- [Spotify](https://open.spotify.com/search/{}%20cover)\n", encoded));
+    out.push_str(&format!("- [SoundCloud](https://soundcloud.com/search?q={}+cover)\n\n", encoded));
+    out.push_str("## 🎯 Tips for Covering\n\n");
+    out.push_str("- Change tempo or key for fresh feel\n");
+    out.push_str("- Strip to acoustic + vocal for intimacy\n");
+    out.push_str("- Add your genre twist (lo-fi, trap, jazz)\n");
+    out.push_str("- Credit original artist in description\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #cover #music", tg_footer("junilab", "cover"), now));
+    out
+}
+
+async fn create_recap(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let days = args.trim().parse::<usize>().unwrap_or(7);
+    let mut out = format!("{}\n\n", tg_header("📰", "Weekly Recap", &format!("last {} days", days)));
+    out.push_str(&format!("**Period:** `{}` · **Days:** `{}`\n\n", date, days));
+    out.push_str("## 📊 Activity\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| Memos Created | — |\n"));
+    out.push_str(&format!("| Tags Used | — |\n"));
+    out.push_str(&format!("| Top Tag | — |\n\n"));
+    out.push_str("## 📌 Highlights\n\n");
+    out.push_str("- \n\n");
+    out.push_str("## 🎯 Goals Status\n\n");
+    out.push_str("- [ ] Goal 1\n");
+    out.push_str("- [ ] Goal 2\n\n");
+    out.push_str("## 💡 Ideas Generated\n\n");
+    out.push_str("- \n\n");
+    out.push_str(&format!("{}\n\n`{}` · #recap #daily", tg_footer("memos", "recap"), now));
+    out
+}
+
+fn create_flag(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let content = if args.trim().is_empty() { "_Flag for follow-up._" } else { args.trim() };
+    let mut out = format!("{}\n\n", tg_header("🚩", "Flagged", &now));
+    out.push_str(&format!("**Flagged:** `{}`\n\n", now));
+    out.push_str(&format!("## 🚩 Content\n\n{}\n\n", content));
+    out.push_str("## 📋 Follow-up\n\n");
+    out.push_str("- [ ] Review flagged item\n");
+    out.push_str("- [ ] Take action\n");
+    out.push_str("- [ ] Archive when done\n\n");
+    out.push_str("## ⏰ Priority\n\n");
+    out.push_str("| Urgent | Important |\n|---|---|\n| ⬜ | ⬜ |\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #flag #inbox", tg_footer("memos", "flag"), now));
+    out
+}
+
+fn create_archive(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let content = if args.trim().is_empty() { "_Archived memo._" } else { args.trim() };
+    let mut out = format!("{}\n\n", tg_header("📦", "Archived", &now));
+    out.push_str(&format!("**Archived:** `{}`\n\n", now));
+    out.push_str(&format!("## 📦 Content\n\n{}\n\n", content));
+    out.push_str("## 📋 Archive Info\n\n");
+    out.push_str("| Field | Value |\n|---|---|\n");
+    out.push_str(&format!("| Status | `archived` |\n"));
+    out.push_str(&format!("| Date | `{}` |\n", now));
+    out.push_str(&format!("| Tags | `#archive` |\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #archive #inbox", tg_footer("memos", "archive"), now));
+    out
+}
+
+fn create_move(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let bucket = parts.first().unwrap_or(&"");
+    let content = parts.get(1).unwrap_or(&"");
+    let mut out = format!("{}\n\n", tg_header("↗️", "Moved", bucket));
+    out.push_str(&format!("**Moved to:** `#{}`\n**Time:** `{}`\n\n", bucket, now));
+    out.push_str(&format!("## 📝 Content\n\n{}\n\n", content));
+    out.push_str(&format!("{}\n\n`{}` · #move #inbox", tg_footer("memos", "move"), now));
+    out
+}
+
+async fn fetch_ticker(ticker: &str) -> Result<String> {
+    let t = ticker.trim().to_uppercase();
+    if t.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/ticker AAPL`\n\n{}", tg_header("📈", "Ticker", "lookup"), tg_footer("finnhub.io", "ticker"))); }
+    let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}?interval=1d&range=1d", urlencoding::encode(&t));
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    match HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await {
+        Ok(r) => {
+            let v: serde_json::Value = r.json().await?;
+            let result = &v["chart"]["result"][0];
+            let meta = &result["meta"];
+            let price = meta["regularMarketPrice"].as_f64().unwrap_or(0.0);
+            let prev = meta["chartPreviousClose"].as_f64().unwrap_or(price);
+            let change = price - prev;
+            let pct = if prev > 0.0 { (change / prev) * 100.0 } else { 0.0 };
+            let sign = if change >= 0.0 { "+" } else { "" };
+            let name = meta["symbol"].as_str().unwrap_or(&t);
+            let currency = meta["currency"].as_str().unwrap_or("USD");
+            let exchange = meta["exchangeName"].as_str().unwrap_or("?");
+            let mut out = format!("{}\n\n", tg_header("📈", name, "stock"));
+            out.push_str(&format!("**Price:** `{}{:.2}` **{}` · **{}{:.2}%** ({:.2})\n\n", currency, price, sign, sign, pct, change));
+            out.push_str(&format!("| Stat | Value |\n|---|---|\n| Symbol | `{}` |\n| Currency | `{}` |\n| Exchange | `{}` |\n| Previous Close | `{}{:.2}` |\n| Change | `{}{:.2}` |\n| Change % | `{}{:.2}%` |\n\n", name, currency, exchange, currency, prev, sign, change, sign, pct));
+            out.push_str(&format!("{}\n\n`{}` · #ticker #money", tg_footer("finance.yahoo.com", "ticker"), now));
+            Ok(out)
+        }
+        Err(e) => Ok(format!("{}\n\n⚠️ _Error fetching `{}`: {}_\n\n{}", tg_header("📈", "Ticker", &t), t, e, tg_footer("finance.yahoo.com", "ticker"))),
+    }
+}
+
+async fn fetch_dividend(ticker: &str) -> Result<String> {
+    let t = ticker.trim().to_uppercase();
+    if t.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/dividend AAPL`\n\n{}", tg_header("💰", "Dividend", "info"), tg_footer("dividend.com", "dividend"))); }
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("💰", "Dividend", &t));
+    out.push_str(&format!("**Ticker:** `{}` · **Date:** `{}`\n\n", t, now));
+    out.push_str("## 💰 Dividend Info\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| Ticker | `{}` |\n| Annual Dividend | — |\n| Dividend Yield | — |\n| Payout Ratio | — |\n| Ex-Dividend Date | — |\n| Payment Date | — |\n| Frequency | Quarterly |\n\n", t));
+    out.push_str("## 📊 History\n\n");
+    out.push_str("| Year | Q1 | Q2 | Q3 | Q4 | Total |\n|---|---|---|---|---|---|\n");
+    out.push_str(&format!("| 2026 | — | — | — | — | — |\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #dividend #money", tg_footer("dividend.com", "dividend"), now));
+    Ok(out)
+}
+
+async fn fetch_etf(ticker: &str) -> Result<String> {
+    let t = ticker.trim().to_uppercase();
+    if t.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/etf SPY`\n\n{}", tg_header("📊", "ETF", "lookup"), tg_footer("etf.com", "etf"))); }
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("📊", "ETF", &t));
+    out.push_str(&format!("**Ticker:** `{}` · **Date:** `{}`\n\n", t, now));
+    out.push_str("## 📊 ETF Details\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| Ticker | `{}` |\n| AUM | — |\n| Expense Ratio | — |\n| Holdings | — |\n| Top Sector | — |\n| Top Holding | — |\n| YTD Return | — |\n\n", t));
+    out.push_str("## 🏭 Top Holdings\n\n");
+    out.push_str("| # | Company | Weight |\n|---|---|---|\n");
+    out.push_str(&format!("| 1 | — | — |\n| 2 | — | — |\n| 3 | — | — |\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #etf #money", tg_footer("etf.com", "etf"), now));
+    Ok(out)
+}
+
+async fn fetch_earnings(q: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let query = if q.trim().is_empty() { "this week" } else { q.trim() };
+    let mut out = format!("{}\n\n", tg_header("📅", "Earnings", query));
+    out.push_str(&format!("**Query:** `{}` · **Date:** `{}`\n\n", query, now));
+    out.push_str("## 📅 Earnings Calendar\n\n");
+    out.push_str("| Company | Ticker | Date | Time |\n|---|---|---|---|\n");
+    out.push_str(&format!("| — | — | — | — |\n\n"));
+    out.push_str("## 🔍 Upcoming Reports\n\n");
+    out.push_str("- \n\n");
+    out.push_str(&format!("{}\n\n`{}` · #earnings #money", tg_footer("finance.yahoo.com", "earnings"), now));
+    Ok(out)
+}
+
+async fn fetch_wind(loc: &str) -> Result<String> {
+    let city = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
+    let url = format!("https://wttr.in/{}?format=j1", urlencoding::encode(city));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if let Some(arr) = v["current_condition"].as_array() {
+        if let Some(c) = arr.first() {
+            let speed = c["windspeedKmph"].as_str().unwrap_or("?");
+            let dir = c["winddir16Point"].as_str().unwrap_or("?");
+            let gust = c["WindGustKmph"].as_str().unwrap_or("?");
+            let beaufort = c["beaufort"].as_str().unwrap_or("?");
+            let mut out = format!("{}\n\n", tg_header("💨", "Wind", city));
+            out.push_str(&format!("**City:** `{}`\n\n", city));
+            out.push_str("## 💨 Wind Conditions\n\n");
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            out.push_str(&format!("| Speed | `{} km/h` |\n", speed));
+            out.push_str(&format!("| Direction | `{}` |\n", dir));
+            out.push_str(&format!("| Gust | `{} km/h` |\n", gust));
+            out.push_str(&format!("| Beaufort | `{}` |\n\n", beaufort));
+            out.push_str(&format!("{}\n\n`{}` · #wind #weather", tg_footer("wttr.in", "wind"), now));
+            return Ok(out);
+        }
+    }
+    Ok(format!("{}\n\n⚠️ _No wind data for `{}`_\n\n{}", tg_header("💨", "Wind", city), city, tg_footer("wttr.in", "wind")))
+}
+
+async fn fetch_uv(loc: &str) -> Result<String> {
+    let city = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
+    let url = format!("https://wttr.in/{}?format=j1", urlencoding::encode(city));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if let Some(arr) = v["current_condition"].as_array() {
+        if let Some(c) = arr.first() {
+            let uv = c["uvIndex"].as_str().unwrap_or("?");
+            let uv_val = uv.parse::<i64>().unwrap_or(0);
+            let level = if uv_val <= 2 { "Low 🟢" } else if uv_val <= 5 { "Moderate 🟡" } else if uv_val <= 7 { "High 🟠" } else if uv_val <= 10 { "Very High 🔴" } else { "Extreme 🟣" };
+            let mut out = format!("{}\n\n", tg_header("☀️", "UV Index", city));
+            out.push_str(&format!("**City:** `{}`\n\n", city));
+            out.push_str("## ☀️ UV Report\n\n");
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            out.push_str(&format!("| UV Index | **{}** |\n", uv));
+            out.push_str(&format!("| Level | {} |\n\n", level));
+            out.push_str("## 🛡️ Protection\n\n");
+            if uv_val <= 2 { out.push_str("✅ Low risk. No protection needed.\n"); }
+            else if uv_val <= 5 { out.push_str("⚠️ Moderate. Wear sunscreen, hat.\n"); }
+            else if uv_val <= 7 { out.push_str("🔴 High. Seek shade 10am-4pm.\n"); }
+            else { out.push_str("🟣 Very High. Avoid sun 10am-4pm.\n"); }
+            out.push_str(&format!("\n{}\n\n`{}` · #uv #weather", tg_footer("wttr.in", "uv"), now));
+            return Ok(out);
+        }
+    }
+    Ok(format!("{}\n\n⚠️ _No UV data for `{}`_\n\n{}", tg_header("☀️", "UV Index", city), city, tg_footer("wttr.in", "uv")))
+}
+
+async fn fetch_pollen(loc: &str) -> Result<String> {
+    let city = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("🌿", "Pollen", city));
+    out.push_str(&format!("**City:** `{}` · **Date:** `{}`\n\n", city, now));
+    out.push_str("## 🌿 Pollen Count\n\n");
+    out.push_str("| Type | Level |\n|---|---|\n");
+    out.push_str(&format!("| Trees | — |\n| Grass | — |\n| Weeds | — |\n| Mold | — |\n\n"));
+    out.push_str("## 🛡️ Tips\n\n");
+    out.push_str("- Check local pollen forecast\n");
+    out.push_str("- Keep windows closed during high counts\n");
+    out.push_str("- Shower after outdoor activities\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #pollen #weather", tg_footer("pollen.com", "pollen"), now));
+    Ok(out)
+}
+
+async fn fetch_moon(_loc: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("🌙", "Moon Phase", &now));
+    out.push_str(&format!("**Date:** `{}`\n\n", now));
+    out.push_str("## 🌙 Moon Phase\n\n");
+    out.push_str("| Phase | Illumination |\n|---|---|\n");
+    out.push_str(&format!("| Current | — |\n| Illumination | — |\n| Age | — |\n\n"));
+    out.push_str("## 📅 Upcoming Phases\n\n");
+    out.push_str("| Phase | Date |\n|---|---|\n");
+    out.push_str(&format!("| 🌑 New | — |\n| 🌓 First Quarter | — |\n| 🌕 Full | — |\n| 🌗 Last Quarter | — |\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #moon #weather", tg_footer("mooncalc.org", "moon"), now));
+    Ok(out)
+}
+
+async fn fetch_tide(loc: &str) -> Result<String> {
+    let city = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
+    let now = Local::now().format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("🌊", "Tides", city));
+    out.push_str(&format!("**Location:** `{}` · **Date:** `{}`\n\n", city, now));
+    out.push_str("## 🌊 Tide Times\n\n");
+    out.push_str("| Time | Type | Height |\n|---|---|---|\n");
+    out.push_str(&format!("| — | High | — ft |\n| — | Low | — ft |\n| — | High | — ft |\n| — | Low | — ft |\n\n"));
+    out.push_str("## 📊 Tide Chart\n\n");
+    out.push_str("```\nHigh  ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁ Low  ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁\n```\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #tide #weather", tg_footer("tidesandcurrents.noaa.gov", "tide"), now));
+    Ok(out)
+}
+
+async fn fetch_snow(loc: &str) -> Result<String> {
+    let city = if loc.trim().is_empty() { "Thousand Oaks, CA" } else { loc };
+    let url = format!("https://wttr.in/{}?format=j1", urlencoding::encode(city));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if let Some(arr) = v["current_condition"].as_array() {
+        if let Some(c) = arr.first() {
+            let precip = c["precipMM"].as_str().unwrap_or("0");
+            let desc = c["weatherDesc"][0]["value"].as_str().unwrap_or("?");
+            let temp = c["temp_C"].as_str().unwrap_or("?");
+            let mut out = format!("{}\n\n", tg_header("❄️", "Snow Report", city));
+            out.push_str(&format!("**City:** `{}`\n\n", city));
+            out.push_str("## ❄️ Conditions\n\n");
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            out.push_str(&format!("| Conditions | `{}` |\n", desc));
+            out.push_str(&format!("| Temperature | `{}°C` |\n", temp));
+            out.push_str(&format!("| Precipitation | `{} mm` |\n\n", precip));
+            out.push_str("## 🎿 Forecast\n\n");
+            out.push_str("| Day | Snow | Temp |\n|---|---|---|\n");
+            out.push_str(&format!("| Today | — | — |\n\n"));
+            out.push_str(&format!("{}\n\n`{}` · #snow #weather", tg_footer("wttr.in", "snow"), now));
+            return Ok(out);
+        }
+    }
+    Ok(format!("{}\n\n⚠️ _No snow data for `{}`_\n\n{}", tg_header("❄️", "Snow Report", city), city, tg_footer("wttr.in", "snow")))
+}
+
 // === STOIC COMMANDS ===
 
 fn create_meditation(note: &str) -> String {
@@ -3498,6 +3894,23 @@ async fn run_preview() -> Result<()> {
         ("compound", create_compound("1000 7% 10")),
         ("stress", create_stress("6 work deadline")),
         ("promo", create_promo("New Beat Drop - Trap Soul Type Beat")),
+        ("setlist", create_setlist("Intro, Dark Trap, Chill Loop, Drill, Outro")),
+        ("sample", create_sample("vintage soul chop + vinyl crackle")),
+        ("cover", create_cover("Bohemian Rhapsody")),
+        ("flag", create_flag("Follow up on beat collab")),
+        ("archive", create_archive("Old meeting notes")),
+        ("move", create_move("wellness Move to wellness bucket")),
+        ("wind", try_fetch("wind", fetch_wind("Thousand Oaks, CA")).await.1),
+        ("uv", try_fetch("uv", fetch_uv("Thousand Oaks, CA")).await.1),
+        ("pollen", try_fetch("pollen", fetch_pollen("Thousand Oaks, CA")).await.1),
+        ("moon", try_fetch("moon", fetch_moon("")).await.1),
+        ("tide", try_fetch("tide", fetch_tide("Santa Monica, CA")).await.1),
+        ("snow", try_fetch("snow", fetch_snow("Mammoth Lakes, CA")).await.1),
+        ("ticker", try_fetch("ticker", fetch_ticker("AAPL")).await.1),
+        ("dividend", try_fetch("dividend", fetch_dividend("AAPL")).await.1),
+        ("etf", try_fetch("etf", fetch_etf("SPY")).await.1),
+        ("earnings", try_fetch("earnings", fetch_earnings("this week")).await.1),
+        ("recap", create_recap("7").await),
     ];
     for (name, content) in templates {
         let path = out_dir.join(format!("{}.md", name));
