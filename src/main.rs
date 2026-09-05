@@ -46,6 +46,8 @@ enum Command {
     Ap,
     Reddit(String),
     Tldr,
+    Lobsters,
+    Guardian(String),
     Inbox,
     Undo,
     Pin,
@@ -194,6 +196,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "ap".into(), description: "AP World News".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "Reddit <subreddit>".into() },
         teloxide::types::BotCommand { command: "tldr".into(), description: "TLDR tech digest".into() },
+        teloxide::types::BotCommand { command: "lobsters".into(), description: "Lobsters tech stories".into() },
+        teloxide::types::BotCommand { command: "guardian".into(), description: "Guardian <topic>".into() },
         teloxide::types::BotCommand { command: "weather".into(), description: "weather <city> (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "forecast".into(), description: "7-day forecast (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
@@ -334,6 +338,8 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Ap => { let txt = fetch_ap().await.unwrap_or_else(|e| format!("ap err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(q) => { let txt = fetch_reddit(&q).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Tldr => { let txt = fetch_tldr().await.unwrap_or_else(|e| format!("tldr err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Lobsters => { let txt = fetch_lobsters().await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Guardian(q) => { let txt = fetch_guardian(&q).await.unwrap_or_else(|e| format!("guardian err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Arxiv(topic) => { let txt = fetch_arxiv(&topic).await.unwrap_or_else(|e| format!("arxiv err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Devto => { let txt = fetch_devto().await.unwrap_or_else(|e| format!("devto err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
@@ -1786,6 +1792,99 @@ fn tldr_fallback(err: &str) -> String {
         tg_header("📰", "TLDR", "Tech Digest"), err, tg_footer("tldr.tech", "tldr"), now)
 }
 
+// --- news: lobsters ---
+
+async fn fetch_lobsters() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://lobste.rs/hottest.json")
+        .header("User-Agent", "memogram-rs")
+        .timeout(std::time::Duration::from_secs(8))
+        .send().await?.json().await?;
+    let items = v.as_array().ok_or_else(|| anyhow::anyhow!("not array"))?;
+    if items.is_empty() { return Ok(format!("{}\n\n⚠️ _No stories found_\n\n{}\n\n`{}` · #lobsters", tg_header("🔥", "Lobsters", "Tech"), tg_footer("lobste.rs", "lobsters"), now)); }
+    let total_score: i64 = items.iter().map(|i| i["score"].as_i64().unwrap_or(0)).sum();
+    let total_comments: i64 = items.iter().map(|i| i["comment_count"].as_i64().unwrap_or(0)).sum();
+    let mut out = format!("{}\n\n", tg_header("🔥", "Lobsters", "Tech"));
+    out.push_str("**Source:** `lobste.rs` · **Category:** `Tech` · **Bias:** `Community`\n\n");
+    out.push_str("## 📊 Coverage\n\n");
+    out.push_str("| Stat | Value |\n|---|---|\n");
+    out.push_str(&format!("| Stories | {} |\n", items.len()));
+    out.push_str(&format!("| Total Score | `{}` |\n", total_score));
+    out.push_str(&format!("| Total Comments | `{}` |\n", total_comments));
+    out.push_str(&format!("| Updated | `{}` |\n\n", now));
+    out.push_str("## 📰 Top Stories\n\n");
+    for (i, item) in items.iter().take(5).enumerate() {
+        let title = item["title"].as_str().unwrap_or("?");
+        let url = item["url"].as_str().unwrap_or("");
+        let score = item["score"].as_i64().unwrap_or(0);
+        let comments = item["comment_count"].as_i64().unwrap_or(0);
+        let tags = item["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>()).unwrap_or_default();
+        let tag_str = if tags.is_empty() { String::new() } else { format!(" · `{}`", tags.join("`, `")) };
+        out.push_str(&format!("**{}.** [{}]({})\n   ⬆️ `{}` · 💬 `{}`{}\n\n", i+1, title, url, score, comments, tag_str));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #lobsters #tech", tg_footer("lobste.rs", "lobsters"), now));
+    Ok(out)
+}
+
+// --- news: guardian ---
+
+async fn fetch_guardian(query: &str) -> Result<String> {
+    let q = if query.trim().is_empty() { "technology".to_string() } else { query.trim().to_string() };
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    // Guardian RSS feed (no API key needed)
+    let rss_url = format!("https://www.theguardian.com/{}/rss", q.replace(' ', "-"));
+    let txt = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&rss_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => match r.text().await { Ok(t) => t, Err(e) => return Ok(guardian_fallback(&q, &format!("Parse error: {e}"))) },
+        Ok(Err(e)) => return Ok(guardian_fallback(&q, &format!("Network error: {e}"))),
+        Err(_) => return Ok(guardian_fallback(&q, "Timeout")),
+    };
+    let items = parse_rss_items(&txt, "item");
+    if items.is_empty() {
+        // Try section feed as fallback
+        let fallback_url = format!("https://www.theguardian.com/world/rss");
+        let txt2 = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&fallback_url).header("User-Agent", "memogram-rs").send()).await {
+            Ok(Ok(r)) => match r.text().await { Ok(t) => t, Err(_) => return Ok(guardian_fallback(&q, "No stories")) },
+            _ => return Ok(guardian_fallback(&q, "No stories")),
+        };
+        let items2 = parse_rss_items(&txt2, "item");
+        if items2.is_empty() { return Ok(guardian_fallback(&q, "No stories")); }
+        let mut out = format!("{}\n\n", tg_header("📰", "Guardian", &q));
+        out.push_str(&format!("**Source:** `theguardian.com` · **Query:** `{}` · **Bias:** `Very Low`\n\n", q));
+        out.push_str("## 📊 Coverage\n\n");
+        out.push_str("| Stat | Value |\n|---|---|\n");
+        out.push_str(&format!("| Stories | {} |\n", items2.len()));
+        out.push_str(&format!("| Section | `world` (fallback) |\n"));
+        out.push_str(&format!("| Updated | `{}` |\n\n", now));
+        out.push_str("## 📰 Top Stories\n\n");
+        for (i, (title, link, desc, pub_date)) in items2.iter().take(5).enumerate() {
+            let desc_short = if desc.len() > 100 { format!("{}...", &desc[..100]) } else { desc.clone() };
+            out.push_str(&format!("**{}.** [{}]({})\n   📅 `{}` · 📝 {}\n\n", i+1, title, link, pub_date, desc_short));
+        }
+        out.push_str(&format!("{}\n\n`{}` · #guardian #news", tg_footer("theguardian.com", "guardian"), now));
+        return Ok(out);
+    }
+    let mut out = format!("{}\n\n", tg_header("📰", "Guardian", &q));
+    out.push_str(&format!("**Source:** `theguardian.com` · **Query:** `{}` · **Bias:** `Very Low`\n\n", q));
+    out.push_str("## 📊 Coverage\n\n");
+    out.push_str("| Stat | Value |\n|---|---|\n");
+    out.push_str(&format!("| Stories | {} |\n", items.len()));
+    out.push_str(&format!("| Updated | `{}` |\n\n", now));
+    out.push_str("## 📰 Top Stories\n\n");
+    for (i, (title, link, desc, pub_date)) in items.iter().take(5).enumerate() {
+        let desc_short = if desc.len() > 100 { format!("{}...", &desc[..100]) } else { desc.clone() };
+        out.push_str(&format!("**{}.** [{}]({})\n   📅 `{}` · 📝 {}\n\n", i+1, title, link, pub_date, desc_short));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #guardian #news", tg_footer("theguardian.com", "guardian"), now));
+    Ok(out)
+}
+
+fn guardian_fallback(query: &str, err: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    format!("{}\n\n**Source:** `theguardian.com` · **Query:** `{}`\n\n⚠️ _{}_\n\n> Try: `theguardian.com/{}`
+\n\n{}\n\n`{}` · #guardian #news",
+        tg_header("📰", "Guardian", query), query, err, query.replace(' ', "-"), tg_footer("theguardian.com", "guardian"), now)
+}
+
 // --- today: inbox ---
 
 async fn fetch_inbox(memos_url: &str, token: &str) -> Result<String> {
@@ -3202,6 +3301,8 @@ async fn run_preview() -> Result<()> {
         ("arxiv", try_fetch("arxiv", fetch_arxiv("quantum")).await.1),
         ("devto", try_fetch("devto", fetch_devto()).await.1),
         ("tldr", try_fetch("tldr", fetch_tldr()).await.1),
+        ("lobsters", try_fetch("lobsters", fetch_lobsters()).await.1),
+        ("guardian", try_fetch("guardian", fetch_guardian("technology")).await.1),
         ("reddit", try_fetch("reddit", fetch_reddit("selfhosted")).await.1),
         ("markets", try_fetch("markets", fetch_markets()).await.1),
         ("itunes", try_fetch("itunes", fetch_itunes("drake")).await.1),
