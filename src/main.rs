@@ -97,6 +97,10 @@ enum Command {
     Pypi(String),
     Crates(String),
     Stackoverflow(String),
+    Mdn(String),
+    Docker(String),
+    Rfc(String),
+    Man(String),
     Airquality(String),
     Sunrise(String),
     Math(String),
@@ -242,6 +246,10 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "pypi".into(), description: "PyPI package info".into() },
         teloxide::types::BotCommand { command: "crates".into(), description: "crates.io info".into() },
         teloxide::types::BotCommand { command: "stackoverflow".into(), description: "Stack Overflow search".into() },
+        teloxide::types::BotCommand { command: "mdn".into(), description: "MDN Web Docs".into() },
+        teloxide::types::BotCommand { command: "docker".into(), description: "Docker Hub search".into() },
+        teloxide::types::BotCommand { command: "rfc".into(), description: "IETF RFC lookup".into() },
+        teloxide::types::BotCommand { command: "man".into(), description: "Unix man page".into() },
         teloxide::types::BotCommand { command: "airquality".into(), description: "air quality (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "sunrise".into(), description: "sunrise/sunset (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "sunset".into(), description: "sunset/sunrise (default: Thousand Oaks, CA)".into() },
@@ -425,6 +433,10 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Pypi(pkg) => { let txt = fetch_pypi(&pkg).await.unwrap_or_else(|e| format!("pypi err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Crates(pkg) => { let txt = fetch_crates(&pkg).await.unwrap_or_else(|e| format!("crates err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Stackoverflow(q) => { let txt = fetch_stackoverflow(&q).await.unwrap_or_else(|e| format!("stackoverflow err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Mdn(q) => { let txt = fetch_mdn(&q).await.unwrap_or_else(|e| format!("mdn err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Docker(q) => { let txt = fetch_docker(&q).await.unwrap_or_else(|e| format!("docker err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Rfc(q) => { let txt = fetch_rfc(&q).await.unwrap_or_else(|e| format!("rfc err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Man(q) => { let txt = fetch_man(&q).await.unwrap_or_else(|e| format!("man err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Airquality(loc) => { let txt = fetch_airquality(&loc).await.unwrap_or_else(|e| format!("airquality err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sunrise(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sunset(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
@@ -2390,6 +2402,146 @@ async fn fetch_stackoverflow(query: &str) -> Result<String> {
     Ok(format!("stackoverflow err for *{query}*"))
 }
 
+// === NEW COMMANDS: Dev Tools ===
+
+async fn fetch_mdn(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/mdn <query>` — e.g. `fetch`, `Promise`, `CSS Grid`\n\n{}", tg_header("📚", "MDN", "Web Docs"), tg_footer("developer.mozilla.org", "mdn"))); }
+    let url = format!("https://developer.mozilla.org/api/v1/search?q={}&limit=5", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let docs = v["documents"].as_array().ok_or_else(|| anyhow::anyhow!("no documents"))?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if docs.is_empty() { return Ok(format!("{}\n\n⚠️ _No results for `{}`_\n\n> Try: [developer.mozilla.org](https://developer.mozilla.org/search?q={})\n\n{}\n\n`{}` · #mdn", tg_header("📚", "MDN", q), q, urlencoding::encode(q), tg_footer("developer.mozilla.org", "mdn"), now)); }
+    let mut out = format!("{}\n\n", tg_header("📚", "MDN", q));
+    out.push_str(&format!("**Query:** `{}` · **Results:** {}\n\n", q, docs.len()));
+    out.push_str("## 📖 Top Results\n\n");
+    for (i, doc) in docs.iter().take(5).enumerate() {
+        let title = doc["title"].as_str().unwrap_or("?");
+        let slug = doc["slug"].as_str().unwrap_or("");
+        let summary = doc["summary"].as_str().unwrap_or("").chars().take(120).collect::<String>();
+        let doc_url = format!("https://developer.mozilla.org/en-US/docs/{}", slug);
+        let locale = doc["locale"].as_str().unwrap_or("en-US");
+        let tags = doc["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str()).take(3).collect::<Vec<_>>()).unwrap_or_default();
+        let tag_str = if tags.is_empty() { String::new() } else { format!(" · `{}`", tags.join("`, `")) };
+        out.push_str(&format!("**{}.** [{}]({})\n   `{}`{}\n   📝 {}\n\n", i+1, title, doc_url, locale, tag_str, summary));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #mdn #dev", tg_footer("developer.mozilla.org", "mdn"), now));
+    Ok(out)
+}
+
+async fn fetch_docker(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/docker <image>` — e.g. `nginx`, `postgres`, `redis`\n\n{}", tg_header("🐳", "Docker Hub", "Images"), tg_footer("hub.docker.com", "docker"))); }
+    let url = format!("https://hub.docker.com/v2/search/repositories/?query={}&page_size=5", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let results = v["results"].as_array().ok_or_else(|| anyhow::anyhow!("no results"))?;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if results.is_empty() { return Ok(format!("{}\n\n⚠️ _No images for `{}`_\n\n> Try: [hub.docker.com](https://hub.docker.com/search?q={})\n\n{}\n\n`{}` · #docker", tg_header("🐳", "Docker Hub", q), q, urlencoding::encode(q), tg_footer("hub.docker.com", "docker"), now)); }
+    let mut out = format!("{}\n\n", tg_header("🐳", "Docker Hub", q));
+    out.push_str(&format!("**Query:** `{}` · **Results:** {}\n\n", q, results.len()));
+    out.push_str("## 🐳 Top Images\n\n");
+    for (i, item) in results.iter().take(5).enumerate() {
+        let name = item["repo_name"].as_str().unwrap_or("?");
+        let desc = item["short_description"].as_str().unwrap_or("").chars().take(100).collect::<String>();
+        let stars = item["star_count"].as_i64().unwrap_or(0);
+        let pulls = item["pull_count"].as_i64().unwrap_or(0);
+        let official = item["is_official"].as_bool().unwrap_or(false);
+        let verified = item["is_verified"].as_bool().unwrap_or(false);
+        let badge = if official { " ⭐ Official" } else if verified { " ✅ Verified" } else { "" };
+        let pulls_str = if pulls >= 1_000_000 { format!("{}M", pulls / 1_000_000) } else if pulls >= 1_000 { format!("{}K", pulls / 1_000) } else { pulls.to_string() };
+        out.push_str(&format!("**{}.** [`{}`](https://hub.docker.com/r/{}){}\n   ⭐ `{}` · ⬇️ `{} pulls`\n   📝 {}\n\n", i+1, name, name, badge, stars, pulls_str, desc));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #docker #dev", tg_footer("hub.docker.com", "docker"), now));
+    Ok(out)
+}
+
+async fn fetch_rfc(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/rfc <number|topic>` — e.g. `7231`, `HTTP`, `WebSocket`\n\n{}", tg_header("📄", "IETF RFC", "Standards"), tg_footer("datatracker.ietf.org", "rfc"))); }
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    // Try direct RFC number first
+    let is_number = q.chars().all(|c| c.is_ascii_digit());
+    if is_number {
+        let url = format!("https://datatracker.ietf.org/api/v1/doc/document/rfc{}/", q);
+        if let Ok(v) = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await {
+            if let Ok(j) = v.json::<serde_json::Value>().await {
+                if let Some(title) = j["title"].as_str() {
+                    let rfc_num = j["rfc_number"].as_i64().unwrap_or(0);
+                    let doc_type = j["doc_type"].as_str().unwrap_or("RFC");
+                    let pub_date = j["published"].as_str().unwrap_or("").chars().take(10).collect::<String>();
+                    let abstract_text = j["abstract"].as_str().unwrap_or("").chars().take(200).collect::<String>();
+                    let stream = j["stream"].as_str().unwrap_or("?");
+                    let pages = j["pages"].as_i64().unwrap_or(0);
+                    let rfc_url = format!("https://www.rfc-editor.org/rfc/rfc{}", rfc_num);
+                    let mut out = format!("{}\n\n", tg_header("📄", &format!("RFC {}", rfc_num), title));
+                    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Number | `RFC {}` |\n| Title | {} |\n| Type | `{}` |\n| Stream | `{}` |\n| Pages | `{}` |\n| Published | `{}` |\n\n", rfc_num, title, doc_type, stream, pages, pub_date));
+                    if !abstract_text.is_empty() { out.push_str(&format!("## 📝 Abstract\n\n> {}\n\n", abstract_text)); }
+                    out.push_str(&format!("🔗 [Full Text]({})\n\n", rfc_url));
+                    out.push_str(&format!("{}\n\n`{}` · #rfc #dev", tg_footer("rfc-editor.org", "rfc"), now));
+                    return Ok(out);
+                }
+            }
+        }
+    }
+    // Fallback: search RFCs
+    let url = format!("https://datatracker.ietf.org/api/v1/doc/document/?format=json&title={}&rows=5", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let objects = v["objects"].as_array().ok_or_else(|| anyhow::anyhow!("no results"))?;
+    if objects.is_empty() { return Ok(format!("{}\n\n⚠️ _No RFCs for `{}`_\n\n> Try: [datatracker.ietf.org](https://datatracker.ietf.org/doc/search/?name={})\n\n{}\n\n`{}` · #rfc", tg_header("📄", "IETF RFC", q), q, urlencoding::encode(q), tg_footer("datatracker.ietf.org", "rfc"), now)); }
+    let mut out = format!("{}\n\n", tg_header("📄", "IETF RFC", q));
+    out.push_str(&format!("**Query:** `{}` · **Results:** {}\n\n", q, objects.len()));
+    out.push_str("## 📄 Matching RFCs\n\n");
+    for (i, item) in objects.iter().take(5).enumerate() {
+        let title = item["title"].as_str().unwrap_or("?");
+        let rfc_num = item["rfc_number"].as_i64().unwrap_or(0);
+        let pub_date = item["published"].as_str().unwrap_or("").chars().take(10).collect::<String>();
+        let doc_type = item["doc_type"].as_str().unwrap_or("RFC");
+        let rfc_url = format!("https://www.rfc-editor.org/rfc/rfc{}", rfc_num);
+        out.push_str(&format!("**{}.** [RFC {} — {}]({})\n   📅 `{}` · `{}`\n\n", i+1, rfc_num, title, rfc_url, pub_date, doc_type));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #rfc #dev", tg_footer("datatracker.ietf.org", "rfc"), now));
+    Ok(out)
+}
+
+async fn fetch_man(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/man <command>` — e.g. `git`, `curl`, `chmod`\n\n{}", tg_header("📖", "Man Pages", "Commands"), tg_footer("manpages.debian.net", "man"))); }
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    // Try Debian manpages API
+    let url = format!("https://manpages.debian.net/cgi-bin/man.cgi?manpage={}&format=json", urlencoding::encode(q));
+    match HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await {
+        Ok(r) => {
+            let txt = r.text().await.unwrap_or_default();
+            // Try to parse as JSON, fallback to HTML
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&txt) {
+                let name = v["name"].as_str().unwrap_or(q);
+                let section = v["section"].as_str().unwrap_or("?");
+                let description = v["description"].as_str().unwrap_or("").chars().take(200).collect::<String>();
+                let synopsis = v["synopsis"].as_str().unwrap_or("").chars().take(150).collect::<String>();
+                let see_also = v["see_also"].as_str().unwrap_or("");
+                let man_url = format!("https://manpages.debian.net/cgi-bin/man.cgi?manpage={}", urlencoding::encode(q));
+                let mut out = format!("{}\n\n", tg_header("📖", "Man Page", &format!("{}({})", name, section)));
+                out.push_str(&format!("| Stat | Value |\n|---|---|\n| Command | `{}` |\n| Section | `{}` |\n\n", name, section));
+                if !synopsis.is_empty() { out.push_str(&format!("## 🔧 Synopsis\n\n```\n{}\n```\n\n", synopsis)); }
+                if !description.is_empty() { out.push_str(&format!("## 📝 Description\n\n{}\n\n", description)); }
+                if !see_also.is_empty() { out.push_str(&format!("## 🔗 See Also\n\n{}\n\n", see_also)); }
+                out.push_str(&format!("🔗 [Full Man Page]({})\n\n", man_url));
+                out.push_str(&format!("{}\n\n`{}` · #man #dev", tg_footer("manpages.debian.net", "man"), now));
+                return Ok(out);
+            }
+            // Fallback to simple page
+            let man_url = format!("https://manpages.debian.net/cgi-bin/man.cgi?manpage={}", urlencoding::encode(q));
+            Ok(format!("{}\n\n📖 **Man page for `{}`**\n\n🔗 [View Man Page]({})\n\n{}\n\n`{}` · #man #dev",
+                tg_header("📖", "Man Page", q), q, man_url, tg_footer("manpages.debian.net", "man"), now))
+        }
+        Err(e) => {
+            let man_url = format!("https://manpages.debian.net/cgi-bin/man.cgi?manpage={}", urlencoding::encode(q));
+            Ok(format!("{}\n\n📖 **Man page for `{}`**\n\n⚠️ _API error: {}_\n\n🔗 [View Man Page]({})\n\n{}\n\n`{}` · #man #dev",
+                tg_header("📖", "Man Page", q), q, e, man_url, tg_footer("manpages.debian.net", "man"), now))
+        }
+    }
+}
+
 // === NEW COMMANDS: Weather ===
 
 async fn fetch_airquality(loc: &str) -> Result<String> {
@@ -3282,6 +3434,10 @@ async fn run_preview() -> Result<()> {
         ("pypi", try_fetch("pypi", fetch_pypi("requests")).await.1),
         ("crates", try_fetch("crates", fetch_crates("tokio")).await.1),
         ("stackoverflow", try_fetch("stackoverflow", fetch_stackoverflow("rust async")).await.1),
+        ("mdn", try_fetch("mdn", fetch_mdn("fetch")).await.1),
+        ("docker", try_fetch("docker", fetch_docker("nginx")).await.1),
+        ("rfc", try_fetch("rfc", fetch_rfc("7231")).await.1),
+        ("man", try_fetch("man", fetch_man("git")).await.1),
         ("airquality", try_fetch("airquality", fetch_airquality("Beijing")).await.1),
         ("sunrise", try_fetch("sunrise", fetch_sunrise("34.1706,-118.8376")).await.1),
         ("etymology", try_fetch("etymology", fetch_etymology("hello")).await.1),
