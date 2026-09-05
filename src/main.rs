@@ -143,6 +143,10 @@ impl App {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Preview mode: generate markdown samples locally without needing Telegram
+    if std::env::var("PREVIEW").is_ok() {
+        return run_preview().await;
+    }
     // Early eprintln before tracing init so we see startup even if RUST_LOG unset
     eprintln!("memogram-rs: starting up... pid={} cwd={:?}", std::process::id(), std::env::current_dir().unwrap_or_default());
     dotenvy::dotenv().ok();
@@ -396,7 +400,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Meeting(args) => { let txt = create_meeting(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Recipe(args) => { let txt = create_recipe(&args); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
+        Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "life", &txt, tid).await?; }
         Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
@@ -535,13 +539,23 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
     let tag = format!("#{bot_name}");
-    let content = format!("@{}\n\n{}\n\n— _via {} · asher_\n\n{tag}", app.admin_username, body, bot_name);
+    // Enforce character limits: Telegram 4096, keep beautiful truncation at 3500
+    let body_owned = if body.len() > 3500 {
+        format!("{}...\n\n_Truncated — was {} chars, showing 3500._", &body[..3500], body.len())
+    } else {
+        body.to_string()
+    };
+    let body = &body_owned;
+    // Memo content: clean markdown, no escaping
+    let content = format!("@{}\n\n{}\n\n— via {} · asher\n\n{tag}", app.admin_username, body, bot_name);
     let tok = if let Some(t) = bot_tok { t } else {
         let fallback = { app.store.read().await.get(&telegram_id).cloned() };
         let Some(f) = fallback else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
         f
     };
-    let _ = bot.send_message(msg.chat.id, body).await;
+    // Telegram preview: escape for MarkdownV2
+    let tg_body = tg_escape(body);
+    let _ = bot.send_message(msg.chat.id, &tg_body).parse_mode(ParseMode::MarkdownV2).await;
     match create_memo(&app.memos_url, &tok, &content).await {
         Ok(name) => { bot.send_message(msg.chat.id, format!("{bot_name}: saved {name} → @{} inbox", app.admin_username)).await?; }
         Err(e) => { bot.send_message(msg.chat.id, format!("{bot_name} err: {e}")).await?; }
@@ -613,11 +627,11 @@ async fn search_memos(url: &str, tok: &str, q: &str) -> Result<String> {
     Ok(out)
 }
 
-// --- Telegram-optimized markdown fetchers ---
-// Telegram doesn't render tables. Use: bullet lists, code blocks for aligned data, bold/italic for structure.
+// --- Markdown helpers ---
+// All output is CLEAN markdown for Memos. Telegram escaping handled in create_as_bot via tg_escape.
 
-fn esc(s: &str) -> String {
-    // Escape MarkdownV2 special chars (outside code blocks)
+fn tg_escape(s: &str) -> String {
+    // Escape MarkdownV2 special chars (only for Telegram send)
     s.replace('\\', "\\\\")
      .replace('_', "\\_")
      .replace('*', "\\*")
@@ -631,21 +645,21 @@ fn esc(s: &str) -> String {
      .replace('.', "\\.").replace('!', "\\!")
 }
 
-// Unified Telegram MarkdownV2 helpers — reference: bot2.js escapeMarkdown + gramio HTML fallback
+// Keep esc() for backward compat in any remaining call sites
+fn esc(s: &str) -> String { tg_escape(s) }
+
 fn tg_code_block(s: &str) -> String {
-    // Inside code blocks only ` and \ need escaping
-    let e = s.replace('\\', "\\\\").replace('`', "\\`");
-    format!("```\n{}\n```", e)
+    format!("```\n{}\n```", s)
 }
 fn tg_header(emoji: &str, title: &str, query: &str) -> String {
     if query.trim().is_empty() {
-        format!("*{emoji} {}*", esc(title))
+        format!("**{} {}**", emoji, title)
     } else {
-        format!("*{emoji} {} — `{}`*", esc(title), esc(query))
+        format!("**{} {} — `{}`**", emoji, title, query)
     }
 }
 fn tg_footer(source: &str, tag: &str) -> String {
-    format!("> {} · #{}", esc(source), esc(tag))
+    format!("> {} · #{}", source, tag)
 }
 fn tg_truncate(s: &str, n: usize) -> String {
     if s.len() > n { format!("{}...", &s[..n]) } else { s.to_string() }
@@ -653,9 +667,16 @@ fn tg_truncate(s: &str, n: usize) -> String {
 
 async fn fetch_hn() -> Result<String> {
     let ids: Vec<u64> = HTTP.get("https://hacker-news.firebaseio.com/v0/topstories.json").send().await?.json().await?;
+    let top5: Vec<u64> = ids.into_iter().take(5).collect();
+    // Parallel fetch all 5 items
+    let futures: Vec<_> = top5.iter().map(|id| {
+        let url = format!("https://hacker-news.firebaseio.com/v0/item/{id}.json");
+        async move { HTTP.get(&url).send().await?.json::<serde_json::Value>().await }
+    }).collect();
+    let results = futures::future::join_all(futures).await;
     let mut out = format!("{}\n\n", tg_header("🔥", "Hacker News", "Top 5"));
-    for (i, id) in ids.iter().take(5).enumerate() {
-        let item: serde_json::Value = HTTP.get(format!("https://hacker-news.firebaseio.com/v0/item/{id}.json")).send().await?.json().await?;
+    for (i, (id, res)) in top5.iter().zip(results.into_iter()).enumerate() {
+        let item = match res { Ok(v) => v, Err(_) => continue };
         let title = item["title"].as_str().unwrap_or("(no title)");
         let url = item["url"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("https://news.ycombinator.com/item?id={id}"));
         let score = item["score"].as_u64().unwrap_or(0);
@@ -666,7 +687,7 @@ async fn fetch_hn() -> Result<String> {
             let hrs = (chrono::Utc::now().timestamp() - time) / 3600;
             if hrs < 1 { "now".into() } else if hrs == 1 { "1h".into() } else { format!("{hrs}h") }
         } else { "?".into() };
-        out.push_str(&format!("*{}.* [{}]({})\n   ↑{score} · 💬{comments} · {by} · {ago}\n\n", i + 1, esc(title), url));
+        out.push_str(&format!("**{}.** [{}]({})\n   ↑{} · 💬{} · {} · {}\n\n", i + 1, title, url, score, comments, by, ago));
     }
     out.push_str(&format!("\n{}", tg_footer("news.ycombinator.com", "hn")));
     Ok(out)
@@ -674,7 +695,11 @@ async fn fetch_hn() -> Result<String> {
 
 async fn fetch_weather(city: &str) -> Result<String> {
     let url = format!("http://wttr.in/{}?format=j1", city);
-    let v: serde_json::Value = HTTP.get(url).send().await?.json().await?;
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&url).send()).await {
+        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(e) => return Ok(format!("{}\n\n_Weather data unavailable for `{}`: {}_\n\n{}", tg_header("🌤️", "Weather", city), city, e, tg_footer("wttr.in", "weather"))) },
+        Ok(Err(e)) => return Ok(format!("{}\n\n_Weather data unavailable for `{}`: {}_\n\n{}", tg_header("🌤️", "Weather", city), city, e, tg_footer("wttr.in", "weather"))),
+        Err(_) => return Ok(format!("{}\n\n_Weather data unavailable for `{}` (timeout). Try again._\n\n{}", tg_header("🌤️", "Weather", city), city, tg_footer("wttr.in", "weather"))),
+    };
     let cur = &v["current_condition"][0];
     let temp = cur["temp_C"].as_str().unwrap_or("?");
     let feels = cur["FeelsLikeC"].as_str().unwrap_or("?");
@@ -689,13 +714,13 @@ async fn fetch_weather(city: &str) -> Result<String> {
         s if s.contains("snow") => "❄️",
         _ => "🌤️",
     };
-    let mut out = format!("{}\n\n`Now:  {}°C` \\(feels {}°C\\)\n`Desc: {}`\n`Hum:  {}%`\n`Wind: {} km/h {}`\n\n", tg_header(emoji, "Weather", city), esc(temp), esc(feels), esc(desc), esc(hum), esc(wind), esc(winddir));
+    let mut out = format!("{}\n\n**Now:** {}°C (feels {}°C) — {}\n**Humidity:** {}% · **Wind:** {} km/h {}\n", tg_header(emoji, "Weather", city), temp, feels, desc, hum, wind, winddir);
     if let Some(arr) = v["weather"].as_array() {
         for day in arr.iter().take(3) {
             let date = day["date"].as_str().unwrap_or("");
             let maxt = day["maxtempC"].as_str().unwrap_or("?");
             let mint = day["mintempC"].as_str().unwrap_or("?");
-            out.push_str(&format!("*{date}* — ↑{maxt}°C ↓{mint}°C\n"));
+            out.push_str(&format!("**{date}** — ↑{maxt}°C ↓{mint}°C\n"));
             if let Some(hours) = day["hourly"].as_array() {
                 let mut table = String::from("```\nTime  Temp  Condition        Rain  Hum  Wind\n");
                 for h in hours.iter().step_by(2) {
@@ -733,9 +758,11 @@ async fn fetch_define(word: &str) -> Result<String> {
                         if let Some(defs_arr) = entry["definitions"].as_array() {
                             for (i, d) in defs_arr.iter().take(2).enumerate() {
                                 let raw = d["definition"].as_str().unwrap_or("");
-                                let text = raw.replace("<span class=\"Latn\" lang=\"en\">", "").replace("</span>", "").replace("<i>", "").replace("</i>", "").replace("<[^>]+>", "").chars().take(200).collect::<String>();
+                                let re_html = Regex::new(r"<[^>]+>").unwrap();
+                                let text = re_html.replace_all(&raw, "").to_string().chars().take(300).collect::<String>();
+                                let text = text.replace("  ", " ").trim().to_string();
                                 if !text.is_empty() {
-                                    out.push_str(&format!("*{}.* {pos}: {}\n", i + 1, esc(&text)));
+                                    out.push_str(&format!("**{}.** {}: {}\n", i + 1, pos, text));
                                     found = true;
                                 }
                             }
@@ -746,7 +773,7 @@ async fn fetch_define(word: &str) -> Result<String> {
         }
     }
     if !found {
-        out.push_str(&format!("_No definitions found for `{}`._\n\nTry: https://en.wiktionary.org/wiki/{}", esc(word), urlencoding::encode(word)));
+        out.push_str(&format!("_No definitions found for `{}`._\n\nTry: https://en.wiktionary.org/wiki/{}", word, urlencoding::encode(word)));
     }
     out.push_str(&format!("\n\n{}", tg_footer("wiktionary.org", "define")));
     Ok(out)
@@ -759,9 +786,9 @@ async fn fetch_wiki(q: &str) -> Result<String> {
     let url = v["content_urls"]["desktop"]["page"].as_str().map(|s| s.to_string()).unwrap_or_else(|| format!("https://en.wikipedia.org/wiki/{}", urlencoding::encode(q)));
     let thumb = v["thumbnail"]["source"].as_str().unwrap_or("");
     let mut out = format!("{}\n\n", tg_header("📚", "Wiki", q));
-    out.push_str(&format!("*{}*\n", esc(title)));
+    out.push_str(&format!("**{}**\n", title));
     if !thumb.is_empty() { out.push_str(&format!("[📷 Photo]({thumb})\n\n")); }
-    out.push_str(&format!("{}\n\n[Read more on Wikipedia]({url})\n\n{}", esc(&tg_truncate(extract, 800)), tg_footer("wikipedia.org", "wiki")));
+    out.push_str(&format!("{}\n\n[Read more on Wikipedia]({url})\n\n{}", tg_truncate(extract, 800), tg_footer("wikipedia.org", "wiki")));
     Ok(out)
 }
 
@@ -771,7 +798,7 @@ async fn fetch_cheat(q: &str) -> Result<String> {
         Ok(r) if r.status().is_success() => {
             let txt = r.text().await.unwrap_or_default();
             let clean = tg_truncate(&txt, 1400);
-            Ok(format!("{}\n\n{}\n\n[cheat.sh](https://cheat.sh/{}) · #{}", tg_header("💻", "cheat", q), tg_code_block(&clean), esc(q), esc("cheat")))
+            Ok(format!("{}\n\n{}\n\n[cheat.sh](https://cheat.sh/{}) · #{}", tg_header("💻", "cheat", q), tg_code_block(&clean), q, "cheat"))
         }
         _ => {
             let url = format!("https://tldr.in/{}", urlencoding::encode(q));
@@ -785,7 +812,7 @@ async fn fetch_gh(q: &str) -> Result<String> {
     let url = format!("https://api.github.com/search/repositories?q={}&sort=stars&per_page=5", urlencoding::encode(query));
     let v: serde_json::Value = HTTP.get(&url).header("Accept", "application/vnd.github.v3+json").header("User-Agent", "memogram-rs").send().await?.json().await?;
     let items = v["items"].as_array().ok_or_else(|| anyhow::anyhow!("no items"))?;
-    let mut out = format!("*⭐ GitHub — `{query}`*\n\n");
+    let mut out = format!("{}\n\n", tg_header("⭐", "GitHub", query));
     for it in items.iter().take(5) {
         let name = it["full_name"].as_str().unwrap_or("?");
         let html = it["html_url"].as_str().unwrap_or("");
@@ -793,7 +820,7 @@ async fn fetch_gh(q: &str) -> Result<String> {
         let forks = it["forks_count"].as_u64().unwrap_or(0);
         let lang = it["language"].as_str().unwrap_or("-");
         let desc = it["description"].as_str().unwrap_or("").chars().take(60).collect::<String>();
-        out.push_str(&format!("[{name}]({html})\n   ⭐ {stars} · 🍴 {forks} · `{lang}`\n   _{}_\n\n", esc(&desc)));
+        out.push_str(&format!("[{name}]({html})\n   ⭐ {stars} · 🍴 {forks} · `{lang}`\n   _{}_\n\n", desc));
     }
     out.push_str("> [View on GitHub](https://github.com/search?q=) · #gh");
     Ok(out)
@@ -809,7 +836,9 @@ async fn fetch_fx(pair: &str) -> Result<String> {
     let rate = v["rates"][&quote].as_f64().ok_or_else(|| anyhow::anyhow!("pair not found"))?;
     let now = Local::now().format("%Y-%m-%d %H:%M");
     Ok(format!(
-        "*💱 Exchange Rate*\n\n`1 {base} = {rate:.4} {quote}`\n\n`{now}`\n\n> [Source](https://open.er-api.com) · #fx"
+        "{}\n\n`1 {base} = {rate:.4} {quote}`\n\n`{now}`\n\n{}",
+        tg_header("💱", "Exchange Rate", &format!("{base}/{quote}")),
+        tg_footer("open.er-api.com", "fx")
     ))
 }
 
@@ -843,7 +872,11 @@ async fn fetch_containers(memos_url: &str) -> Result<String> {
 
 async fn fetch_lobsters(tag: &str) -> Result<String> {
     let url = "https://lobste.rs/hottest.json";
-    let v: serde_json::Value = HTTP.get(url).header("Accept", "application/json").send().await?.json().await?;
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(url).header("Accept", "application/json").send()).await {
+        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(e) => return Ok(format!("{}\n\n_Data unavailable: {}_\n\n{}", tg_header("🦞", "Lobste.rs", tag), e, tg_footer("lobste.rs", "lobsters"))) },
+        Ok(Err(e)) => return Ok(format!("{}\n\n_Data unavailable: {}_\n\n{}", tg_header("🦞", "Lobste.rs", tag), e, tg_footer("lobste.rs", "lobsters"))),
+        Err(_) => return Ok(format!("{}\n\n_Data unavailable (timeout). Try again._\n\n{}", tg_header("🦞", "Lobste.rs", tag), tg_footer("lobste.rs", "lobsters"))),
+    };
     let stories = v.as_array().ok_or_else(|| anyhow::anyhow!("no stories"))?;
     let filtered: Vec<&serde_json::Value> = if tag.trim().is_empty() {
         stories.iter().take(7).collect()
@@ -853,7 +886,7 @@ async fn fetch_lobsters(tag: &str) -> Result<String> {
             s["tags"].as_array().map(|tags| tags.iter().any(|tag| tag.as_str().unwrap_or("").to_lowercase() == t)).unwrap_or(false)
         }).take(7).collect()
     };
-    if filtered.is_empty() { return Ok(format!("{}\n\n_No stories found for `{}`._\n\n{}", tg_header("🦞", "Lobste.rs", tag), esc(tag), tg_footer("lobste.rs", "lobsters"))); }
+    if filtered.is_empty() { return Ok(format!("{}\n\n_No stories found for `{}`._\n\n{}", tg_header("🦞", "Lobste.rs", tag), tag, tg_footer("lobste.rs", "lobsters"))); }
     let mut out = format!("{}\n\n", tg_header("🦞", "Lobste.rs", tag));
     for (i, s) in filtered.iter().enumerate() {
         let title = s["title"].as_str().unwrap_or("?");
@@ -865,7 +898,7 @@ async fn fetch_lobsters(tag: &str) -> Result<String> {
         let tags: Vec<&str> = s["tags"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
         let tag_str = tags.iter().map(|t| format!("`{t}`")).collect::<Vec<_>>().join(" ");
         let display_url = if url.is_empty() { comments_url } else { url };
-        out.push_str(&format!("*{}.* [{}]({})\n   ⬆ {score} · 💬 {comments} · {author}\n   {tag_str}\n\n", i + 1, esc(title), display_url));
+        out.push_str(&format!("**{}.** [{}]({})\n   ⬆ {score} · 💬 {comments} · {author}\n   {tag_str}\n\n", i + 1, title, display_url));
     }
     out.push_str(&format!("\n{}", tg_footer("lobste.rs", "lobsters")));
     Ok(out)
@@ -907,7 +940,7 @@ async fn fetch_stock(ticker: &str) -> Result<String> {
     }
     let vol_str = if volume >= 1_000_000_000 { format!("{:.2}B", volume as f64 / 1e9) } else if volume >= 1_000_000 { format!("{:.2}M", volume as f64 / 1e6) } else { format!("{}", volume) };
     let body = tg_code_block(&format!("{price:.2} {currency}  {sign}{change:.2} ({sign}{pct:.2}%)\nOpen: {open:.2}  High: {high:.2}  Low: {low:.2}\nVol: {vol_str}\n\n{table}"));
-    Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, esc(&now_str), esc("stock")))
+    Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, now_str, "stock"))
 }
 
 async fn fetch_crypto(coin: &str) -> Result<String> {
@@ -958,7 +991,7 @@ async fn fetch_crypto(coin: &str) -> Result<String> {
     if high24 > 0.0 { body_str.push_str(&format!("\n24h High: ${high24:.2}  Low: ${low24:.2}")); }
     if ath > 0.0 { body_str.push_str(&format!("\nATH: ${ath:.2}  ATL: ${atl:.2}")); }
     let body = tg_code_block(&body_str);
-    Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, esc(&now_str), esc("crypto")))
+    Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, now_str, "crypto"))
 }
 
 async fn fetch_translate(args: &str) -> Result<String> {
@@ -973,17 +1006,25 @@ async fn fetch_translate(args: &str) -> Result<String> {
         };
         (format!("{}|{}", lang, target), body.to_string())
     } else {
-        ("auto|en".to_string(), args.to_string())
+        ("en|es".to_string(), args.to_string())
     };
     if text.trim().is_empty() { return Ok("usage: `/translate <text>` or `/translate ja → en <text>`".into()); }
+    // Fix auto -> en (MyMemory doesn't support auto)
+    let langpair = langpair.replace("auto|", "en|");
     let url = format!("https://api.mymemory.translated.net/get?q={}&langpair={}", urlencoding::encode(&text), urlencoding::encode(&langpair));
     let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
     let translated = v["responseData"]["translatedText"].as_str().unwrap_or("(no result)");
+    // Detect MyMemory error (returns INVALID message as translatedText)
+    if translated.contains("IS AN INVALID") || translated.contains("INVALID SOURCE") {
+        return Ok(format!("{}\n\n**Original:** {}\n\n_Translation unavailable for `{} → {}`. Try `/translate en → es {}`_\n\n{}", tg_header("🌐", "Translation", &langpair), text, langpair.split('|').next().unwrap_or("?"), langpair.split('|').last().unwrap_or("?"), text, tg_footer("mymemory.translated.net", "translate")));
+    }
     let detected = v["responseData"]["match"].as_f64().unwrap_or(0.0);
-    let src = langpair.split('|').next().unwrap_or("auto");
+    let src = langpair.split('|').next().unwrap_or("en");
     let tgt = langpair.split('|').last().unwrap_or("en");
     Ok(format!(
-        "*🌐 Translation*\n\n`{src}` → `{tgt}` (confidence: {detected:.0}%)\n\n*Original:* {text}\n\n*Translated:* {translated}\n\n> [MyMemory](https://mymemory.translated.net) · #translate"
+        "{}\n\n`{src}` → `{tgt}` (confidence: {detected:.0}%)\n\n**Original:** {text}\n\n**Translated:** {translated}\n\n{}",
+        tg_header("🌐", "Translation", &langpair),
+        tg_footer("mymemory.translated.net", "translate")
     ))
 }
 
@@ -1118,7 +1159,7 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
         .json(&serde_json::json!({"content": content, "visibility": "PRIVATE"}))
         .send().await?.json::<serde_json::Value>().await?;
     let name = resp["name"].as_str().unwrap_or("?");
-    Ok(format!("📓 *Daily note created*\n\n`{name}`\n\n> Open in Memos to edit · #daily"))
+    Ok(format!("📓 **Daily note created**\n\n`{name}`\n\n> Open in Memos to edit · #daily"))
 }
 
 // --- forecast ---
@@ -1126,7 +1167,12 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
 async fn fetch_forecast(city: &str) -> Result<String> {
     let city = if city.trim().is_empty() { "Thousand Oaks, CA".to_string() } else { city.trim().to_string() };
     let display_city = city.clone();
-    let v: serde_json::Value = HTTP.get(format!("http://wttr.in/{}?format=j1", urlencoding::encode(&city))).send().await?.json().await?;
+    let url = format!("http://wttr.in/{}?format=j1", urlencoding::encode(&city));
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&url).send()).await {
+        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(e) => return Ok(format!("{}\n\n_Forecast unavailable for `{}`: {}_\n\n{}", tg_header("🌤️", "Forecast", &display_city), display_city, e, tg_footer("wttr.in", "forecast"))) },
+        Ok(Err(e)) => return Ok(format!("{}\n\n_Forecast unavailable for `{}`: {}_\n\n{}", tg_header("🌤️", "Forecast", &display_city), display_city, e, tg_footer("wttr.in", "forecast"))),
+        Err(_) => return Ok(format!("{}\n\n_Forecast unavailable for `{}` (timeout). Try again._\n\n{}", tg_header("🌤️", "Forecast", &display_city), display_city, tg_footer("wttr.in", "forecast"))),
+    };
     let cur = &v["current_condition"][0];
     let temp = cur["temp_C"].as_str().unwrap_or("?");
     let desc = cur["weatherDesc"][0]["value"].as_str().unwrap_or("");
@@ -1139,7 +1185,7 @@ async fn fetch_forecast(city: &str) -> Result<String> {
         s if s.contains("snow") => "❄️",
         _ => "🌤️",
     };
-    let mut out = format!("{}\n\n*Now:* `{}`°C {} 💧 {}% · 💨 {} km/h\n\n", tg_header(emoji, "Forecast", &display_city), esc(temp), esc(desc), esc(humidity), esc(wind));
+    let mut out = format!("{}\n\n**Now:** `{}`°C {} 💧 {}% · 💨 {} km/h\n\n", tg_header(emoji, "Forecast", &display_city), temp, desc, humidity, wind);
     if let Some(arr) = v["weather"].as_array() {
         for day in arr.iter().take(7) {
             let date = day["date"].as_str().unwrap_or("");
@@ -1147,7 +1193,7 @@ async fn fetch_forecast(city: &str) -> Result<String> {
             let mint = day["mintempC"].as_str().unwrap_or("?");
             let hourly = day["hourly"].as_array();
             let noon = hourly.and_then(|h| h.get(4)).and_then(|h| h["weatherDesc"][0]["value"].as_str()).unwrap_or("");
-            out.push_str(&format!("*{date}* — ↑{maxt}°C ↓{mint}°C {noon}\n"));
+            out.push_str(&format!("**{date}** — ↑{maxt}°C ↓{mint}°C {noon}\n"));
         }
     }
     out.push_str(&format!("\n{}", tg_footer("wttr.in", "forecast")));
@@ -1201,13 +1247,13 @@ async fn fetch_ip(addr: &str) -> Result<String> {
     let lat = v["lat"].as_f64().unwrap_or(0.0);
     let lon = v["lon"].as_f64().unwrap_or(0.0);
     let org = v["org"].as_str().unwrap_or("?");
-    Ok(format!("{}\n\n`Country:` {}\n`Region:` {}\n`City:` {}\n`ISP:` {}\n`Org:` {}\n`Coords:` {:.4}, {:.4}\n\n{}", tg_header("🌐", "IP", ip), esc(country), esc(region), esc(city), esc(isp), esc(org), lat, lon, tg_footer("ip-api.com", "ip")))
+    Ok(format!("{}\n\n`Country:` {}\n`Region:` {}\n`City:` {}\n`ISP:` {}\n`Org:` {}\n`Coords:` {:.4}, {:.4}\n\n{}", tg_header("🌐", "IP", ip), country, region, city, isp, org, lat, lon, tg_footer("ip-api.com", "ip")))
 }
 
 fn gen_qr(text: &str) -> String {
     if text.trim().is_empty() { return "usage: `/qr <text>`".into(); }
     let url = format!("https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={}", urlencoding::encode(text));
-    format!("{}\n\n![QR]({url})\n\n`{} chars` · #{}", tg_header("📱", "QR Code", ""), esc(&text.len().to_string()), esc("qr"))
+    format!("{}\n\n![QR]({url})\n\n`{} chars` · #{}", tg_header("📱", "QR Code", ""), text.len().to_string(), "qr")
 }
 
 fn gen_hash(text: &str) -> String {
@@ -1270,7 +1316,7 @@ async fn set_reminder(args: &str, _app: &App) -> String {
             .send().await;
     });
     let fire_at = Local::now() + chrono::Duration::minutes(mins as i64);
-    format!("⏰ *Reminder set*\n\n`{mins} min` — {msg_text}\n\n> fires at {} · #reminder", fire_at.format("%H:%M"))
+    format!("⏰ **Reminder set**\n\n`{mins} min` — {msg_text}\n\n> fires at {} · #reminder", fire_at.format("%H:%M"))
 }
 
 // --- money: portfolio ---
@@ -1307,7 +1353,7 @@ async fn handle_portfolio(args: &str, _tid: i64, store_path: &str) -> String {
             let price = fetch_stock_price(&ticker).await.unwrap_or(0.0);
             holdings.push(Holding { ticker: ticker.clone(), qty, avg_price: price });
             save_portfolio(store_path, &holdings).await;
-            format!("✅ *Added* `{ticker}` × {qty} @ ${price:.2}")
+            format!("✅ **Added** `{ticker}` × {qty} @ ${price:.2}")
         }
         "remove" | "rm" => {
             let ticker = parts.get(1).unwrap_or(&"").trim().to_uppercase();
@@ -1397,7 +1443,7 @@ async fn handle_alerts(args: &str, app: &App) -> String {
                 alerts.push(PriceAlert { ticker: ticker.clone(), above: Some(price), below: None, triggered: false });
             }
             save_alerts(&app.store_path, &alerts).await;
-            format!("🔔 *Alert set*\n\n`{ticker}` {direction} ${price:.2}")
+            format!("🔔 **Alert set**\n\n`{ticker}` {direction} ${price:.2}")
         }
         "rm" | "remove" => {
             let ticker = parts.get(1).unwrap_or(&"").trim().to_uppercase();
@@ -1451,7 +1497,7 @@ async fn fetch_markets() -> Result<String> {
         }
     }
     out.push_str(&tg_code_block(&table));
-    out.push_str(&format!("\n`{}` · #{}", esc(&Local::now().format("%Y-%m-%d %H:%M").to_string()), esc("markets")));
+    out.push_str(&format!("\n`{}` · #{}", Local::now().format("%Y-%m-%d %H:%M").to_string(), "markets"));
     Ok(out)
 }
 
@@ -1476,11 +1522,11 @@ async fn fetch_arxiv(topic: &str) -> Result<String> {
             let authors = extract_xml(&current, "name");
             let published = extract_xml(&current, "published").chars().take(10).collect::<String>();
             if !title.is_empty() {
-                out.push_str(&format!("*{}*\n[↗]({})\n   {} · `{}`\n   _{}_\n\n", esc(&title), id_url, esc(&authors), published, esc(&summary)));
+                out.push_str(&format!("**{}**\n[↗]({})\n   {} · `{}`\n   _{}_\n\n", title, id_url, authors, published, summary));
             }
         }
     }
-    if out.len() < 30 { out.push_str(&format!("_No results for `{}`._", esc(topic))); }
+    if out.len() < 30 { out.push_str(&format!("_No results for `{}`._", topic)); }
     out.push_str(&format!("\n\n{}", tg_footer("arxiv.org", "arxiv")));
     Ok(out)
 }
@@ -1508,7 +1554,7 @@ async fn fetch_devto() -> Result<String> {
         let comments = a["comments_count"].as_u64().unwrap_or(0);
         let tags: Vec<&str> = a["tag_list"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).take(3).collect()).unwrap_or_default();
         let tag_str = tags.iter().map(|t| format!("`#{t}`")).collect::<Vec<_>>().join(" ");
-        out.push_str(&format!("*{}.* [{}]({})\n   ❤️ {reactions} · 💬 {comments} · {tag_str}\n\n", i + 1, esc(title), url));
+        out.push_str(&format!("**{}.** [{}]({})\n   ❤️ {reactions} · 💬 {comments} · {tag_str}\n\n", i + 1, title, url));
     }
     out.push_str(&format!("\n{}", tg_footer("dev.to", "devto")));
     Ok(out)
@@ -1535,7 +1581,9 @@ async fn fetch_ph() -> Result<String> {
                 if !title.is_empty() {
                     count += 1;
                     let desc = summary.replace("<p>", "").replace("</p>", "").chars().take(80).collect::<String>();
-                    out.push_str(&format!("*{count}.* [{title}]({link})\n   _{desc}_\n\n"));
+                    let clean_desc = desc.trim();
+                    let desc_md = if clean_desc.is_empty() { "".to_string() } else { format!("_{clean_desc}_") };
+                    out.push_str(&format!("**{count}.** [{title}]({link})\n   {desc_md}\n\n"));
                 }
                 
                 remaining = &rest[end + 8..];
@@ -1585,12 +1633,12 @@ async fn fetch_inbox(memos_url: &str, token: &str) -> Result<String> {
     let untagged: Vec<&serde_json::Value> = memos.iter().filter(|m| {
         m["tags"].as_array().map(|t| t.is_empty()).unwrap_or(true)
     }).collect();
-    if untagged.is_empty() { return Ok("📥 *Inbox*\n\n_all memos are tagged ✅_".to_string()); }
-    let mut out = format!("📥 *Inbox* — {} untagged\n\n", untagged.len());
+    if untagged.is_empty() { return Ok("📥 **Inbox**\n\n_all memos are tagged ✅_".to_string()); }
+    let mut out = format!("📥 **Inbox** — {} untagged\n\n", untagged.len());
     for m in untagged.iter().take(15) {
         let name = m["name"].as_str().unwrap_or("?");
         let content = m["content"].as_str().unwrap_or("").chars().take(80).collect::<String>();
-        out.push_str(&format!("*{name}* — `{} chars`\n   _{}_\n\n", content.len(), esc(&content)));
+        out.push_str(&format!("*{name}* — `{} chars`\n   _{}_\n\n", content.len(), content));
     }
     out.push_str("> tag memos with `/note #tag text` · #inbox");
     Ok(out)
@@ -1609,7 +1657,7 @@ async fn undo_last_memo(memos_url: &str, token: &str) -> String {
     let name = first["name"].as_str().unwrap_or("");
     let content = first["content"].as_str().unwrap_or("").chars().take(60).collect::<String>();
     match HTTP.delete(format!("{memos_url}/api/v1/{name}")).header("Authorization", format!("Bearer {token}")).send().await {
-        Ok(r) if r.status().is_success() => format!("🗑 *Deleted*\n\n`{name}`\n\n_{}_", esc(&content)),
+        Ok(r) if r.status().is_success() => format!("🗑 **Deleted**\n\n`{name}`\n\n_{}_", content),
         _ => "❌ delete failed".into(),
     }
 }
@@ -1632,7 +1680,7 @@ async fn pin_last_memo(memos_url: &str, token: &str) -> String {
         .json(&serde_json::json!({"pinned": new_val}))
         .send().await {
         Ok(r) if r.status().is_success() => {
-            if new_val { format!("📌 *Pinned*\n\n`{name}`") } else { format!("📌 *Unpinned*\n\n`{name}`") }
+            if new_val { format!("📌 **Pinned**\n\n`{name}`") } else { format!("📌 **Unpinned**\n\n`{name}`") }
         }
         _ => "❌ pin failed".into(),
     }
@@ -1643,7 +1691,7 @@ async fn pin_last_memo(memos_url: &str, token: &str) -> String {
 async fn create_note(memos_url: &str, token: &str, content: &str) -> String {
     if content.trim().is_empty() { return "usage: `/note #tag my quick thought`".into(); }
     match create_memo(memos_url, token, content).await {
-        Ok(name) => format!("✅ *Saved*\n\n`{name}`\n\n_{}_", esc(&content.chars().take(60).collect::<String>())),
+        Ok(name) => format!("✅ **Saved**\n\n`{name}`\n\n_{}_", content.chars().take(60).collect::<String>()),
         Err(e) => format!("❌ save err: {e}"),
     }
 }
@@ -1657,7 +1705,7 @@ fn create_meeting(args: &str) -> String {
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
         "# Meeting: {topic}\n\n**Date:** {date}\n\n## Attendees\n- \n\n## Agenda\n- \n\n## Discussion\n{notes}\n\n## Action Items\n- [ ] \n\n## Next Steps\n- \n\n#meeting #notes {date}",
-        topic = esc(topic), date = date, notes = notes
+        topic = topic, date = date, notes = notes
     )
 }
 
@@ -1668,18 +1716,105 @@ fn create_project(args: &str) -> String {
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
         "# Project: {name}\n\n**Created:** {date}\n**Status:** 🟡 In Progress\n\n## Goal\n{desc}\n\n## Tasks\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Timeline\n- **Week 1:** \n- **Week 2:** \n\n#project #planning",
-        name = esc(name), date = date, desc = desc
+        name = name, date = date, desc = desc
     )
 }
 
-fn create_recipe(args: &str) -> String {
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let name = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
-    let tags = parts.get(1).unwrap_or(&"");
-    format!(
-        "# Recipe: {name}\n\n**Tags:** {tags}\n**Prep:** 15 min\n**Cook:** 30 min\n**Servings:** 4\n\n## Ingredients\n- \n- \n- \n\n## Instructions\n1. \n2. \n3. \n\n## Notes\n- \n\n## Nutrition\n- Calories: \n- Protein: \n\n#recipe #cooking",
-        name = esc(name), tags = tags
-    )
+async fn fetch_recipe(query: &str) -> Result<String> {
+    let q = query.trim();
+    if q.is_empty() {
+        // Random recipe
+        let v: serde_json::Value = HTTP.get("https://www.themealdb.com/api/json/v1/1/random.php").send().await?.json().await?;
+        if let Some(meal) = v["meals"].as_array().and_then(|a| a.first()) {
+            return format_recipe(meal);
+        }
+        return Ok("No recipe found".into());
+    }
+    // Search by name
+    let url = format!("https://www.themealdb.com/api/json/v1/1/search.php?s={}", urlencoding::encode(q));
+    let v: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
+    let meals = v["meals"].as_array();
+    if meals.is_none() || meals.unwrap().is_empty() {
+        // Try by first letter
+        let first = q.chars().next().unwrap_or('a');
+        let url2 = format!("https://www.themealdb.com/api/json/v1/1/search.php?f={first}");
+        let v2: serde_json::Value = HTTP.get(&url2).send().await?.json().await?;
+        if let Some(meals2) = v2["meals"].as_array() {
+            if !meals2.is_empty() {
+                return format_recipe(&meals2[0]);
+            }
+        }
+        return Ok(format!("No recipes found for **{}**. Try: chicken, pasta, beef, or leave empty for random.", q));
+    }
+    let meals = meals.unwrap();
+    if meals.len() == 1 {
+        return format_recipe(&meals[0]);
+    }
+    // Multiple results — show list
+    let mut out = format!("{}\n\n", tg_header("🍳", "Recipes", q));
+    for (i, meal) in meals.iter().take(6).enumerate() {
+        let name = meal["strMeal"].as_str().unwrap_or("?");
+        let cat = meal["strCategory"].as_str().unwrap_or("?");
+        let area = meal["strArea"].as_str().unwrap_or("?");
+        out.push_str(&format!("**{}. {}** — {} · {}\n", i + 1, name, cat, area));
+    }
+    out.push_str(&format!("\n{} · Send the full name to get details", tg_footer("themealdb.com", "recipe")));
+    Ok(out)
+}
+
+fn format_recipe(meal: &serde_json::Value) -> Result<String> {
+    let name = meal["strMeal"].as_str().unwrap_or("?");
+    let cat = meal["strCategory"].as_str().unwrap_or("?");
+    let area = meal["strArea"].as_str().unwrap_or("?");
+    let instructions = meal["strInstructions"].as_str().unwrap_or("");
+    let thumb = meal["strMealThumb"].as_str().unwrap_or("");
+    let youtube = meal["strYoutube"].as_str().unwrap_or("");
+    let source = meal["strSource"].as_str().unwrap_or("");
+    let tags = meal["strTags"].as_str().unwrap_or("");
+
+    let mut out = format!("{}\n\n", tg_header("🍳", name, &format!("{cat} · {area}")));
+
+    if !thumb.is_empty() {
+        out.push_str(&format!("![recipe]({})\n\n", thumb));
+    }
+
+    // Ingredients
+    out.push_str("## Ingredients\n\n");
+    for i in 1..=20 {
+        let ingredient = meal.get(&format!("strIngredient{i}")).and_then(|v| v.as_str()).unwrap_or("");
+        let measure = meal.get(&format!("strMeasure{i}")).and_then(|v| v.as_str()).unwrap_or("");
+        if ingredient.trim().is_empty() { continue; }
+        out.push_str(&format!("- {} {}\n", measure.trim(), ingredient.trim()));
+    }
+
+    // Instructions — clean up line breaks
+    out.push_str("\n## Instructions\n\n");
+    let cleaned = instructions.replace("\r\n", "\n").replace("\r", "\n");
+    for (i, step) in cleaned.split('\n').enumerate() {
+        let step = step.trim();
+        if !step.is_empty() {
+            out.push_str(&format!("{}. {}\n", i + 1, step));
+        }
+    }
+
+    // Links
+    out.push_str("\n## Links\n\n");
+    if !youtube.is_empty() {
+        let video_id = youtube.split("v=").nth(1).unwrap_or("");
+        if !video_id.is_empty() {
+            out.push_str(&format!("- [Video Tutorial](https://youtu/{})\n", video_id));
+        }
+    }
+    if !source.is_empty() {
+        out.push_str(&format!("- [Original Recipe]({})\n", source));
+    }
+
+    if !tags.is_empty() {
+        out.push_str(&format!("\n**Tags:** {}\n", tags));
+    }
+
+    out.push_str(&format!("\n{}", tg_footer("themealdb.com", "recipe")));
+    Ok(out)
 }
 
 fn create_book(args: &str) -> String {
@@ -1689,7 +1824,7 @@ fn create_book(args: &str) -> String {
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
         "# Book: {title}\n\n**Author:** {author}\n**Started:** {date}\n**Status:** 📖 Reading\n**Rating:** ⭐⭐⭐⭐⭐\n\n## Summary\n- \n\n## Key Takeaways\n1. \n2. \n3. \n\n## Favorite Quotes\n> \"\" \n\n## Notes\n- \n\n#book #reading",
-        title = esc(title), author = author, date = date
+        title = title, author = author, date = date
     )
 }
 
@@ -1698,7 +1833,7 @@ fn create_todo(args: &str) -> String {
     if items.is_empty() { return "usage: `/todo buy milk, write report, call mom`".into(); }
     let mut out = format!("{}\n\n", tg_header("✅", "Todo List", ""));
     for item in items {
-        out.push_str(&format!("- [ ] {}\n", esc(item)));
+        out.push_str(&format!("- [ ] {}\n", item));
     }
     out.push_str(&format!("\n{}", tg_footer("todo", "tasks")));
     out
@@ -1730,7 +1865,7 @@ fn create_proscons(args: &str) -> String {
     let topic = if args.trim().is_empty() { "Untitled" } else { args.trim() };
     format!(
         "# Pros & Cons: {topic}\n\n## ✅ Pros\n- \n- \n- \n\n## ❌ Cons\n- \n- \n- \n\n## Verdict\n- \n\n## Alternative Options\n1. \n\n#comparison #decision",
-        topic = esc(topic)
+        topic = topic
     )
 }
 
@@ -1757,19 +1892,20 @@ async fn fetch_pubmed(query: &str) -> Result<String> {
     for cap in Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp) {
         ids.push(cap[1].to_string());
     }
-    if ids.is_empty() { return Ok(format!("No results for *{query}*")); }
+    if ids.is_empty() { return Ok(format!("{}\n\n_No results for `{}`._\n\n{}", tg_header("📚", "PubMed", query), query, tg_footer("ncbi.nlm.nih.gov", "pubmed"))); }
     let id_list = ids.join(",");
     let summary_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&id={}&retmode=json", id_list);
     let summary: serde_json::Value = HTTP.get(&summary_url).send().await?.json().await?;
-    let mut out = format!("📚 *PubMed:* `{query}`\n\n");
+    let mut out = format!("{}\n\n", tg_header("📚", "PubMed", query));
     for id in &ids {
         if let Some(article) = summary["result"][id].as_object() {
             let title = article["title"].as_str().unwrap_or("?");
             let authors = article["sortfirstauthor"].as_str().unwrap_or("?");
             let pubdate = article["pubdate"].as_str().unwrap_or("?");
-            out.push_str(&format!("• *{}*\n  {} — {}\n  https://pubmed.ncbi.nlm.nih.gov/{}/\n\n", title, authors, pubdate, id));
+            out.push_str(&format!("**{}**\n  {} — `{}`\n  https://pubmed.ncbi.nlm.nih.gov/{}/\n\n", title, authors, pubdate, id));
         }
     }
+    out.push_str(&format!("\n{}", tg_footer("ncbi.nlm.nih.gov", "pubmed")));
     Ok(out)
 }
 
@@ -1796,7 +1932,7 @@ async fn fetch_drug(name: &str) -> Result<String> {
                 .or_else(|| drug["adverse_reactions"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()))
                 .unwrap_or("No warnings found");
             let header = tg_header("💊", &format!("{} ({})", brand, generic), name);
-            let body = format!("**Indications:** {}\n\n**Warnings:** {}", esc(&purpose[..purpose.len().min(400)]), esc(&warnings[..warnings.len().min(400)]));
+            let body = format!("**Indications:** {}\n\n**Warnings:** {}", &purpose[..purpose.len().min(400)], &warnings[..warnings.len().min(400)]);
             return Ok(format!("{}\n\n{}\n\n{}", header, body, tg_footer("fda.gov", "drug")));
         }
     }
@@ -1813,7 +1949,7 @@ async fn fetch_genome(query: &str) -> Result<String> {
                     let name = first["organism_name"].as_str().unwrap_or("?");
                     let acc = first["assembly_accession"].as_str().unwrap_or("?");
                     let status = first["assembly_level"].as_str().unwrap_or("?");
-                    return Ok(format!("{}\n**Accession:** `{}`\n**Level:** {}\nhttps://www.ncbi.nlm.nih.gov/datasets/{}\n\n{}", tg_header("🧬", "Genome", name), esc(acc), esc(status), esc(acc), tg_footer("ncbi.nlm.nih.gov", "genome")));
+                    return Ok(format!("{}\n**Accession:** `{}`\n**Level:** {}\nhttps://www.ncbi.nlm.nih.gov/datasets/{}\n\n{}", tg_header("🧬", "Genome", name), acc, status, acc, tg_footer("ncbi.nlm.nih.gov", "genome")));
                 }
             }
         }
@@ -1822,33 +1958,35 @@ async fn fetch_genome(query: &str) -> Result<String> {
     let search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nucleotide&retmax=3&term={}", urlencoding::encode(query));
     let resp = HTTP.get(&search_url).send().await?.text().await?;
     let ids: Vec<String> = Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
-    if ids.is_empty() { return Ok(format!("No genome results for *{query}*")); }
-    Ok(format!("🧬 *Genome:* `{query}`\nIDs: {}\nhttps://www.ncbi.nlm.nih.gov/nuccore/{}", ids.join(", "), ids[0]))
+    if ids.is_empty() { return Ok(format!("{}\n\n_No genome results for `{}`._\n\n{}", tg_header("🧬", "Genome", query), query, tg_footer("ncbi.nlm.nih.gov", "genome"))); }
+    Ok(format!("{}\n\nIDs: {}\nhttps://www.ncbi.nlm.nih.gov/nuccore/{}\n\n{}", tg_header("🧬", "Genome", query), ids.join(", "), ids[0], tg_footer("ncbi.nlm.nih.gov", "genome")))
 }
 
 async fn fetch_protein(query: &str) -> Result<String> {
     let url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=protein&retmax=5&term={}", urlencoding::encode(query));
     let resp = HTTP.get(&url).send().await?.text().await?;
     let ids: Vec<String> = Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
-    if ids.is_empty() { return Ok(format!("No protein results for *{query}*")); }
+    if ids.is_empty() { return Ok(format!("{}\n\n_No protein results for `{}`._\n\n{}", tg_header("🧬", "Protein", query), query, tg_footer("ncbi.nlm.nih.gov", "protein"))); }
     let summary_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=protein&id={}&retmode=json", ids.join(","));
     let summary: serde_json::Value = HTTP.get(&summary_url).send().await?.json().await?;
-    let mut out = format!("🧬 *Protein:* `{query}`\n\n");
+    let mut out = format!("{}\n\n", tg_header("🧬", "Protein", query));
     for id in &ids {
         if let Some(item) = summary["result"][id].as_object() {
             let title = item["title"].as_str().unwrap_or("?");
-            out.push_str(&format!("• *{}*\n  https://www.ncbi.nlm.nih.gov/protein/{}\n\n", title, id));
+            out.push_str(&format!("**{}**\n  https://www.ncbi.nlm.nih.gov/protein/{}\n\n", title, id));
         }
     }
+    out.push_str(&format!("\n{}", tg_footer("ncbi.nlm.nih.gov", "protein")));
     Ok(out)
 }
 
 // === NEW COMMANDS: Stoicism ===
 
 async fn fetch_stoic_quote() -> Result<String> {
-    // Try API (stoic-quotes.com), fallback to local 10 quotes (like philosophy) — API was https://stoic-quotes/api (missing TLD) and 500s
     let api = async {
-        let v: serde_json::Value = HTTP.get("https://stoic-quotes.com/api/quote").timeout(std::time::Duration::from_secs(5)).send().await?.json().await?;
+        let v: serde_json::Value = HTTP.get("https://stoic-quotes.com/api/quote")
+            .timeout(std::time::Duration::from_secs(5))
+            .send().await?.json().await?;
         let text = v["text"].as_str().or_else(|| v["data"]["quote"].as_str()).ok_or_else(|| anyhow::anyhow!("no text"))?;
         let author = v["author"].as_str().or_else(|| v["data"]["author"].as_str()).unwrap_or("Unknown");
         Ok::<(String, String), anyhow::Error>((text.to_string(), author.to_string()))
@@ -1873,7 +2011,7 @@ async fn fetch_stoic_quote() -> Result<String> {
             (q.to_string(), a.to_string())
         }
     };
-    Ok(format!("{}\n\n\"{}\"\n\n— *{}*\n\n{}", tg_header("🏛️", "Stoic Wisdom", ""), esc(&text), esc(&author), tg_footer("stoic", "stoic")))
+    Ok(format!("{}\n\n> \"{}\"\n\n— **{}**\n\n{}", tg_header("🏛️", "Stoic Wisdom", ""), text, author, tg_footer("stoic", "stoic")))
 }
 
 fn create_mood_entry(args: &str) -> String {
@@ -1919,7 +2057,7 @@ async fn fetch_npm(pkg: &str) -> Result<String> {
     let version = resp["dist-tags"]["latest"].as_str().unwrap_or("?");
     let desc = resp["description"].as_str().unwrap_or("?");
     let homepage = resp["homepage"].as_str().unwrap_or("");
-    Ok(format!("{}\n\n{}\n\nhttps://www.npmjs.com/package/{}\n\n{}", tg_header("📦", "npm", &format!("{}@{}", name, version)), esc(desc), esc(name), tg_footer("npmjs.com", "npm")))
+    Ok(format!("{}\n\n{}\n\nhttps://www.npmjs.com/package/{}\n\n{}", tg_header("📦", "npm", &format!("{}@{}", name, version)), desc, name, tg_footer("npmjs.com", "npm")))
 }
 
 async fn fetch_pypi(pkg: &str) -> Result<String> {
@@ -1929,7 +2067,7 @@ async fn fetch_pypi(pkg: &str) -> Result<String> {
     let name = info["name"].as_str().unwrap_or("?");
     let version = info["version"].as_str().unwrap_or("?");
     let summary = info["summary"].as_str().unwrap_or("?");
-    Ok(format!("📦 *PyPI:* `{name}@{version}`\n{summary}\n\nhttps://pypi.org/project/{name}/"))
+    Ok(format!("{}\n\n{}\n\nhttps://pypi.org/project/{}/\n\n{}", tg_header("📦", "PyPI", &format!("{}@{}", name, version)), summary, name, tg_footer("pypi.org", "pypi")))
 }
 
 async fn fetch_crates(pkg: &str) -> Result<String> {
@@ -1939,23 +2077,23 @@ async fn fetch_crates(pkg: &str) -> Result<String> {
         let version = c["max_version"].as_str().unwrap_or("?");
         let desc = c["description"].as_str().unwrap_or("?");
         let downloads = c["downloads"].as_i64().unwrap_or(0);
-        return Ok(format!("{}\n\n{}\nDownloads: {}\n\nhttps://crates.io/crates/{}\n\n{}", tg_header("📦", "crates.io", &format!("{}@{}", name, version)), esc(desc), esc(&downloads.to_string()), esc(name), tg_footer("crates.io", "crates")));
+        return Ok(format!("{}\n\n{}\nDownloads: {}\n\nhttps://crates.io/crates/{}\n\n{}", tg_header("📦", "crates.io", &format!("{}@{}", name, version)), desc, downloads.to_string(), name, tg_footer("crates.io", "crates")));
     }
-    Ok(format!("crate not found: *{pkg}*"))
+    Ok(format!("crate not found: **{pkg}**"))
 }
 
 async fn fetch_stackoverflow(query: &str) -> Result<String> {
     let url = format!("https://api.stackexchange.com/2.3/search?order=desc&sort=activity&intitle={}&site=stackoverflow&pagesize=5", urlencoding::encode(query));
     let resp: serde_json::Value = HTTP.get(&url).send().await?.json().await?;
     if let Some(items) = resp["items"].as_array() {
-        if items.is_empty() { return Ok(format!("No results for *{query}*")); }
-        let mut out = format!("📖 *Stack Overflow:* `{query}`\n\n");
+        if items.is_empty() { return Ok(format!("No results for **{query}**")); }
+        let mut out = format!("{}\n\n", tg_header("📖", "Stack Overflow", query));
         for item in items {
             let title = item["title"].as_str().unwrap_or("?");
             let link = item["link"].as_str().unwrap_or("?");
             let score = item["score"].as_i64().unwrap_or(0);
             let answers = item["answer_count"].as_i64().unwrap_or(0);
-            out.push_str(&format!("• *{}* (⬆{} answers:{}\n  {link}\n\n", title, score, answers));
+            out.push_str(&format!("**{}** (⬆{} · answers:{})\n  {}\n\n", title, score, answers, link));
         }
         return Ok(out);
     }
@@ -1973,7 +2111,7 @@ async fn fetch_airquality(loc: &str) -> Result<String> {
         let aqi = data["aqi"].as_i64().unwrap_or(0);
         let city = data["city"]["name"].as_str().unwrap_or("?");
         let dominant = data["dominentpol"].as_str().unwrap_or("?");
-        return Ok(format!("🌬️ *Air Quality:* {city}\n**AQI:** {aqi}\n**Dominant pollutant:** {dominant}\n\nhttps://aqicn.org/city/{loc}"));
+        return Ok(format!("🌬️ **Air Quality:** {city}\n**AQI:** {aqi}\n**Dominant pollutant:** {dominant}\n\nhttps://aqicn.org/city/{loc}"));
     }
     Ok(format!("air quality data unavailable for *{loc}*"))
 }
@@ -1992,7 +2130,7 @@ async fn fetch_sunrise(loc: &str) -> Result<String> {
         let day_length = results["day_length"].as_i64().unwrap_or(0);
         let hours = day_length / 3600;
         let mins = (day_length % 3600) / 60;
-        return Ok(format!("{}\n\n**Sunrise:** `{}`\n**Sunset:** `{}`\n**Day length:** `{}h {}m`\n\n{}", tg_header("🌅", "Sunrise/Sunset", loc), esc(sunrise), esc(sunset), esc(&hours.to_string()), esc(&mins.to_string()), tg_footer("sunrise-sunset.org", "sunrise")));
+        return Ok(format!("{}\n\n**Sunrise:** `{}`\n**Sunset:** `{}`\n**Day length:** `{}h {}m`\n\n{}", tg_header("🌅", "Sunrise/Sunset", loc), sunrise, sunset, hours.to_string(), mins.to_string(), tg_footer("sunrise-sunset.org", "sunrise")));
     }
     Ok(format!("sunrise data unavailable for *{loc}*"))
 }
@@ -2019,13 +2157,13 @@ async fn fetch_etymology(word: &str) -> Result<String> {
             if !etym.is_empty() {
                 let clean = etym.replace("{{inh|en|", "").replace("{{der|en|", "").replace("{{bor|en|", "").replace("{{m|en|", "").replace("{{l|en|", "").replace("}}", "").replace("{{XLIT|en|", "").replace('\n', " ");
                 let short = clean.chars().take(500).collect::<String>();
-                out.push_str(&esc(&short));
+                out.push_str(&short);
                 out.push_str(&format!("\n\n{}", tg_footer("wiktionary.org", "etymology")));
                 return Ok(out);
             }
         }
     }
-    out.push_str(&format!("_No etymology section found for `{}`._\n\nTry: https://en.wiktionary.org/wiki/{}", esc(word), urlencoding::encode(word)));
+    out.push_str(&format!("_No etymology section found for `{}`._\n\nTry: https://en.wiktionary.org/wiki/{}", word, urlencoding::encode(word)));
     out.push_str(&format!("\n\n{}", tg_footer("wiktionary.org", "etymology")));
     Ok(out)
 }
@@ -2034,30 +2172,43 @@ async fn fetch_synonym(word: &str) -> Result<String> {
     let resp: serde_json::Value = HTTP.get(format!("https://api.datamuse.com/words?rel_syn={}", urlencoding::encode(word))).send().await?.json().await?;
     if let Some(words) = resp.as_array() {
         if words.is_empty() { return Ok(format!("{} \n\n_No synonyms found._\n\n{}", tg_header("📝", "Synonyms", word), tg_footer("datamuse.com", "synonym"))); }
-        let syns: Vec<String> = words.iter().take(10).filter_map(|w| w["word"].as_str()).map(|s| format!("`{}`", esc(s))).collect();
+        let syns: Vec<String> = words.iter().take(10).filter_map(|w| w["word"].as_str()).map(|s| format!("`{}`", s)).collect();
         return Ok(format!("{}\n\n{}\n\n{}", tg_header("📝", "Synonyms", word), syns.join(", "), tg_footer("datamuse.com", "synonym")));
     }
     Ok(format!("{} \n\n_synonym lookup failed_\n\n{}", tg_header("📝", "Synonyms", word), tg_footer("datamuse.com", "synonym")))
 }
 
 async fn fetch_philosophy_quote() -> Result<String> {
-    let quotes = [
-        ("The unexamined life is not worth living.", "Socrates"),
-        ("I think, therefore I am.", "René Descartes"),
-        ("Happiness is not an ideal of reason but of imagination.", "Immanuel Kant"),
-        ("He who thinks great thoughts, often makes great errors.", "Martin Heidegger"),
-        ("The only true wisdom is in knowing you know nothing.", "Socrates"),
-        ("Life is examined by living it.", "George Santayana"),
-        ("Man is condemned to be free.", "Jean-Paul Sartre"),
-        ("To be is to be perceived.", "George Berkeley"),
-        ("One cannot step twice into the same river.", "Heraclitus"),
-        ("God is dead.", "Friedrich Nietzsche"),
-        ("I cannot teach anybody anything. I can only make them think.", "Socrates"),
-        ("The owl of Minerva spreads its wings only with the falling of the dusk.", "G.W.F. Hegel"),
-    ];
-    let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
-    let (quote, author) = quotes[idx];
-    Ok(format!("{}\n\n\"{}\"\n\n— *{}*\n\n{}", tg_header("📚", "Philosophy", ""), esc(quote), esc(author), tg_footer("philosophy", "learn")))
+    // Try philosophy API, fallback to local quotes
+    let api = async {
+        let v: serde_json::Value = HTTP.get("https://philosophyapi.fly.dev/api/quotes/random")
+            .timeout(std::time::Duration::from_secs(5))
+            .send().await?.json().await?;
+        let text = v["quote"].as_str().ok_or_else(|| anyhow::anyhow!("no quote"))?;
+        let author = v["author"].as_str().unwrap_or("Unknown");
+        Ok::<(String, String), anyhow::Error>((text.to_string(), author.to_string()))
+    }.await;
+    let (quote, author) = match api {
+        Ok((q, a)) if !q.is_empty() => (q, a),
+        _ => {
+            let quotes = [
+                ("The unexamined life is not worth living.", "Socrates"),
+                ("I think, therefore I am.", "Rene Descartes"),
+                ("Happiness is not an ideal of reason but of imagination.", "Immanuel Kant"),
+                ("The only true wisdom is in knowing you know nothing.", "Socrates"),
+                ("Man is condemned to be free.", "Jean-Paul Sartre"),
+                ("One cannot step twice into the same river.", "Heraclitus"),
+                ("I cannot teach anybody anything. I can only make them think.", "Socrates"),
+                ("The owl of Minerva spreads its wings only with the falling of the dusk.", "G.W.F. Hegel"),
+                ("Life can only be understood backwards; but it must be lived forwards.", "Soren Kierkegaard"),
+                ("God is dead. And we have killed him.", "Friedrich Nietzsche"),
+            ];
+            let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
+            let (q, a) = quotes[idx];
+            (q.to_string(), a.to_string())
+        }
+    };
+    Ok(format!("{}\n\n> \"{}\"\n\n— **{}**\n\n{}", tg_header("📚", "Philosophy", ""), quote, author, tg_footer("philosophy", "learn")))
 }
 
 // === MONEY: Finance explainer (learn-focused) ===
@@ -2075,34 +2226,34 @@ async fn fetch_finance(term: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     // Build detailed document
     let mut out = String::new();
-    out.push_str(&format!("# 💰 Finance: {}\n\n", esc(title)));
-    out.push_str(&format!("**Term:** `{}` · **Date:** `{}` \n", esc(q), esc(&now)));
+    out.push_str(&format!("# 💰 Finance: {}\n\n", title));
+    out.push_str(&format!("**Term:** `{}` · **Date:** `{}` \n", q, now));
     if !thumb.is_empty() { out.push_str(&format!("[📷 Cover]({})\n\n", thumb)); }
     out.push_str("## 📖 Overview\n");
     if !extract.is_empty() {
-        out.push_str(&format!("{}\n\n", esc(&tg_truncate(extract, 600))));
+        out.push_str(&format!("{}\n\n", tg_truncate(extract, 600)));
     } else {
-        out.push_str(&format!("_No summary found for `{}`. Try broader term._\n\n", esc(q)));
+        out.push_str(&format!("_No summary found for `{}`. Try broader term._\n\n", q));
     }
     // Key facts table
     out.push_str("## 📊 Key Facts\n\n");
     out.push_str("| Aspect | Details |\n|---|---|\n");
     let typ = wiki["type"].as_str().unwrap_or("standard");
     let desc = wiki["description"].as_str().unwrap_or("finance term");
-    out.push_str(&format!("| Type | {} |\n", esc(desc)));
+    out.push_str(&format!("| Type | {} |\n", desc));
     out.push_str(&format!("| Source | [Wikipedia]({}) |\n", url));
-    out.push_str(&format!("| Query | `{}` |\n", esc(q)));
-    out.push_str(&format!("| Kind | {} |\n", esc(typ)));
+    out.push_str(&format!("| Query | `{}` |\n", q));
+    out.push_str(&format!("| Kind | {} |\n", typ));
     // Example / how to think
     out.push_str("\n## 💡 How to think about it\n\n");
-    out.push_str(&format!("> _Tip:_ Search `{} + investopedia` for plain-English examples. Try `/compound 1000 7% 10` to see compounding in action._\n\n", esc(q)));
+    out.push_str(&format!("> _Tip:_ Search `{} + investopedia` for plain-English examples. Try `/compound 1000 7% 10` to see compounding in action._\n\n", q));
     // Fun / learn more
     out.push_str("## 🎓 Fun & Learn More\n\n");
     out.push_str(&format!("- [Read full article]({})\n", url));
-    out.push_str(&format!("- Related: `finance {}` → `compound` calculator\n", esc(q)));
+    out.push_str(&format!("- Related: `finance {}` → `compound` calculator\n", q));
     out.push_str(&format!("- Tags: `#finance #money #learn`\n"));
     out.push_str("\n---\n");
-    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("💰", "Finance", q), esc(&now), esc("finance")));
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("💰", "Finance", q), now, "finance"));
     // Also include memo footer for Telegram/md
     out.push_str(&format!("\n\n{}", tg_footer("wikipedia.org", "finance")));
     Ok(out)
@@ -2130,7 +2281,7 @@ fn create_compound(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let mut out = String::new();
     out.push_str(&format!("# 🧮 Compound Interest — Detailed\n\n"));
-    out.push_str(&format!("**Principal:** `${:.2}` · **Rate:** `{:.2}%` · **Years:** `{}` · **Date:** `{}`\n\n", p, apr, years, esc(&now)));
+    out.push_str(&format!("**Principal:** `${:.2}` · **Rate:** `{:.2}%` · **Years:** `{}` · **Date:** `{}`\n\n", p, apr, years, now));
     out.push_str("## 📊 Result\n\n");
     out.push_str("| Metric | Amount |\n|---|---|\n");
     out.push_str(&format!("| Principal | `${:.2}` |\n", p));
@@ -2159,7 +2310,7 @@ fn create_compound(args: &str) -> String {
     out.push_str("## 🧠 Formula & Fun\n\n");
     out.push_str(&format!("_A = P(1+r)^t_ → `{:.0}*(1+{:.4})^{}`\n\n", p, r, years));
     out.push_str("> _Tip:_ Increase rate 1% or add $100/mo — small changes compound massively. Try again with different inputs._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🧮", "Compound", args), esc(&now), esc("compound")));
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🧮", "Compound", args), now, "compound"));
     out.push_str("\n\n> #compound #money #learn");
     out
 }
@@ -2172,13 +2323,13 @@ async fn fetch_trial(query: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
     let studies = v["studies"].as_array();
     if studies.is_none() || studies.unwrap().is_empty() {
-        return Ok(format!("{} \n\n_No trials found for `{}`._ Try broader term like `diabetes` or `cancer`.\n\n{}", tg_header("🔬", "Clinical Trials", q), esc(q), tg_footer("clinicaltrials.gov", "trial")));
+        return Ok(format!("{} \n\n_No trials found for `{}`._ Try broader term like `diabetes` or `cancer`.\n\n{}", tg_header("🔬", "Clinical Trials", q), q, tg_footer("clinicaltrials.gov", "trial")));
     }
     let arr = studies.unwrap();
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let mut out = String::new();
-    out.push_str(&format!("# 🔬 Clinical Trials — `{}`\n\n", esc(q)));
-    out.push_str(&format!("**Query:** `{}` · **Found:** `{}` · **Date:** `{}`\n\n", esc(q), arr.len(), esc(&now)));
+    out.push_str(&format!("# 🔬 Clinical Trials — `{}`\n\n", q));
+    out.push_str(&format!("**Query:** `{}` · **Found:** `{}` · **Date:** `{}`\n\n", q, arr.len(), now));
     out.push_str("| # | NCTId | Phase | Status | Title |\n|---:|---|---|---|---|\n");
     for (i, s) in arr.iter().enumerate() {
         let proto = &s["protocolSection"];
@@ -2186,7 +2337,7 @@ async fn fetch_trial(query: &str) -> Result<String> {
         let title = proto["identificationModule"]["briefTitle"].as_str().unwrap_or("?").chars().take(50).collect::<String>();
         let phase = proto["designModule"]["phases"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("N/A");
         let status = proto["statusModule"]["overallStatus"].as_str().unwrap_or("?");
-        out.push_str(&format!("| {} | {} | {} | {} | {} |\n", i+1, esc(id), esc(phase), esc(status), esc(&title)));
+        out.push_str(&format!("| {} | {} | {} | {} | {} |\n", i+1, id, phase, status, title));
     }
     out.push_str("\n## 📋 Details\n\n");
     for s in arr.iter().take(3) {
@@ -2195,34 +2346,60 @@ async fn fetch_trial(query: &str) -> Result<String> {
         let title = proto["identificationModule"]["briefTitle"].as_str().unwrap_or("?");
         let conds = proto["conditionsModule"]["conditions"].as_array().map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or("?".into());
         let url2 = format!("https://clinicaltrials.gov/study/{}", id);
-        out.push_str(&format!("### {} — {} \n**Conditions:** {} \n[View on ClinicalTrials.gov]({})\n\n", esc(id), esc(title), esc(&conds.chars().take(120).collect::<String>()), url2));
+        out.push_str(&format!("### {} — {} \n**Conditions:** {} \n[View on ClinicalTrials.gov]({})\n\n", id, title, conds.chars().take(120).collect::<String>(), url2));
     }
     out.push_str("---\n");
-    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🔬", "Clinical Trials", q), esc(&now), esc("trial")));
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🔬", "Clinical Trials", q), now, "trial"));
     out.push_str(&format!("\n\n{}", tg_footer("clinicaltrials.gov", "trial")));
     Ok(out)
 }
 
 async fn fetch_food(query: &str) -> Result<String> {
     let q = query.trim();
-    if q.is_empty() { return Ok(format!("{} \n\n_Usage:_ `/food apple` or `/food oreo`\n\n{}", tg_header("🥗", "Food", "nutrition"), tg_footer("openfoodfacts.org", "food"))); }
+    if q.is_empty() { return Ok(format!("{}\n\n_Usage:_ `/food apple` or `/food oreo`\n\n{}", tg_header("🥗", "Food", "nutrition"), tg_footer("openfoodfacts.org", "food"))); }
     let url = format!("https://world.openfoodfacts.org/cgi/search.pl?search_terms={}&search_simple=1&action=process&json=true&page_size=3", urlencoding::encode(q));
     let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
-    let products = v["products"].as_array();
+    let mut products = v["products"].as_array();
+    // Fallback to v2 search if empty (more reliable)
     if products.is_none() || products.unwrap().is_empty() {
-        return Ok(format!("{} \n\n_No foods found for `{}`._\n\n{}", tg_header("🥗", "Nutrition", q), esc(q), tg_footer("openfoodfacts.org", "food")));
+        let url2 = format!("https://world.openfoodfacts.org/api/v2/search?search_terms={}&page_size=3&fields=product_name,brands,nutriscore_grade,nutriments", urlencoding::encode(q));
+        if let Ok(v2) = HTTP.get(&url2).header("User-Agent", "memogram-rs").send().await {
+            if let Ok(j2) = v2.json::<serde_json::Value>().await {
+                if let Some(arr) = j2["products"].as_array() {
+                    if !arr.is_empty() {
+                        // use v2 products but map to expected shape
+                        let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+                        let mut out = String::new();
+                        out.push_str(&format!("# 🥗 Nutrition — `{}`\n\n", q));
+                        out.push_str("| # | Product | Brand | Score |\n|---:|---|---|---|\n");
+                        for (i, p) in arr.iter().take(3).enumerate() {
+                            let name = p["product_name"].as_str().unwrap_or("?").chars().take(30).collect::<String>();
+                            let brand = p["brands"].as_str().unwrap_or("?").chars().take(20).collect::<String>();
+                            let score = p["nutriscore_grade"].as_str().unwrap_or("-");
+                            let emoji = match score { "a"=>"🟢", "b"=>"🟢", "c"=>"🟡", "d"=>"🟠", "e"=>"🔴", _=>"⚪" };
+                            out.push_str(&format!("| {} | {} | {} | {} {} |\n", i+1, name, brand, emoji, score));
+                        }
+                        out.push_str("\n_Results from fallback API._\n\n");
+                        out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🥗", "Nutrition", q), now, "food"));
+                        out.push_str(&format!("\n\n{}", tg_footer("openfoodfacts.org", "food")));
+                        return Ok(out);
+                    }
+                }
+            }
+        }
+        return Ok(format!("{}\n\n_No foods found for `{}`._\n\n{}", tg_header("🥗", "Nutrition", q), q, tg_footer("openfoodfacts.org", "food")));
     }
     let arr = products.unwrap();
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let mut out = String::new();
-    out.push_str(&format!("# 🥗 Nutrition — `{}`\n\n", esc(q)));
+    out.push_str(&format!("# 🥗 Nutrition — `{}`\n\n", q));
     out.push_str("| # | Product | Brand | Score |\n|---:|---|---|---|\n");
     for (i, p) in arr.iter().enumerate() {
         let name = p["product_name"].as_str().unwrap_or("?").chars().take(30).collect::<String>();
         let brand = p["brands"].as_str().unwrap_or("?").chars().take(20).collect::<String>();
         let score = p["nutriscore_grade"].as_str().unwrap_or("-");
         let emoji = match score { "a"=>"🟢", "b"=>"🟢", "c"=>"🟡", "d"=>"🟠", "e"=>"🔴", _=>"⚪" };
-        out.push_str(&format!("| {} | {} | {} | {} {} |\n", i+1, esc(&name), esc(&brand), emoji, esc(score)));
+        out.push_str(&format!("| {} | {} | {} | {} {} |\n", i+1, name, brand, emoji, score));
     }
     out.push_str("\n## 📊 Nutrition Facts (per 100g)\n\n");
     out.push_str("| Product | Kcal | Prot | Fat | Carbs | Sugar | Salt | Fiber |\n|---|---|---|---|---|---|---|---|\n");
@@ -2236,7 +2413,7 @@ async fn fetch_food(query: &str) -> Result<String> {
         let sugar = nutr["sugars_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
         let salt = nutr["salt_100g"].as_f64().map(|v| format!("{:.2}", v)).unwrap_or("-".into());
         let fiber = nutr["fiber_100g"].as_f64().map(|v| format!("{:.1}", v)).unwrap_or("-".into());
-        out.push_str(&format!("| {} | {} | {} | {} | {} | {} | {} | {} |\n", esc(&name), kcal, prot, fat, carbs, sugar, salt, fiber));
+        out.push_str(&format!("| {} | {} | {} | {} | {} | {} | {} | {} |\n", name, kcal, prot, fat, carbs, sugar, salt, fiber));
     }
     out.push_str("\n```mermaid\n");
     out.push_str("pie title \"Top Product Nutrients (g/100g)\"\n");
@@ -2251,7 +2428,7 @@ async fn fetch_food(query: &str) -> Result<String> {
     }
     out.push_str("```\n\n");
     out.push_str("> _Tip:_ Nutri-Score `a`=best `e`=worst. Compare brands for same food._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🥗", "Nutrition", q), esc(&now), esc("food")));
+    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🥗", "Nutrition", q), now, "food"));
     out.push_str(&format!("\n\n{}", tg_footer("openfoodfacts.org", "food")));
     Ok(out)
 }
@@ -2261,40 +2438,26 @@ async fn fetch_food(query: &str) -> Result<String> {
 fn create_meditation(note: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let dur = note.split_whitespace().next().unwrap_or("?");
-    format!("{}\n\nDuration: `{}`\nNote: {}\n\n— `{}`\n\n{}", tg_header("🧘", "Meditation", dur), esc(dur), esc(note), esc(&now), tg_footer("meditation", "stoic"))
+    format!("{}\n\n**Duration:** `{}`\n**Note:** {}\n\n— `{}`\n\n{}", tg_header("🧘", "Meditation", dur), dur, note, now, tg_footer("meditation", "stoic"))
 }
 
 fn create_affirmation(note: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    format!("{}\n\n\"{}\"\n\n— `{}`\n\n{}", tg_header("💪", "Affirmation", ""), esc(note), esc(&now), tg_footer("affirmation", "stoic"))
+    format!("{}\n\n> \"{}\"\n\n— `{}`\n\n{}", tg_header("💪", "Affirmation", ""), note, now, tg_footer("affirmation", "stoic"))
 }
 
 fn create_reflection(note: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("🪞", "Reflection", ""), esc(note), esc(&now), tg_footer("reflection", "stoic"))
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("🪞", "Reflection", ""), note, now, tg_footer("reflection", "stoic"))
 }
 
 async fn fetch_wisdom() -> Result<String> {
-    let quotes = [
-        ("The happiness of your life depends upon the quality of your thoughts.", "Marcus Aurelius"),
-        ("Waste no more time arguing about what a good man should be. Be one.", "Marcus Aurelius"),
-        ("He who fears death will never do anything worthy of a living man.", "Seneca"),
-        ("We suffer more often in imagination than in reality.", "Seneca"),
-        ("No man is free who is not master of himself.", "Epictetus"),
-        ("First say to yourself what you would be; and then do what you have to do.", "Epictetus"),
-        ("The best revenge is not to be like your enemy.", "Marcus Aurelius"),
-        ("It is not that we have a short time to live, but that we waste a good deal of it.", "Seneca"),
-        ("Difficulties strengthen the mind, as labor does the body.", "Seneca"),
-        ("You have power over your mind — not outside events. Realize this, and you will find strength.", "Marcus Aurelius"),
-    ];
-    let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
-    let (quote, author) = quotes[idx];
-    Ok(format!("🏛️ *Stoic Wisdom*\n\n\"{quote}\"\n\n— *{author}*\n\n#wisdom #stoic"))
+    fetch_stoic_quote().await
 }
 
 fn create_journal(note: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("📔 *Journal*\n\n{note}\n\n— {now}\n\n#journal #stoic")
+    format!("{}\n\n{}\n\n— `{}`\n\n#journal #stoic", tg_header("📔", "Journal", ""), note, now)
 }
 
 // === PLANNING COMMANDS ===
@@ -2304,7 +2467,7 @@ fn create_goal(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let goal = parts.first().unwrap_or(&"");
     let details = parts.get(1).unwrap_or(&"");
-    format!("{}\n\n*Goal:* {}\n*Details:* {}\n*Set:* `{}`\n\n{}", tg_header("🎯", "Goal", goal), esc(goal), esc(details), esc(&now), tg_footer("goal", "planning"))
+    format!("{}\n\n**Goal:** {}\n**Details:** {}\n**Set:** `{}`\n\n{}", tg_header("🎯", "Goal", goal), goal, details, now, tg_footer("goal", "planning"))
 }
 
 fn create_deadline(args: &str) -> String {
@@ -2312,17 +2475,17 @@ fn create_deadline(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let date = parts.first().unwrap_or(&"");
     let task = parts.get(1).unwrap_or(&"");
-    format!("⏰ *Deadline*\n\n*Due:* {date}\n*Task:* {task}\n*Set:* {now}\n\n#deadline #planning")
+    format!("{}\n\n**Due:** `{}`\n**Task:** {}\n**Set:** `{}`\n\n{}", tg_header("⏰", "Deadline", ""), date, task, now, tg_footer("deadline", "planning"))
 }
 
 fn create_plan(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d");
-    format!("📋 *Plan*\n\n{args}\n\n— {now}\n\n#plan #planning")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("📋", "Plan", ""), args, now, tg_footer("plan", "planning"))
 }
 
 fn create_review(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d");
-    format!("📊 *Review*\n\n{args}\n\n— {now}\n\n#review #planning")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("📊", "Review", ""), args, now, tg_footer("review", "planning"))
 }
 
 fn create_priority(args: &str) -> String {
@@ -2330,19 +2493,19 @@ fn create_priority(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let level = parts.first().unwrap_or(&"");
     let task = parts.get(1).unwrap_or(&"");
-    format!("🔥 *Priority*\n\n*Level:* {level}\n*Task:* {task}\n*Set:* {now}\n\n#priority #planning")
+    format!("{}\n\n**Level:** {}\n**Task:** {}\n**Set:** `{}`\n\n{}", tg_header("🔥", "Priority", ""), level, task, now, tg_footer("priority", "planning"))
 }
 
 // === INBOX COMMANDS ===
 
 fn create_idea(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("💡 *Idea*\n\n{args}\n\n— {now}\n\n#idea #inbox")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("💡", "Idea", ""), args, now, tg_footer("idea", "inbox"))
 }
 
 fn create_braindump(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("🧠 *Brain Dump*\n\n{args}\n\n— {now}\n\n#braindump #inbox")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("🧠", "Brain Dump", ""), args, now, tg_footer("braindump", "inbox"))
 }
 
 fn create_link(args: &str) -> String {
@@ -2350,44 +2513,44 @@ fn create_link(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let url = parts.first().unwrap_or(&"");
     let desc = parts.get(1).unwrap_or(&"");
-    format!("🔗 *Link*\n\nURL: {url}\nDescription: {desc}\n\n— {now}\n\n#link #inbox")
+    format!("{}\n\n**URL:** {}\n**Description:** {}\n\n— `{}`\n\n{}", tg_header("🔗", "Link", ""), url, desc, now, tg_footer("link", "inbox"))
 }
 
 fn create_snippet(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("📝 *Snippet*\n\n```\n{args}\n```\n\n— {now}\n\n#snippet #inbox")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("📝", "Snippet", ""), tg_code_block(args), now, tg_footer("snippet", "inbox"))
 }
 
 fn create_save(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("💾 *Saved*\n\n{args}\n\n— {now}\n\n#save #inbox")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("💾", "Saved", ""), args, now, tg_footer("save", "inbox"))
 }
 
 // === DAILY COMMANDS ===
 
 fn create_morning(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d");
-    format!("🌅 *Morning Check-in*\n\n{args}\n\n— {now}\n\n#morning #daily")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("🌅", "Morning Check-in", ""), args, now, tg_footer("morning", "daily"))
 }
 
 fn create_evening(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d");
-    format!("🌙 *Evening Reflection*\n\n{args}\n\n— {now}\n\n#evening #daily")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("🌙", "Evening Reflection", ""), args, now, tg_footer("evening", "daily"))
 }
 
 fn create_checkin(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("✅ *Check-in*\n\n{args}\n\n— {now}\n\n#checkin #daily")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("✅", "Check-in", ""), args, now, tg_footer("checkin", "daily"))
 }
 
 fn create_log(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M");
-    format!("📋 *Log*\n\n{args}\n\n— {now}\n\n#log #daily")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("📋", "Log", ""), args, now, tg_footer("log", "daily"))
 }
 
 fn create_summary(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d");
-    format!("📝 *Summary*\n\n{args}\n\n— {now}\n\n#summary #daily")
+    format!("{}\n\n{}\n\n— `{}`\n\n{}", tg_header("📝", "Summary", ""), args, now, tg_footer("summary", "daily"))
 }
 
 // === LIFE COMMANDS ===
@@ -2397,7 +2560,7 @@ fn create_sleep(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let hours = parts.first().unwrap_or(&"?");
     let quality = parts.get(1).unwrap_or(&"");
-    format!("😴 *Sleep*\n\n*Hours:* {hours}\n*Quality:* {quality}\n*Date:* {now}\n\n#sleep #life")
+    format!("{}\n\n**Hours:** {}\n**Quality:** {}\n**Date:** `{}`\n\n{}", tg_header("😴", "Sleep", ""), hours, quality, now, tg_footer("sleep", "life"))
 }
 
 fn create_energy(args: &str) -> String {
@@ -2405,7 +2568,7 @@ fn create_energy(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let level = parts.first().unwrap_or(&"?");
     let note = parts.get(1).unwrap_or(&"");
-    format!("⚡ *Energy*\n\n*Level:* {level}/10\n*Note:* {note}\n*Time:* {now}\n\n#energy #life")
+    format!("{}\n\n**Level:** {}/10\n**Note:** {}\n**Time:** `{}`\n\n{}", tg_header("⚡", "Energy", ""), level, note, now, tg_footer("energy", "life"))
 }
 
 fn create_exercise(args: &str) -> String {
@@ -2413,7 +2576,7 @@ fn create_exercise(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let activity = parts.first().unwrap_or(&"");
     let duration = parts.get(1).unwrap_or(&"");
-    format!("🏋️ *Exercise*\n\n*Activity:* {activity}\n*Duration:* {duration}\n*Date:* {now}\n\n#exercise #life")
+    format!("{}\n\n**Activity:** {}\n**Duration:** {}\n**Date:** `{}`\n\n{}", tg_header("🏋️", "Exercise", ""), activity, duration, now, tg_footer("exercise", "life"))
 }
 
 fn create_water(args: &str) -> String {
@@ -2421,7 +2584,7 @@ fn create_water(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let amount = parts.first().unwrap_or(&"?");
     let note = parts.get(1).unwrap_or(&"");
-    format!("💧 *Water*\n\n*Amount:* {amount}\n*Note:* {note}\n*Time:* {now}\n\n#water #life")
+    format!("{}\n\n**Amount:** {}\n**Note:** {}\n**Time:** `{}`\n\n{}", tg_header("💧", "Water", ""), amount, note, now, tg_footer("water", "life"))
 }
 
 fn create_read(args: &str) -> String {
@@ -2429,5 +2592,95 @@ fn create_read(args: &str) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let title = parts.first().unwrap_or(&"");
     let author = parts.get(1).unwrap_or(&"");
-    format!("📚 *Reading*\n\n*Title:* {title}\n*Author:* {author}\n*Date:* {now}\n\n#read #life")
+    format!("{}\n\n**Title:** {}\n**Author:** {}\n**Date:** `{}`\n\n{}", tg_header("📚", "Reading", ""), title, author, now, tg_footer("read", "life"))
+}
+
+async fn run_preview() -> Result<()> {
+    let out_dir = std::path::Path::new(r"C:\Users\asher\AppData\Local\Temp\memogram-preview\live");
+    let _ = std::fs::create_dir_all(out_dir);
+    println!("=== PREVIEW MODE ===");
+
+    async fn try_fetch<F: std::future::Future<Output = Result<String>>>(name: &str, fut: F) -> (String, String) {
+        let res = tokio::time::timeout(std::time::Duration::from_secs(12), fut).await;
+        match res {
+            Ok(Ok(s)) => (name.to_string(), s),
+            Ok(Err(e)) => (name.to_string(), format!("_Error for `{}`: {}_", name, e)),
+            Err(_) => (name.to_string(), format!("{}\n\n_Data unavailable for `{}` (timeout after 12s). Try again._\n\n{}", tg_header("⚠️", "Timeout", name), name, tg_footer("memogram", "timeout"))),
+        }
+    }
+
+    // Live fetches — sequential with 8s timeout each so one slow API doesn't hang forever
+    let samples: Vec<(&str, String)> = vec![
+        ("hn", try_fetch("hn", fetch_hn()).await.1),
+        ("weather", try_fetch("weather", fetch_weather("Thousand Oaks, CA")).await.1),
+        ("define", try_fetch("define", fetch_define("serendipity")).await.1),
+        ("wiki", try_fetch("wiki", fetch_wiki("Rust programming language")).await.1),
+        ("cheat", try_fetch("cheat", fetch_cheat("tar")).await.1),
+        ("gh", try_fetch("gh", fetch_gh("rust")).await.1),
+        ("fx", try_fetch("fx", fetch_fx("USD-KRW")).await.1),
+        ("lobsters", try_fetch("lobsters", fetch_lobsters("")).await.1),
+        ("stock", try_fetch("stock", fetch_stock("AAPL")).await.1),
+        ("crypto", try_fetch("crypto", fetch_crypto("bitcoin")).await.1),
+        ("translate", try_fetch("translate", fetch_translate("hello world")).await.1),
+        ("forecast", try_fetch("forecast", fetch_forecast("London")).await.1),
+        ("npm", try_fetch("npm", fetch_npm("express")).await.1),
+        ("pypi", try_fetch("pypi", fetch_pypi("requests")).await.1),
+        ("crates", try_fetch("crates", fetch_crates("tokio")).await.1),
+        ("stackoverflow", try_fetch("stackoverflow", fetch_stackoverflow("rust async")).await.1),
+        ("airquality", try_fetch("airquality", fetch_airquality("Beijing")).await.1),
+        ("sunrise", try_fetch("sunrise", fetch_sunrise("34.1706,-118.8376")).await.1),
+        ("etymology", try_fetch("etymology", fetch_etymology("hello")).await.1),
+        ("synonym", try_fetch("synonym", fetch_synonym("happy")).await.1),
+        ("philosophy", try_fetch("philosophy", fetch_philosophy_quote()).await.1),
+        ("finance", try_fetch("finance", fetch_finance("inflation")).await.1),
+        ("trial", try_fetch("trial", fetch_trial("diabetes")).await.1),
+        ("food", try_fetch("food", fetch_food("apple")).await.1),
+        ("recipe", try_fetch("recipe", fetch_recipe("chicken")).await.1),
+        ("recipe-random", try_fetch("recipe-random", fetch_recipe("")).await.1),
+        ("stoic", try_fetch("stoic", fetch_stoic_quote()).await.1),
+        ("pubmed", try_fetch("pubmed", fetch_pubmed("CRISPR")).await.1),
+        ("drug", try_fetch("drug", fetch_drug("aspirin")).await.1),
+        ("arxiv", try_fetch("arxiv", fetch_arxiv("quantum")).await.1),
+        ("devto", try_fetch("devto", fetch_devto()).await.1),
+        ("ph", try_fetch("ph", fetch_ph()).await.1),
+        ("markets", try_fetch("markets", fetch_markets()).await.1),
+        ("ip", try_fetch("ip", fetch_ip("8.8.8.8")).await.1),
+    ];
+
+    for (name, content) in samples {
+        let path = out_dir.join(format!("{}.md", name));
+        let _ = std::fs::write(&path, &content);
+        println!("wrote {} ({} chars, {} lines)", name, content.len(), content.lines().count());
+        // print first 200 chars for quick check
+        let preview: String = content.chars().take(200).collect();
+        println!("  preview: {}", preview.replace('\n', " "));
+    }
+
+    // Templates (sync)
+    let templates = vec![
+        ("meditation", create_meditation("10m focused on breath")),
+        ("affirmation", create_affirmation("I am capable and calm")),
+        ("reflection", create_reflection("Today I learned to iterate quickly")),
+        ("journal", create_journal("Today I shipped the new markdown pipeline")),
+        ("goal", create_goal("Ship memogram v2 clean markdown")),
+        ("deadline", create_deadline("2026-09-10 Ship v2")),
+        ("plan", create_plan("1. Fix markdown\n2. Test live\n3. Deploy")),
+        ("idea", create_idea("Add voice memo transcription via Whisper free API")),
+        ("braindump", create_braindump("Need to fix weather, then news, then money buckets")),
+        ("morning", create_morning("Ready to build, coffee done")),
+        ("sleep", create_sleep("7.5 good")),
+        ("energy", create_energy("8 feeling great")),
+        ("exercise", create_exercise("run 30m")),
+        ("water", create_water("500ml morning")),
+        ("read", create_read("Dune Frank Herbert")),
+        ("compound", create_compound("1000 7% 10")),
+    ];
+    for (name, content) in templates {
+        let path = out_dir.join(format!("{}.md", name));
+        let _ = std::fs::write(&path, &content);
+        println!("wrote {} (template)", name);
+    }
+
+    println!("=== DONE — check {}/ ===", out_dir.display());
+    Ok(())
 }

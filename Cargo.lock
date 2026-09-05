@@ -912,6 +912,7 @@ dependencies = [
  "base64",
  "chrono",
  "dotenvy",
+ "futures",
  "once_cell",
  "regex",
  "reqwest",
