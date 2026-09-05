@@ -57,8 +57,6 @@ enum Command {
     Todo(String),
     List(String),
     Clip(String),
-    Proscons(String),
-    Flashcard(String),
     Meditation(String),
     Affirmation(String),
     Reflection(String),
@@ -226,8 +224,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "todo".into(), description: "checklist".into() },
         teloxide::types::BotCommand { command: "list".into(), description: "bulleted list".into() },
         teloxide::types::BotCommand { command: "clip".into(), description: "save bookmark".into() },
-        teloxide::types::BotCommand { command: "proscons".into(), description: "pros vs cons".into() },
-        teloxide::types::BotCommand { command: "flashcard".into(), description: "Q | A".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "search PubMed papers".into() },
@@ -410,8 +406,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Clip(args) => { let txt = create_clip(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Proscons(args) => { let txt = create_proscons(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Drug(name) => { let txt = fetch_drug(&name).await.unwrap_or_else(|e| format!("drug err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Genome(q) => { let txt = fetch_genome(&q).await.unwrap_or_else(|e| format!("genome err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
@@ -2029,23 +2023,6 @@ fn create_clip(args: &str) -> String {
     )
 }
 
-fn create_proscons(args: &str) -> String {
-    let topic = if args.trim().is_empty() { "Untitled" } else { args.trim() };
-    format!(
-        "# Pros & Cons: {topic}\n\n## ✅ Pros\n- \n- \n- \n\n## ❌ Cons\n- \n- \n- \n\n## Verdict\n- \n\n## Alternative Options\n1. \n\n#comparison #decision",
-        topic = topic
-    )
-}
-
-fn create_flashcard(args: &str) -> String {
-    let parts: Vec<&str> = args.splitn(2, " | ").collect();
-    let q = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Question?");
-    let a = parts.get(1).unwrap_or(&"Answer");
-    format!(
-        "# Flashcard\n\n## ❓ Question\n{q}\n\n## 💡 Answer\n{a}\n\n#flashcard #study",
-        q = q, a = a
-    )
-}
 
 
 
@@ -2444,40 +2421,63 @@ async fn fetch_synonym(word: &str) -> Result<String> {
 }
 
 async fn fetch_philosophy_quote() -> Result<String> {
+    // Primary: quotable.io (full quotes with author, tags, length)
     let api = async {
-        let v: serde_json::Value = HTTP.get("https://philosophyapi.fly.dev/api/quotes/random")
+        let v: serde_json::Value = HTTP.get("https://api.quotable.io/quotes/random?limit=1&minLength=80")
             .timeout(std::time::Duration::from_secs(5))
             .send().await?.json().await?;
-        let text = v["quote"].as_str().ok_or_else(|| anyhow::anyhow!("no quote"))?;
-        let author = v["author"].as_str().unwrap_or("Unknown");
-        Ok::<(String, String), anyhow::Error>((text.to_string(), author.to_string()))
+        let arr = v.as_array().ok_or_else(|| anyhow::anyhow!("not array"))?;
+        let item = arr.first().ok_or_else(|| anyhow::anyhow!("empty"))?;
+        let text = item["content"].as_str().ok_or_else(|| anyhow::anyhow!("no content"))?;
+        let author = item["author"].as_str().unwrap_or("Unknown");
+        let tags = item["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str().map(|s| s.to_string())).collect::<Vec<String>>()).unwrap_or_default();
+        Ok::<(String, String, Vec<String>), anyhow::Error>((text.to_string(), author.to_string(), tags))
     }.await;
-    let (quote, author) = match api {
-        Ok((q, a)) if !q.is_empty() => (q, a),
+    let (quote, author, tags) = match api {
+        Ok((q, a, t)) if !q.is_empty() => (q, a, t),
         _ => {
-            let quotes = [
-                ("The unexamined life is not worth living.", "Socrates"),
-                ("I think, therefore I am.", "Rene Descartes"),
-                ("Happiness is not an ideal of reason but of imagination.", "Immanuel Kant"),
-                ("The only true wisdom is in knowing you know nothing.", "Socrates"),
-                ("Man is condemned to be free.", "Jean-Paul Sartre"),
-                ("One cannot step twice into the same river.", "Heraclitus"),
-                ("I cannot teach anybody anything. I can only make them think.", "Socrates"),
-                ("The owl of Minerva spreads its wings only with the falling of the dusk.", "G.W.F. Hegel"),
-                ("Life can only be understood backwards; but it must be lived forwards.", "Soren Kierkegaard"),
-                ("God is dead. And we have killed him.", "Friedrich Nietzsche"),
-            ];
-            let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
-            let (q, a) = quotes[idx];
-            (q.to_string(), a.to_string())
+            // Fallback: ZenQuotes (longer passages)
+            let fb = async {
+                let v: serde_json::Value = HTTP.get("https://zenquotes.io/api/random")
+                    .timeout(std::time::Duration::from_secs(5))
+                    .send().await?.json().await?;
+                let arr = v.as_array().ok_or_else(|| anyhow::anyhow!("not array"))?;
+                let item = arr.first().ok_or_else(|| anyhow::anyhow!("empty"))?;
+                let text = item["q"].as_str().ok_or_else(|| anyhow::anyhow!("no q"))?;
+                let author = item["a"].as_str().unwrap_or("Unknown");
+                Ok::<(String, String, Vec<String>), anyhow::Error>((text.to_string(), author.to_string(), vec!["philosophy".into()]))
+            }.await;
+            match fb {
+                Ok((q, a, t)) => (q, a, t),
+                _ => {
+                    let quotes = [
+                        ("The only true wisdom is in knowing you know nothing.", "Socrates", vec!["wisdom"]),
+                        ("Unexamined life is not worth living.", "Socrates", vec!["existentialism"]),
+                        ("I think, therefore I am.", "Rene Descartes", vec!["metaphysics"]),
+                        ("Man is condemned to be free.", "Jean-Paul Sartre", vec!["existentialism"]),
+                        ("One cannot step twice into the same river.", "Heraclitus", vec!["metaphysics"]),
+                        ("Life can only be understood backwards; but it must be lived forwards.", "Soren Kierkegaard", vec!["existentialism"]),
+                        ("The owl of Minerva spreads its wings only with the falling of the dusk.", "G.W.F. Hegel", vec!["epistemology"]),
+                        ("Happiness is not an ideal of reason but of imagination.", "Immanuel Kant", vec!["ethics"]),
+                        ("God is dead. And we have killed him.", "Friedrich Nietzsche", vec!["nihilism"]),
+                        ("No man ever steps in the same river twice, for it is not the same river and he is not the same man.", "Heraclitus", vec!["metaphysics"]),
+                    ];
+                    let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
+                    let (q, a, ref t) = quotes[idx];
+                    (q.to_string(), a.to_string(), t.iter().map(|s| s.to_string()).collect())
+                }
+            }
         }
     };
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let mut out = format!("{}\n\n", tg_header("📚", "Philosophy", ""));
-    out.push_str(&format!("## 💭 Quote of the Moment\n\n"));
-    out.push_str(&format!("> _\"{}\"_\n\n", quote));
-    out.push_str(&format!("— **{}**\n\n", author));
-    out.push_str(&format!("{}\n\n`{}` · #philosophy #learn", tg_footer("philosophy", "learn"), now));
+    let tag_str = if tags.is_empty() { String::new() } else { format!(" · `{}`", tags.join("`, `")) };
+    let char_count = quote.len();
+    let word_count = quote.split_whitespace().count();
+    let mut out = format!("{}\n\n", tg_header("📚", "Philosophy", &author));
+    out.push_str(&format!("## 💭 Passage\n\n> _\"{}\"_\n\n", quote));
+    out.push_str(&format!("— **{}**{}\n\n", author, tag_str));
+    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Characters | `{}` |\n| Words | `{}` |\n\n", char_count, word_count));
+    out.push_str(&format!("{}\n\n`{}` · #philosophy #learn", tg_footer("quotable.io", "learn"), now));
     Ok(out)
 }
 
