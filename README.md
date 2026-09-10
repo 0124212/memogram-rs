@@ -20,6 +20,12 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /finance <term>      Finance explainer      /philosophy        Random quote
 ```
 
+### Deep dives
+```
+/brief <topic>      Research brief           /compare <a> vs <b> Side-by-side
+/paper <query>      Paper deep-dive          /tutorial <topic> Guided how-to
+```
+
 ### News
 ```
 /hn                  HackerNews top 5       /arxiv <q>        arXiv papers
@@ -51,14 +57,14 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 ### Weather
 ```
 /weather <city>      Current + 3-day        /forecast <city>  7-day forecast
-/sunrise <loc>       Sunrise/sunset         /sunset <loc>     Sunset/sunrise
+ /sunrise <loc>       Sunrise/sunset
 /airquality <loc>    AQI                  
 ```
 
 ### Utilities
 ```
 /math <expr>         Evaluate math          /color <hex>      Color preview
-/ip <addr>           IP lookup              /qr <text>        QR code
+ /ip <addr>           IP lookup
 /hash <text>         SHA-256                /base64 <text>    Encode/decode
 /json <text>         Pretty JSON            /uuid             Generate UUID
 /pass <len>          Password               /remind <m> <msg> Reminder
