@@ -37,6 +37,7 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /fx <pair>           Exchange rate          /stock <ticker>   Stock price
 /crypto <coin>       Crypto price           /markets          Market indices
 /finance <term>      Explain term           /compound <p> <r> <y>  Interest calc
+/hustle <skill>      Side hustle ideas
 ```
 
 ### Science & Bio
@@ -68,6 +69,15 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /hash <text>         SHA-256                /base64 <text>    Encode/decode
 /json <text>         Pretty JSON            /uuid             Generate UUID
 /pass <len>          Password               /remind <m> <msg> Reminder
+```
+
+### Money & Hustle
+```
+/hustle <skill>      Side hustle ideas       /fx <pair>        Exchange rate
+/stock <ticker>      Stock price             /crypto <coin>    Crypto price
+/markets             Market indices          /finance <term>   Explain term
+/compound <p> <r> <y> Interest calc          /portfolio        Track holdings
+/alerts              Price alerts
 ```
 
 ### Quick Capture
