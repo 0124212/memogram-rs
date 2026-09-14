@@ -82,7 +82,6 @@ enum Command {
     Docker(String),
     Airquality(String),
     Sunrise(String),
-    Etymology(String),
     Synonym(String),
     Philosophy,
     Finance(String),
@@ -216,7 +215,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "airquality".into(), description: "air quality (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "sunrise".into(), description: "sunrise/sunset (default: Thousand Oaks, CA)".into() },
         teloxide::types::BotCommand { command: "math".into(), description: "math expression".into() },
-        teloxide::types::BotCommand { command: "etymology".into(), description: "word etymology".into() },
         teloxide::types::BotCommand { command: "synonym".into(), description: "find synonyms".into() },
         teloxide::types::BotCommand { command: "philosophy".into(), description: "philosophy quote".into() },
         teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
@@ -395,7 +393,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Docker(q) => { let txt = fetch_docker(&q).await.unwrap_or_else(|e| format!("docker err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Airquality(loc) => { let txt = fetch_airquality(&loc).await.unwrap_or_else(|e| format!("airquality err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sunrise(loc) => { let txt = fetch_sunrise(&loc).await.unwrap_or_else(|e| format!("sunrise err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Etymology(word) => { let txt = fetch_etymology(&word).await.unwrap_or_else(|e| format!("etymology err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Synonym(word) => { let txt = fetch_synonym(&word).await.unwrap_or_else(|e| format!("synonym err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Philosophy => { let txt = fetch_philosophy_quote().await.unwrap_or_else(|e| format!("philosophy err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Finance(term) => { let txt = fetch_finance(&term).await.unwrap_or_else(|e| format!("finance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
@@ -2532,71 +2529,7 @@ fn eval_math(expr: &str) -> String {
     format!("{}\n\nEvaluate: {}\n\n{}", header, tg_code_block(&cleaned), tg_footer("math", "learn"))
 }
 
-async fn fetch_etymology(word: &str) -> Result<String> {
-    let url = format!("https://en.wiktionary.org/w/api.php?action=parse&page={}&prop=wikitext&format=json", urlencoding::encode(word));
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").send().await?.json().await?;
-    let wikitext = v["parse"]["wikitext"]["wikitext"].as_str().unwrap_or("");
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let mut out = format!("{}\n\n", tg_header("📖", "Etymology", word));
-    let lower = wikitext.to_lowercase();
-    // Try multiple etymology section patterns
-    let etym = if let Some(start) = lower.find("==etymology==") {
-        let rest = &wikitext[start + 13..];
-        if let Some(end) = rest.find("\n==") { Some(rest[..end].trim()) } else { Some(rest.trim()) }
-    } else if let Some(start) = lower.find("==etymology 1==") {
-        let rest = &wikitext[start + 15..];
-        if let Some(end) = rest.find("\n==") { Some(rest[..end].trim()) } else { Some(rest.trim()) }
-    } else if let Some(start) = lower.find("===etymology===") {
-        let rest = &wikitext[start + 15..];
-        if let Some(end) = rest.find("\n==") { Some(rest[..end].trim()) } else { Some(rest.trim()) }
-    } else {
-        None
-    };
-    if let Some(raw) = etym {
-        if !raw.is_empty() {
-            let clean = raw.replace("{{inh|en|", "").replace("{{der|en|", "").replace("{{bor|en|", "").replace("{{m|en|", "").replace("{{l|en|", "").replace("}}", "").replace("{{XLIT|en|", "").replace('\n', " ");
-            let short = clean.chars().take(600).collect::<String>();
-            out.push_str(&format!("**Word:** `{}`\n\n", word));
-            out.push_str(&format!("## 📚 Etymology\n\n{}\n\n", short));
-            // Also try to extract pronunciation
-            if let Some(start) = lower.find("==pronunciation==") {
-                let rest = &wikitext[start + 17..];
-                if let Some(end) = rest.find("\n==") {
-                    let pron = rest[..end].trim().replace("{{IPA|en|", "/").replace("}}", "/").replace("{{enPR|", "").replace("}}", "");
-                    if !pron.is_empty() {
-                        let short_pron = pron.chars().take(150).collect::<String>();
-                        out.push_str(&format!("## 🔊 Pronunciation\n\n{}\n\n", short_pron));
-                    }
-                }
-            }
-            out.push_str(&format!("🔗 [Full entry](https://en.wiktionary.org/wiki/{})\n\n", urlencoding::encode(word)));
-            out.push_str(&format!("{}\n\n`{}` · #etymology", tg_footer("wiktionary.org", "etymology"), now));
-            return Ok(out);
-        }
-    }
-    // Fallback: try Wikipedia for word history
-    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(word));
-    if let Ok(wv) = HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send().await {
-        if let Ok(wj) = wv.json::<serde_json::Value>().await {
-            if let Some(extract) = wj["extract"].as_str() {
-                if extract.len() > 50 {
-                    out.push_str(&format!("**Word:** `{}`\n\n", word));
-                    out.push_str(&format!("## 📚 Background\n\n{}\n\n", extract.chars().take(400).collect::<String>()));
-                    out.push_str(&format!("🔗 [Wikipedia]({})\n\n", wj["content_urls"]["desktop"]["page"].as_str().unwrap_or("")));
-                    out.push_str(&format!("🔗 [Wiktionary](https://en.wiktionary.org/wiki/{})\n\n", urlencoding::encode(word)));
-                    out.push_str(&format!("{}\n\n`{}` · #etymology", tg_footer("wiktionary.org", "etymology"), now));
-                    return Ok(out);
-                }
-            }
-        }
-    }
-    out.push_str(&format!("**Word:** `{}`\n\n", word));
-    out.push_str(&format!("_No etymology section found._\n\n"));
-    out.push_str(&format!("🔗 [Try Wiktionary](https://en.wiktionary.org/wiki/{})\n", urlencoding::encode(word)));
-    out.push_str(&format!("🔗 [Try Etymonline](https://www.etymonline.com/word/{})\n\n", urlencoding::encode(word)));
-    out.push_str(&format!("{}\n\n`{}` · #etymology", tg_footer("wiktionary.org", "etymology"), now));
-    Ok(out)
-}
+
 
 async fn fetch_synonym(word: &str) -> Result<String> {
     // Fetch synonyms and antonyms in parallel
@@ -4013,7 +3946,7 @@ fn fetch_bmi(args: &str) -> String {
 
 async fn run_preview() -> Result<()> {
     let out_dir = std::env::temp_dir().join("memogram-preview").join("live");
-    let _ = std::fs::create_dir_all(out_dir);
+    let _ = std::fs::create_dir_all(&out_dir);
     println!("=== PREVIEW MODE ===");
 
     async fn try_fetch<F: std::future::Future<Output = Result<String>>>(name: &str, fut: F) -> (String, String) {
@@ -4048,7 +3981,6 @@ async fn run_preview() -> Result<()> {
         ("docker", try_fetch("docker", fetch_docker("nginx")).await.1),
         ("airquality", try_fetch("airquality", fetch_airquality("Beijing")).await.1),
         ("sunrise", try_fetch("sunrise", fetch_sunrise("34.1706,-118.8376")).await.1),
-        ("etymology", try_fetch("etymology", fetch_etymology("hello")).await.1),
         ("synonym", try_fetch("synonym", fetch_synonym("happy")).await.1),
         ("philosophy", try_fetch("philosophy", fetch_philosophy_quote()).await.1),
         ("finance", try_fetch("finance", fetch_finance("inflation")).await.1),
