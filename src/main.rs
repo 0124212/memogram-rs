@@ -4012,7 +4012,7 @@ fn fetch_bmi(args: &str) -> String {
 }
 
 async fn run_preview() -> Result<()> {
-    let out_dir = std::path::Path::new(r"C:\Users\asher\AppData\Local\Temp\memogram-preview\live");
+    let out_dir = std::env::temp_dir().join("memogram-preview").join("live");
     let _ = std::fs::create_dir_all(out_dir);
     println!("=== PREVIEW MODE ===");
 
