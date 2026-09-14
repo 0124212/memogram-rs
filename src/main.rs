@@ -92,6 +92,7 @@ enum Command {
     Compare(String),
     Paper(String),
     Tutorial(String),
+    Hustle(String),
 }
 
 #[derive(Clone)]
@@ -251,7 +252,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "quote".into(), description: "random quote".into() },
         teloxide::types::BotCommand { command: "truth".into(), description: "truth or dare".into() },
         teloxide::types::BotCommand { command: "fact".into(), description: "random fun fact".into() },
-        teloxide::types::BotCommand { command: "dadjoke".into(), description: "dad joke".into() },
+        teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas + resources".into() },
         teloxide::types::BotCommand { command: "brief".into(), description: "research brief".into() },
         teloxide::types::BotCommand { command: "compare".into(), description: "compare A vs B".into() },
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
@@ -423,6 +424,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Compare(q) => { let txt = fetch_compare(&q).await.unwrap_or_else(|e| format!("compare err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Paper(q) => { let txt = fetch_paper(&q).await.unwrap_or_else(|e| format!("paper err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Tutorial(q) => { let txt = fetch_tutorial(&q).await.unwrap_or_else(|e| format!("tutorial err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Hustle(q) => { let txt = fetch_hustle(&q).await.unwrap_or_else(|e| format!("hustle err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -505,7 +507,7 @@ async fn handle_message(bot: Bot, msg: Message, app: App) -> Result<()> {
 
 async fn create_as_bot(bot: &Bot, msg: &Message, app: &App, bot_name: &str, body: &str, telegram_id: i64) -> Result<()> {
     let bot_tok = app.bot_token(bot_name);
-    let tag = format!("#{bot_name}");
+    let tag = format!("#{bot_name} #memogram-rs");
     // Enforce character limits: Telegram 4096, keep beautiful truncation at 3500
     let body_owned = if body.len() > 3500 {
         format!("{}...\n\n_Truncated — was {} chars, showing 3500._", &body[..3500], body.len())
@@ -3338,20 +3340,99 @@ async fn fetch_fact() -> Result<String> {
     Ok(format!("{}\n\n⚠️ _No facts available_\n\n{}\n\n`{}` · #fact", tg_header("🤯", "Fun Fact", "?"), tg_footer("uselessfacts.jsph.pl", "fact"), now))
 }
 
-async fn fetch_dadjoke() -> Result<String> {
-    let url = "https://icanhazdadjoke.com/";
-    let resp = HTTP.get(url).header("User-Agent", "memogram-rs").header("Accept", "application/json").timeout(std::time::Duration::from_secs(8)).send().await?;
-    let v: serde_json::Value = resp.json().await?;
+async fn fetch_hustle(skill: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    if let Some(joke) = v["joke"].as_str() {
-        let id = v["id"].as_str().unwrap_or("?");
-        let mut out = format!("{}\n\n", tg_header("🤣", "Dad Joke", &now));
-        out.push_str(&format!("## 🤣 Dad Joke\n\n> {}\n\n", joke));
-        out.push_str(&format!("| Stat | Value |\n|---|---|\n| ID | `{}` |\n\n", id));
-        out.push_str(&format!("{}\n\n`{}` · #dadjoke #fun", tg_footer("icanhazdadjoke.com", "dadjoke"), now));
-        return Ok(out);
+    let skill_lower = skill.trim().to_lowercase();
+
+    // Curated side hustle database indexed by skill/keyword
+    let hustles: Vec<(&str, &str, &str, &str, &str, &str)> = vec![
+        // Tech
+        ("python", "Freelance Python Automation", "Build scripts, web scrapers, data pipelines for clients", "$30-100/hr", "Medium", "upwork.com, fiverr.com"),
+        ("javascript", "Contract Web Development", "Landing pages, Shopify tweaks, WordPress sites", "$25-80/hr", "Medium", "upwork.com, toptal.com"),
+        ("rust", "Systems Contracting", "CLI tools, embedded firmware, performance-critical services", "$60-150/hr", "Hard", "github.com/jobs, LinkedIn"),
+        ("go", "Backend/API Freelance", "Microservices, DevOps tooling, cloud functions", "$40-120/hr", "Medium", "upwork.com, arc.dev"),
+        ("react", "Frontend Freelance", "Dashboards, SPAs, component libraries", "$30-90/hr", "Medium", "upwork.com, gun.io"),
+        ("swift", "iOS App Development", "MVPs, SwiftUI prototypes, App Store releases", "$50-150/hr", "Hard", "toptal.com, upwork.com"),
+        ("flutter", "Cross-platform Mobile", "Ship iOS + Android from one codebase", "$35-100/hr", "Medium", "upwork.com, flutterjobs.com"),
+        ("devops", "DevOps Consulting", "CI/CD, Docker, K8s, cloud migrations", "$50-200/hr", "Hard", "toptal.com, arc.dev"),
+        ("machine learning", "ML Consulting", "Model training, data pipelines, MLOps", "$60-200/hr", "Hard", "kaggle.com, upwork.com"),
+        ("data", "Data Analytics Freelance", "Dashboards, ETL, Excel automation", "$25-75/hr", "Medium", "upwork.com, toptal.com"),
+        // Creative
+        ("design", "UI/UX Design Freelance", "Figma prototypes, brand kits, design systems", "$30-100/hr", "Medium", "dribbble.com, upwork.com"),
+        ("video", "Video Editing Services", "YouTube edits, reels, ad creatives", "$20-75/hr", "Easy", "fiverr.com, upwork.com"),
+        ("photo", "Photography Side Gig", "Events, product shots, real estate", "$50-500/event", "Easy", "thumbtack.com, yelp"),
+        ("writing", "Technical Writing", "Docs, blog posts, API guides", "$0.10-0.50/word", "Easy", "upwork.com, technicalwritinghq.com"),
+        ("copywriting", "Copywriting Services", "Landing pages, email sequences, ad copy", "$25-100/hr", "Medium", "copyblogger.com, upwork.com"),
+        // Business
+        ("marketing", "Digital Marketing Consulting", "SEO, paid ads, social media strategy", "$30-100/hr", "Medium", "upwork.com, LinkedIn"),
+        ("seo", "SEO Freelancing", "Audits, keyword research, link building", "$25-80/hr", "Easy", "upwork.com, semrush.com"),
+        ("finance", "Financial Modeling / Consulting", "Excel models, pitch decks, CFO-as-a-service", "$50-200/hr", "Hard", "toptal.com, cruwix.com"),
+        ("account", "Bookkeeping Side Gig", "QuickBooks, Xero, tax prep for small biz", "$20-50/hr", "Easy", "bookkeeper.com, upwork.com"),
+        ("legal", "Contract Review Freelance", "NDAs, SOWs, employment agreements", "$50-150/hr", "Hard", "lawtradr.com, upwork.com"),
+        // General
+        ("tutor", "Online Tutoring", "Math, science, language tutoring", "$15-60/hr", "Easy", "wyzant.com, tutor.com"),
+        ("translate", "Translation Services", "Document, website, video translation", "$0.05-0.20/word", "Easy", "upwork.com, proz.com"),
+        ("music", "Music Lessons / Production", "Instrument tutoring, beat making, mixing", "$20-80/hr", "Easy", "takelessons.com, fiverr.com"),
+        ("fitness", "Online Coaching", "Personalized workout + meal plans", "$50-200/mo per client", "Medium", "trainerize.com, Instagram"),
+        ("cook", "Private Chef / Meal Prep", "Weekly meal prep, event catering", "$200-500/event", "Medium", "thumbtack.com, yelp"),
+    ];
+
+    // Find matching hustles by skill keyword
+    let matched: Vec<_> = if skill_lower.is_empty() {
+        // Random general picks when no skill given
+        hustles.iter().choose_multiple(&mut rand::rng(), 5).into_iter().cloned().collect()
+    } else {
+        let mut matches: Vec<_> = hustles.iter()
+            .filter(|(k, _, _, _, _, _)| skill_lower.contains(k) || k.contains(&skill_lower))
+            .cloned()
+            .collect();
+        if matches.is_empty() {
+            // Fallback: fuzzy match on description
+            matches = hustles.iter()
+                .filter(|(_, title, desc, _, _, _)| {
+                    let combined = format!("{} {}", title.to_lowercase(), desc.to_lowercase());
+                    skill_lower.split_whitespace().any(|w| combined.contains(w))
+                })
+                .cloned()
+                .collect();
+        }
+        if matches.is_empty() {
+            // Still nothing — give general advice
+            let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
+            out.push_str(&format!("No specific matches for **{}**, but here are universal high-ROI hustles:\n\n", skill));
+            out.push_str("| Hustle | Why | Effort |\n|---|---|---|\n");
+            out.push_str("| Freelance consulting | Package what you already know | Low |\n");
+            out.push_str("| Digital products | Templates, courses, presets | Medium |\n");
+            out.push_str("| Open source + sponsorship | Build in public, get sponsors | High |\n\n");
+            out.push_str("💡 **Tip:** Tell me your specific skill (e.g. `/hustle python` or `/hustle design`) for tailored ideas.\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #hustle #money", tg_footer("memogram-rs", "hustle"), now));
+            return Ok(out);
+        }
+        matches
+    };
+
+    let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
+    out.push_str(&format!("**{} matches** for _{}_\n\n", matched.len(), if skill.is_empty() { "general picks" } else { skill }));
+
+    for (i, (_, title, desc, pay, difficulty, platforms)) in matched.iter().enumerate() {
+        let diff_emoji = match *difficulty {
+            "Easy" => "🟢",
+            "Medium" => "🟡",
+            "Hard" => "🔴",
+            _ => "⚪",
+        };
+        out.push_str(&format!("**{}. {}**\n", i + 1, title));
+        out.push_str(&format!("{}\n", desc));
+        out.push_str(&format!("   💵 {} · {} {} · 📍 {}\n\n", pay, diff_emoji, difficulty, platforms));
     }
-    Ok(format!("{}\n\n⚠️ _No dad jokes available_\n\n{}\n\n`{}` · #dadjoke", tg_header("🤣", "Dad Joke", "?"), tg_footer("icanhazdadjoke.com", "dadjoke"), now))
+
+    out.push_str("## 🚀 Next Steps\n\n");
+    out.push_str("1. Pick one that matches your current skills\n");
+    out.push_str("2. Create a profile on the listed platform\n");
+    out.push_str("3. Start with a small gig to build reviews\n");
+    out.push_str("4. Use `/brief <platform>` to learn how to succeed there\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #hustle #money", tg_footer("memogram-rs", "hustle"), now));
+    Ok(out)
 }
 
 async fn fetch_bored(activity_type: &str) -> Result<String> {
@@ -4188,7 +4269,7 @@ async fn run_preview() -> Result<()> {
         ("quote", try_fetch("quote", fetch_quote("")).await.1),
         ("truth", try_fetch("truth", fetch_truth()).await.1),
         ("fact", try_fetch("fact", fetch_fact()).await.1),
-        ("dadjoke", try_fetch("dadjoke", fetch_dadjoke()).await.1),
+        ("hustle", try_fetch("hustle", fetch_hustle("python")).await.1),
     ];
 
     for (name, content) in samples {
