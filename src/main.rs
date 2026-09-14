@@ -376,7 +376,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?;
         }
         Command::Ghrepo(repo) => { let txt = fetch_ghrepo(&repo).await.unwrap_or_else(|e| format!("ghrepo err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Book(args) => { let txt = create_book(&args); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Book(args) => { let txt = fetch_book(&args).await.unwrap_or_else(|e| format!("book err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Weather7(city) => { let txt = fetch_weather7(&city).await.unwrap_or_else(|e| format!("weather7 err: {e}")); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Drug(name) => { let txt = fetch_drug(&name).await.unwrap_or_else(|e| format!("drug err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
@@ -412,12 +412,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Idea(args) => { let txt = create_idea(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Save(args) => { let txt = create_save(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Save(args) => { let txt = fetch_save(&args).await.unwrap_or_else(|e| format!("save err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Bmi(args) => { let txt = fetch_bmi(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Read(args) => { let txt = create_read(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Read(args) => { let txt = fetch_read(&args).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         
         Command::Brief(q) => { let txt = fetch_brief(&q).await.unwrap_or_else(|e| format!("brief err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Compare(q) => { let txt = fetch_compare(&q).await.unwrap_or_else(|e| format!("compare err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
@@ -1954,15 +1954,63 @@ fn create_project(args: &str) -> String {
 }
 
 
-fn create_book(args: &str) -> String {
+async fn fetch_book(args: &str) -> Result<String> {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let title = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Untitled");
-    let author = parts.get(1).unwrap_or(&"");
+    let query = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("rust programming");
+    let note = parts.get(1).unwrap_or(&"");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let date = Local::now().format("%Y-%m-%d").to_string();
-    format!(
-        "# Book: {title}\n\n**Author:** {author}\n**Started:** {date}\n**Status:** 📖 Reading\n**Rating:** ⭐⭐⭐⭐⭐\n\n## Summary\n- \n\n## Key Takeaways\n1. \n2. \n3. \n\n## Favorite Quotes\n> \"\" \n\n## Notes\n- \n\n#book #reading",
-        title = title, author = author, date = date
-    )
+    // Try Open Library Search API
+    let search_url = format!("https://openlibrary.org/search.json?title={}&limit=3", urlencoding::encode(query));
+    let v: serde_json::Value = HTTP.get(&search_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let docs = v["docs"].as_array().cloned().unwrap_or_default();
+    if docs.is_empty() {
+        // Fallback: just make a nice template
+        let mut out = format!("{}\n\n", tg_header("📚", "Book", query));
+        out.push_str(&format!("**Title:** `{}`\n**Author:** `{}`\n**Started:** `{}`\n**Status:** 📖 Reading\n\n", query, note, date));
+        out.push_str("## 📝 Summary\n\n- \n\n## 💡 Key Takeaways\n\n1. \n2. \n3. \n\n## 💬 Favorite Quotes\n\n> \"\" \n\n## 📊 Progress\n\n| Pages | % | Notes |\n|---|---|---|\n|  |  |  |\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #book", tg_footer("openlibrary.org", "book"), now));
+        return Ok(out);
+    }
+    let first = &docs[0];
+    let title = first["title"].as_str().unwrap_or(query);
+    let author_name = first["author_name"].as_array()
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown");
+    let year = first["first_publish_year"].as_i64()
+        .map(|y| y.to_string())
+        .unwrap_or_else(|| "—".into());
+    let pages = first["number_of_pages_median"].as_i64()
+        .map(|p| p.to_string())
+        .unwrap_or_else(|| "—".into());
+    let edition_count = first["edition_count"].as_i64().unwrap_or(0);
+    let isbn = first["isbn"].as_array()
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let cover_i = first["cover_i"].as_i64().unwrap_or(0);
+    let subjects = first["subject"].as_array()
+        .map(|a| a.iter().take(5).filter_map(|s| s.as_str()).collect::<Vec<&str>>().join(", "))
+        .unwrap_or_default();
+    let mut out = format!("{}\n\n", tg_header("📚", "Book", title));
+    out.push_str(&format!("**Title:** `{}`\n**Author:** `{}` · **Year:** `{}` · **Pages:** `{}`\n**Editions:** `{}`\n\n", title, author_name, year, pages, edition_count));
+    if !subjects.is_empty() {
+        out.push_str(&format!("## 🏷️ Subjects\n\n{}\n\n", subjects));
+    }
+    if cover_i > 0 {
+        out.push_str(&format!("![Cover](https://covers.openlibrary.org/b/id/{}-M.jpg)\n\n", cover_i));
+    }
+    if !isbn.is_empty() {
+        out.push_str(&format!("**ISBN:** `{}`\n", isbn));
+    }
+    out.push_str(&format!("🔗 [Open Library](https://openlibrary.org{})\n\n", first["key"].as_str().unwrap_or("")));
+    out.push_str("## 📝 Summary\n\n- \n\n## 💡 Key Takeaways\n\n1. \n2. \n3. \n\n## 💬 Favorite Quotes\n\n> \"\" \n\n## 📊 Progress\n\n| Pages | % | Notes |\n|---|---|---|\n|  |  |  |\n\n");
+    if !note.is_empty() {
+        out.push_str(&format!("## 📌 Note\n\n{}\n\n", note));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #book", tg_footer("openlibrary.org", "book"), now));
+    Ok(out)
 }
 
 fn create_todo(args: &str) -> String {
@@ -3408,14 +3456,53 @@ fn create_journal(note: &str) -> String {
 // === PLANNING COMMANDS ===
 
 fn create_goal(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let goal = parts.first().unwrap_or(&"Untitled");
     let details = parts.get(1).unwrap_or(&"");
-    format!(
-        "# 🎯 Goal — `{}`\n\n**Set:** `{}`\n\n## 🎯 Objective\n\n{}\n\n## 📋 Details\n\n{}\n\n## ✅ Milestones\n\n- [ ] \n- [ ] \n- [ ] \n\n## 📊 Progress\n\n| Week | Target | Done |\n|---|---|---|\n| W1 |  |  |\n| W2 |  |  |\n\n> _Tip: Make it SMART — Specific, Measurable, Achievable._\n\n{}\n\n`{}` · #{}",
-        goal, now, goal, details, tg_header("🎯", "Goal", goal), now, "planning"
-    )
+    // SMART scoring heuristic
+    let goal_lower = goal.to_lowercase();
+    let mut smart_score = 0;
+    let mut smart_notes = Vec::new();
+    // Specific: check for concrete nouns/verbs
+    if goal_lower.len() > 10 { smart_score += 1; smart_notes.push("✅ Specific — descriptive goal"); }
+    else { smart_notes.push("❌ Specific — add more detail"); }
+    // Measurable: check for numbers, percentages, counts
+    if goal_lower.chars().any(|c| c.is_ascii_digit()) || goal_lower.contains('%') || goal_lower.contains("number") || goal_lower.contains("count") {
+        smart_score += 1; smart_notes.push("✅ Measurable — has numeric target");
+    } else { smart_notes.push("❌ Measurable — add a number or %"); }
+    // Achievable: check for "learn", "build", "run" vs impossible-sounding
+    if goal_lower.contains("learn") || goal_lower.contains("build") || goal_lower.contains("run") || goal_lower.contains("finish") || goal_lower.contains("complete") || goal_lower.contains("create") {
+        smart_score += 1; smart_notes.push("✅ Achievable — action-oriented");
+    } else { smart_notes.push("⚠️ Achievable — use action verbs (learn, build, finish)"); }
+    // Relevant: always check if details provided
+    if !details.is_empty() { smart_score += 1; smart_notes.push("✅ Relevant — context provided"); }
+    else { smart_notes.push("❌ Relevant — add why this matters"); }
+    // Time-bound: check for date keywords
+    if goal_lower.contains("by") || goal_lower.contains("before") || goal_lower.contains("end of") || goal_lower.contains("week") || goal_lower.contains("month") || goal_lower.contains("year") || goal_lower.contains("day") {
+        smart_score += 1; smart_notes.push("✅ Time-bound — has deadline hint");
+    } else { smart_notes.push("❌ Time-bound — add 'by <date>'"); }
+    let bar = "█".repeat(smart_score) + &"░".repeat(5 - smart_score);
+    let grade = match smart_score {
+        5 => "🟢 Perfect",
+        4 => "🟢 Strong",
+        3 => "🟡 Good",
+        2 => "🟠 Weak",
+        _ => "🔴 Vague",
+    };
+    let mut out = format!("{}\n\n", tg_header("🎯", "Goal", goal));
+    out.push_str(&format!("**Goal:** `{}`\n**Set:** `{}`\n**Details:** {}\n\n", goal, date, if details.is_empty() { "—" } else { details }));
+    out.push_str(&format!("## 📊 SMART Score\n\n| {} | `{}/5` {} |\n\n", bar, smart_score, grade));
+    out.push_str("## 🔍 Assessment\n\n");
+    for note in &smart_notes {
+        out.push_str(&format!("- {}\n", note));
+    }
+    out.push_str("\n## ✅ Milestones\n\n- [ ] \n- [ ] \n- [ ] \n\n");
+    out.push_str("## 📅 Timeline\n\n| Milestone | Target | Done |\n|---|---|---|\n|  |  |  |\n\n");
+    out.push_str("> _Tip: Make it SMART — Specific, Measurable, Achievable, Relevant, Time-bound._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #goal", tg_footer("memogram", "goal"), now));
+    out
 }
 
 fn create_deadline(args: &str) -> String {
@@ -3466,12 +3553,46 @@ fn create_braindump(args: &str) -> String {
     )
 }
 
-fn create_save(args: &str) -> String {
+async fn fetch_save(args: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    format!(
-        "# 💾 Saved — `{}`\n\n**Time:** `{}`\n\n## 📌 Content\n\n{}\n\n## 🏷️ Tags\n\n- #save #inbox\n\n## 🔗 Action\n\n- [ ] Process\n\n{}\n\n`{}` · #{}",
-        now, now, args, tg_header("💾", "Saved", &now), now, "inbox"
-    )
+    let content = args.trim();
+    if content.is_empty() {
+        return Ok(format!("{}\n\n_Usage:_ `/save <url or text>`\n\n{}", tg_header("💾", "Save", "help"), tg_footer("memogram", "save")));
+    }
+    // Check if it's a URL
+    let is_url = content.starts_with("http://") || content.starts_with("https://");
+    let mut out = format!("{}\n\n", tg_header("💾", "Saved", &content.chars().take(40).collect::<String>()));
+    if is_url {
+        out.push_str(&format!("**URL:** `{}`\n\n", content));
+        // Try to fetch page title + description
+        if let Ok(resp) = HTTP.get(content).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await {
+            if let Ok(html) = resp.text().await {
+                let title = html.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).unwrap_or("").trim();
+                let desc = html.split("meta").find(|m| m.contains("description")).and_then(|m| {
+                    m.split("content=\"").nth(1)?.split('"').next()
+                }).unwrap_or("").trim();
+                let og_image = html.split("meta").find(|m| m.contains("og:image")).and_then(|m| {
+                    m.split("content=\"").nth(1)?.split('"').next()
+                }).unwrap_or("").trim();
+                if !title.is_empty() {
+                    out.push_str(&format!("**Title:** {}\n", title));
+                }
+                if !desc.is_empty() {
+                    out.push_str(&format!("**Description:** {}\n", desc.chars().take(200).collect::<String>()));
+                }
+                if !og_image.is_empty() && og_image.starts_with("http") {
+                    out.push_str(&format!("\n![Preview]({})\n", og_image));
+                }
+                out.push('\n');
+            }
+        }
+    } else {
+        out.push_str(&format!("**Content:** {}\n\n", content));
+    }
+    out.push_str("## 🏷️ Tags\n\n- #save #inbox\n\n");
+    out.push_str("## ✅ Actions\n\n- [ ] Process\n- [ ] Archive\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #save", tg_footer("memogram", "save"), now));
+    Ok(out)
 }
 
 // === DAILY COMMANDS ===
@@ -3675,15 +3796,55 @@ fn create_energy(args: &str) -> String {
 }
 
 fn create_exercise(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let activity = parts.first().unwrap_or(&"run");
-    let duration = parts.get(1).unwrap_or(&"30m");
-    let date = now.clone();
-    format!(
-        "# 🏋️ Exercise — `{}`\n\n**Date:** `{}` · **Activity:** `{}` · **Duration:** `{}`\n\n## 📊 Session\n\n| Metric | Value |\n|---|---|\n| Activity | {} |\n| Duration | {} |\n| Date | {} |\n| Calories est | {} |\n\n## 📈 Weekly Volume (sample)\n\n| Day | Activity | Duration |\n|---|---|---|\n| {} | {} | {} |\n| 2026-09-03 | rest | — |\n| 2026-09-02 | weights | 45m |\n\n```mermaid\nxychart-beta\n  title \"Minutes / Day\"\n  x-axis [Mon Tue Wed Thu Fri Sat Sun]\n  y-axis \"Min\" 0 60\n  bar [30 0 45 30 20 0 30]\n```\n\n## 💡 Next\n> _Tip: Progressive overload + 48h rest per muscle group. Hydrate + protein within 60m._\n\n{}\n\n`{}` · #{}",
-        activity, now, activity, duration, activity, duration, now, if duration.contains("30") { "220" } else { "180" }, date, activity, duration, tg_header("🏋️", "Exercise", activity), now, "exercise"
-    )
+    let duration_str = parts.get(1).unwrap_or(&"30m");
+    // Parse duration to minutes
+    let mins: f64 = if let Some(m) = duration_str.strip_suffix('m') {
+        m.parse().unwrap_or(30.0)
+    } else if let Some(h) = duration_str.strip_suffix('h') {
+        h.parse().unwrap_or(1.0) * 60.0
+    } else {
+        duration_str.parse().unwrap_or(30.0)
+    };
+    // MET values (Compendium of Physical Activities)
+    let met: f64 = match activity.to_lowercase().as_str() {
+        "run" | "running" | "jog" | "jogging" => 9.8,
+        "walk" | "walking" | "hike" | "hiking" => 3.5,
+        "bike" | "cycling" | "bicycle" => 7.5,
+        "swim" | "swimming" => 6.0,
+        "yoga" | "pilates" => 3.0,
+        "weight" | "weights" | "strength" | "lifting" | "gym" => 6.0,
+        "hiit" | "tabata" => 8.0,
+        "stretch" | "stretching" | "flexibility" => 2.5,
+        "dance" | "dancing" => 5.0,
+        "row" | "rowing" => 7.0,
+        "climb" | "climbing" | "boulder" => 8.0,
+        "box" | "boxing" | "mma" | "kickbox" => 10.0,
+        "tennis" | "squash" | "racquetball" => 7.3,
+        "soccer" | "football" | "basketball" | "basket" => 8.0,
+        "surf" | "surfing" | "paddle" | "paddleboard" => 5.0,
+        "ski" | "skiing" | "snowboard" => 6.8,
+        "elliptical" => 5.0,
+        "jump rope" | "jumping rope" | "skip" => 12.0,
+        "rest" | "rest day" | "off" => 0.0,
+        _ => 4.0, // default moderate activity
+    };
+    // Calories = MET × weight(kg) × time(hrs); assume 70kg
+    let weight = 70.0_f64;
+    let calories = (met * weight * (mins / 60.0)) as i64;
+    let bar = "█".repeat(((mins / 90.0 * 10.0) as usize).clamp(0, 10)) + &"░".repeat(10 - ((mins / 90.0 * 10.0) as usize).clamp(0, 10));
+    let intensity = if met >= 8.0 { "🔴 Vigorous" } else if met >= 5.0 { "🟡 Moderate" } else if met >= 2.5 { "🟢 Light" } else { "⚪ Rest" };
+    let mut out = format!("{}\n\n", tg_header("🏋️", "Exercise", activity));
+    out.push_str(&format!("**Activity:** `{}` · **Duration:** `{}`\n**Date:** `{}`\n\n", activity, duration_str, date));
+    out.push_str(&format!("## 📊 Session\n\n| Metric | Value |\n|---|---|\n| Activity | `{}` |\n| Duration | `{:.0} min` |\n| MET | `{:.1}` |\n| Intensity | {} |\n| Est. Calories | `~{} kcal` |\n| Weight (est) | `70 kg` |\n\n", activity, mins, met, intensity, calories));
+    out.push_str(&format!("## 📈 Duration\n\n| {} | {} min |\n\n", bar, mins as i64));
+    out.push_str(&format!("## 📋 MET Reference\n\n| Activity | MET | Cal/30min |\n|---|---|---|\n| Running | `9.8` | `~343` |\n| Cycling | `7.5` | `~263` |\n| Swimming | `6.0` | `~210` |\n| Weights | `6.0` | `~210` |\n| Yoga | `3.0` | `~105` |\n| Walking | `3.5` | `~123` |\n\n"));
+    out.push_str("## 💡 Tips\n\n> _Progressive overload + 48h rest per muscle group. Hydrate + protein within 60m._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #exercise", tg_footer("compendium of physical activities", "exercise"), now));
+    out
 }
 
 fn create_water(args: &str) -> String {
@@ -3715,15 +3876,44 @@ fn create_stress(args: &str) -> String {
     )
 }
 
-fn create_read(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d").to_string();
+async fn fetch_read(args: &str) -> Result<String> {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let title = parts.first().unwrap_or(&"Untitled");
-    let author = parts.get(1).unwrap_or(&"");
-    format!(
-        "# 📚 Reading — `{}`\n\n**Title:** `{}` · **Author:** `{}` · **Date:** `{}`\n\n## 📝 Summary\n\n- \n\n## 💡 Takeaways\n\n1. \n2. \n3. \n\n## 💬 Quotes\n\n> \"\" — {}\n\n## 📊 Progress\n\n| Pages | % | Notes |\n|---|---|---|\n|  |  |  |\n\n{}\n\n`{}` · #{}",
-        title, title, author, now, author, tg_header("📚", "Reading", title), now, "wellness"
-    )
+    let query = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("rust");
+    let note = parts.get(1).unwrap_or(&"");
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    // Fetch from Open Library
+    let search_url = format!("https://openlibrary.org/search.json?title={}&limit=1", urlencoding::encode(query));
+    let v: serde_json::Value = HTTP.get(&search_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let docs = v["docs"].as_array().cloned().unwrap_or_default();
+    let mut out = format!("{}\n\n", tg_header("📚", "Reading", query));
+    if let Some(first) = docs.first() {
+        let title = first["title"].as_str().unwrap_or(query);
+        let author_name = first["author_name"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("Unknown");
+        let year = first["first_publish_year"].as_i64().map(|y| y.to_string()).unwrap_or_else(|| "—".into());
+        let pages = first["number_of_pages_median"].as_i64().map(|p| p.to_string()).unwrap_or_else(|| "—".into());
+        let subjects = first["subject"].as_array()
+            .map(|a| a.iter().take(5).filter_map(|s| s.as_str()).collect::<Vec<&str>>().join(", "))
+            .unwrap_or_default();
+        let cover_i = first["cover_i"].as_i64().unwrap_or(0);
+        out.push_str(&format!("**Title:** `{}`\n**Author:** `{}` · **Year:** `{}` · **Pages:** `{}`\n\n", title, author_name, year, pages));
+        if !subjects.is_empty() {
+            out.push_str(&format!("## 🏷️ Subjects\n\n{}\n\n", subjects));
+        }
+        if cover_i > 0 {
+            out.push_str(&format!("![Cover](https://covers.openlibrary.org/b/id/{}-M.jpg)\n\n", cover_i));
+        }
+        out.push_str(&format!("🔗 [Open Library](https://openlibrary.org{})\n\n", first["key"].as_str().unwrap_or("")));
+    } else {
+        out.push_str(&format!("**Title:** `{}`\n\n", query));
+    }
+    out.push_str(&format!("**Started:** `{}`\n**Status:** 📖 Reading\n\n", date));
+    out.push_str("## 📝 Summary\n\n- \n\n## 💡 Takeaways\n\n1. \n2. \n3. \n\n## 💬 Quotes\n\n> \"\" \n\n## 📊 Progress\n\n| Pages | % | Notes |\n|---|---|---|\n|  |  |  |\n\n");
+    if !note.is_empty() {
+        out.push_str(&format!("## 📌 Note\n\n{}\n\n", note));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #reading", tg_footer("openlibrary.org", "reading"), now));
+    Ok(out)
 }
 
 // ============= NEW COMMANDS =============
@@ -4026,7 +4216,7 @@ async fn run_preview() -> Result<()> {
         ("energy", create_energy("8 feeling great")),
         ("exercise", create_exercise("run 30m")),
         ("water", create_water("500ml morning")),
-        ("read", create_read("Dune Frank Herbert")),
+        ("read", try_fetch("read", fetch_read("Dune Frank Herbert")).await.1),
         ("compound", create_compound("1000 7% 10")),
         ("stress", create_stress("6 work deadline")),
         ("flag", create_flag("Follow up on beat collab")),
@@ -4043,7 +4233,7 @@ async fn run_preview() -> Result<()> {
         ("math", eval_math("2+2*3")),
         ("meeting", create_meeting("Sprint planning 10am discuss Q3 goals and blockers")),
         ("project", create_project("Memogram v2 — Telegram bot for Memos")),
-        ("book", create_book("Dune by Frank Herbert — sci-fi masterpiece about spice and power")),
+        ("book", try_fetch("book", fetch_book("Dune by Frank Herbert")).await.1),
         ("todo", create_todo("Fix weather API, deploy v2, write tests")),
         ("list", create_list("Groceries: milk, eggs, bread, coffee")),
         ("clip", create_clip("https://example.com article about rust async")),
