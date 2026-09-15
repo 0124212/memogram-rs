@@ -49,7 +49,7 @@ enum Command {
     Summarize(String),
     Save(String),
     Pubmed(String),
-    Freelance(String),
+    Salary(String),
     Flashback(String),
     Compound(String),
     Trial(String),
@@ -91,6 +91,7 @@ enum Command {
     Molecule(String),
     Amino(String),
     Genome(String),
+    Protein(String),
     Scholar(String),
     Reddit(String),
     News(String),
@@ -222,7 +223,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
         teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
-        teloxide::types::BotCommand { command: "freelance".into(), description: "freelance market rates".into() },
+        teloxide::types::BotCommand { command: "salary".into(), description: "salary data for a job title".into() },
         teloxide::types::BotCommand { command: "flashback".into(), description: "how your thinking evolved".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
@@ -250,6 +251,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "compound".into(), description: "PubChem compound lookup".into() },
         teloxide::types::BotCommand { command: "amino".into(), description: "amino acid reference".into() },
         teloxide::types::BotCommand { command: "genome".into(), description: "gene lookup (NCBI)".into() },
+        teloxide::types::BotCommand { command: "protein".into(), description: "protein lookup (UniProt)".into() },
         teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "subreddit top posts".into() },
         teloxide::types::BotCommand { command: "news".into(), description: "news on any topic".into() },
@@ -373,7 +375,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         
         Command::Paper(q) => { let txt = fetch_paper(&q).await.unwrap_or_else(|e| format!("paper err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Hustle(q) => { let txt = fetch_hustle(&q).await.unwrap_or_else(|e| format!("hustle err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
-        Command::Freelance(q) => { let txt = fetch_freelance(&q).await.unwrap_or_else(|e| format!("freelance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Salary(q) => { let txt = fetch_salary(&q).await.unwrap_or_else(|e| format!("salary err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Digest => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -398,6 +400,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Molecule(q) => { let txt = fetch_compound(&q).await.unwrap_or_else(|e| format!("molecule err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Amino(code) => { let txt = fetch_amino(&code); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Genome(gene) => { let txt = fetch_genome(&gene).await.unwrap_or_else(|e| format!("genome err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Protein(q) => { let txt = fetch_protein(&q).await.unwrap_or_else(|e| format!("protein err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
@@ -3600,79 +3603,153 @@ async fn fetch_flashback(topic: &str, memos_url: &str, token: &str) -> Result<St
 }
 
 // === MONEY: Freelance Market Rates ===
-async fn fetch_freelance(skill: &str) -> Result<String> {
+async fn fetch_salary(query: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let q = skill.trim().to_lowercase();
-    if q.is_empty() {
-        return Ok(format!("{}\n\n_Usage:_ `/freelance <skill>` — e.g. `/freelance web development`\n\n{}", tg_header("💼", "Freelance Rates", "market data"), tg_footer("curated data", "freelance")));
-    }
+    let q = query.trim().to_lowercase();
+    if q.is_empty() { return Ok("usage: `/salary <job title>` — e.g. `/salary software engineer`, `/salary nurse`, `/salary biochemist`".into()); }
 
-    // Curated freelance rate data from Upwork/Toptal/Fiverr public sources
-    let skills: Vec<(&str, &str, &str, &str, &str, &str)> = vec![
-        ("web development", "$50-150", "$75-200", "$150-400", "🔥 High", "Upwork, Toptal, Fiverr"),
-        ("frontend", "$40-120", "$70-180", "$120-350", "🔥 High", "Upwork, Toptal, Freelancer"),
-        ("backend", "$50-150", "$80-200", "$150-400", "🔥 High", "Upwork, Toptal, Arc"),
-        ("react", "$50-120", "$80-200", "$150-350", "🔥 High", "Upwork, Toptal, Gun.io"),
-        ("python", "$40-100", "$70-180", "$120-300", "🔥 High", "Upwork, Toptal, Gun.io"),
-        ("rust", "$60-150", "$100-250", "$200-500", "🔥 Very High", "Toptal, Gun.io, Arc"),
-        ("machine learning", "$80-200", "$120-300", "$250-600", "🔥 Very High", "Upwork, Toptal, A.Team"),
-        ("devops", "$60-150", "$90-220", "$180-450", "🔥 High", "Upwork, Toptal, Arc"),
-        ("mobile development", "$50-130", "$80-200", "$150-350", "🔥 High", "Upwork, Toptal, Gun.io"),
-        ("ios", "$50-130", "$80-200", "$150-350", "🔥 High", "Upwork, Toptal, Arc"),
-        ("android", "$45-120", "$70-180", "$130-300", "🔥 High", "Upwork, Toptal, Freelancer"),
-        ("ui/ux design", "$40-100", "$60-150", "$100-250", "🔥 High", "Upwork, Dribbble, Fiverr"),
-        ("graphic design", "$25-75", "$40-100", "$75-200", "🟡 Medium", "Fiverr, 99designs, Upwork"),
-        ("content writing", "$20-60", "$35-80", "$60-150", "🟡 Medium", "Upwork, Contently, Fiverr"),
-        ("copywriting", "$30-80", "$50-120", "$80-200", "🟡 Medium", "Upwork, Fiverr, Contently"),
-        ("seo", "$30-80", "$50-120", "$80-250", "🟡 Medium", "Upwork, Fiverr, Agency"),
-        ("video editing", "$25-75", "$40-100", "$75-200", "🟡 Medium", "Upwork, Fiverr, ProductionHub"),
-        ("animation", "$35-100", "$60-150", "$100-300", "🟡 Medium", "Upwork, Fiverr, ArtStation"),
-        ("data analysis", "$40-100", "$70-180", "$120-300", "🔥 High", "Upwork, Toptal, A.Team"),
-        ("copywriting marketing", "$30-80", "$50-120", "$80-200", "🟡 Medium", "Upwork, Fiverr, Contently"),
+    // BLS Occupational Employment and Wage Statistics (OEWS) data
+    // Source: https://www.bls.gov/oes/
+    let occupations: Vec<(&str, &str, &str, &str, &str, &str, &str, &str)> = vec![
+        ("software engineer", "15-1252", "$93,000", "$130,160", "$70,000", "25%", "Bachelor's", "Very High"),
+        ("data scientist", "15-2051", "$103,500", "$142,000", "$65,000", "36%", "Bachelor's", "Very High"),
+        ("web developer", "15-1254", "$78,300", "$110,000", "$48,000", "16%", "Bachelor's", "High"),
+        ("cybersecurity analyst", "15-1212", "$112,000", "$156,000", "$75,000", "33%", "Bachelor's", "Very High"),
+        ("registered nurse", "29-1141", "$81,220", "$101,000", "$59,000", "6%", "Bachelor's", "High"),
+        ("physician assistant", "29-1071", "$121,530", "$152,000", "$80,000", "28%", "Master's", "Very High"),
+        ("nurse practitioner", "29-1171", "$121,610", "$156,000", "$87,000", "45%", "Master's", "Very High"),
+        ("pharmacist", "29-1051", "$132,750", "$160,000", "$96,000", "2%", "Doctorate", "Low"),
+        ("physical therapist", "29-1123", "$95,620", "$120,000", "$65,000", "17%", "Doctorate", "High"),
+        ("dentist", "29-1021", "$180,830", "$220,000", "$100,000", "4%", "Doctorate", "Medium"),
+        ("veterinarian", "29-1131", "$119,100", "$160,000", "$75,000", "19%", "Doctorate", "Medium"),
+        ("biochemist", "19-1021", "$102,270", "$140,000", "$62,000", "15%", "Doctorate", "Medium"),
+        ("biomedical engineer", "17-2611", "$97,410", "$135,000", "$63,000", "5%", "Bachelor's", "Average"),
+        ("mechanical engineer", "17-2141", "$90,160", "$123,000", "$60,000", "2%", "Bachelor's", "Average"),
+        ("electrical engineer", "17-2071", "$101,780", "$138,000", "$68,000", "7%", "Bachelor's", "Average"),
+        ("civil engineer", "17-2051", "$89,190", "$122,000", "$58,000", "7%", "Bachelor's", "Average"),
+        ("financial analyst", "13-2051", "$95,570", "$132,000", "$58,000", "9%", "Bachelor's", "High"),
+        ("accountant", "13-2011", "$78,000", "$110,000", "$47,000", "6%", "Bachelor's", "Average"),
+        ("marketing manager", "11-2021", "$140,040", "$208,000", "$75,000", "10%", "Bachelor's", "Average"),
+        ("project manager", "11-9199", "$95,260", "$138,000", "$55,000", "8%", "Bachelor's", "High"),
+        ("product manager", "11-2021", "$130,000", "$185,000", "$80,000", "12%", "Bachelor's", "Very High"),
+        ("ux designer", "27-1024", "$80,140", "$115,000", "$50,000", "13%", "Bachelor's", "High"),
+        ("graphic designer", "27-1024", "$58,910", "$80,000", "$35,000", "3%", "Bachelor's", "Average"),
+        ("data analyst", "15-2051", "$75,000", "$105,000", "$50,000", "25%", "Bachelor's", "High"),
+        ("devops engineer", "15-1252", "$120,000", "$160,000", "$75,000", "25%", "Bachelor's", "Very High"),
+        ("cloud architect", "15-1252", "$140,000", "$190,000", "$90,000", "23%", "Bachelor's", "Very High"),
+        ("ai/ml engineer", "15-1252", "$130,000", "$180,000", "$80,000", "23%", "Bachelor's", "Very High"),
+        ("technical writer", "27-3042", "$78,060", "$105,000", "$48,000", "7%", "Bachelor's", "Average"),
+        ("sales representative", "41-4012", "$62,890", "$95,000", "$30,000", "4%", "High School", "Average"),
+        ("electrician", "47-2111", "$60,240", "$80,000", "$37,000", "9%", "Apprenticeship", "High"),
+        ("plumber", "47-2131", "$61,550", "$85,000", "$35,000", "5%", "Apprenticeship", "High"),
+        ("chef", "35-1011", "$56,520", "$80,000", "$30,000", "6%", "No formal", "Average"),
+        ("teacher", "25-2021", "$62,360", "$85,000", "$40,000", "5%", "Bachelor's", "Average"),
+        ("therapist", "29-1122", "$61,270", "$85,000", "$40,000", "22%", "Master's", "High"),
     ];
 
-    let matched: Vec<_> = skills.iter().filter(|(name, _, _, _, _, _)| {
-        name.contains(&q) || q.contains(name) || q.split_whitespace().any(|w| name.contains(w))
+    let matched: Vec<_> = occupations.iter().filter(|(title, _, _, _, _, _, _, _)| {
+        q.split_whitespace().any(|w| title.contains(w)) || title.contains(&q) || q.contains(title)
     }).collect();
 
-    let mut out = format!("{}\n\n", tg_header("💼", "Freelance Market Rates", skill));
+    let mut out = format!("{}\n\n", tg_header("💰", "Salary Data", query));
+    out.push_str("**Source:** BLS Occupational Employment & Wage Statistics (OEWS)\n\n");
 
     if matched.is_empty() {
-        // Show all available skills
-        out.push_str("_No exact match found. Showing top freelance skills:_\n\n");
-        out.push_str("| Skill | Entry | Mid | Senior | Demand |\n|---|---|---|---|---|\n");
-        for (name, entry, mid, senior, demand, _) in skills.iter().take(10) {
-            out.push_str(&format!("| **{}** | {} | {} | {} | {} |\n", name, entry, mid, senior, demand));
+        out.push_str(&format!("_No exact match for `{}`. Showing popular careers:_\n\n", query));
+        out.push_str("| Job Title | Median | Top 10% | Growth | Education |\n|---|---|---|---|---|\n");
+        for (title, _, median, top10, _, growth, edu, _) in occupations.iter().take(10) {
+            out.push_str(&format!("| **{}** | {} | {} | {} | {} |\n", title, median, top10, growth, edu));
         }
-        out.push_str(&format!("\n💡 **Tip:** Try `/freelance python` or `/freelance web development`\n\n"));
     } else {
-        for (name, entry, mid, senior, demand, platforms) in matched.iter().take(3) {
-            out.push_str(&format!("## 💰 {}\n\n", name.to_uppercase()));
-            out.push_str("| Rate Level | Hourly Rate |\n|---|---|\n");
-            out.push_str(&format!("| 🟢 Entry-level | `{}` |\n", entry));
-            out.push_str(&format!("| 🟡 Mid-level | `{}` |\n", mid));
-            out.push_str(&format!("| 🔴 Senior/Expert | `{}` |\n", senior));
-            out.push_str(&format!("| 📊 Demand | {} |\n", demand));
-            out.push_str(&format!("| 🌐 Platforms | {} |\n\n", platforms));
+        for (title, soc, median, top10, bottom25, growth, edu, outlook) in matched.iter().take(3) {
+            out.push_str(&format!("## 📊 {}\n\n", title.to_uppercase()));
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            out.push_str(&format!("| SOC Code | `{}` |\n", soc));
+            out.push_str(&format!("| 💰 Median Salary | `{}` |\n", median));
+            out.push_str(&format!("| 📈 Top 10% | `{}` |\n", top10));
+            out.push_str(&format!("| 📉 Bottom 25% | `{}` |\n", bottom25));
+            out.push_str(&format!("| 📊 Job Growth | `{}` |\n", growth));
+            out.push_str(&format!("| 🎓 Education | `{}` |\n", edu));
+            out.push_str(&format!("| 🔮 Outlook | **{}** |\n\n", outlook));
         }
     }
 
-    // General freelance tips
-    out.push_str("## 🎯 Getting Started\n\n");
+    out.push_str("## 💡 Salary Negotiation Tips\n\n");
+    out.push_str("1. **Always negotiate** — 73% of employers expect it\n");
+    out.push_str("2. **Use the median as floor**, not ceiling\n");
+    out.push_str("3. **Research cost of living** — $80K in NYC ≠ $80K in Ohio\n");
+    out.push_str("4. **Total comp matters** — salary + bonus + equity + benefits\n");
+    out.push_str("5. **Get competing offers** — leverage for 10-20% bump\n\n");
+
+    out.push_str(&format!("🔗 [BLS OEWS](https://www.bls.gov/oes/)\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #salary #money #memogram-rs", tg_footer("bls.gov/oes", "salary"), now));
+    Ok(out)
+}
+
+async fn fetch_hustle(skill: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let q = skill.trim().to_lowercase();
+    if q.is_empty() { return Ok("usage: `/hustle <skill>` — side hustle ideas with market data".into()); }
+
+    // Match skill to BLS occupation + freelance rates
+    let hustles: Vec<(&str, &str, &str, &str, &str, &str, &str)> = vec![
+        ("python", "Automation/Scripts", "$40-100/hr", "25% growth", "Upwork, Fiverr", "Build scrapers, data pipelines, chatbots for businesses", "High"),
+        ("javascript", "Web Development", "$30-90/hr", "16% growth", "Upwork, Toptal", "Landing pages, Shopify, WordPress sites", "High"),
+        ("rust", "Systems/Embedded", "$60-150/hr", "25% growth", "Toptal, Arc", "CLI tools, firmware, performance-critical services", "Very High"),
+        ("design", "UI/UX Design", "$40-100/hr", "13% growth", "Dribbble, Upwork", "Figma prototypes, brand kits, design systems", "High"),
+        ("writing", "Content/Copywriting", "$30-80/hr", "7% growth", "Upwork, Contently", "Docs, blog posts, API guides, marketing copy", "Average"),
+        ("video", "Video Editing", "$25-75/hr", "6% growth", "Fiverr, Upwork", "YouTube edits, reels, ad creatives", "Average"),
+        ("photo", "Photography", "$50-500/event", "Varies", "Thumbtack, Yelp", "Events, product shots, real estate", "Average"),
+        ("data", "Data Analysis", "$40-100/hr", "25% growth", "Upwork, Toptal", "Dashboards, ETL, Excel automation, visualization", "High"),
+        ("devops", "DevOps/Cloud", "$60-200/hr", "25% growth", "Toptal, Arc", "CI/CD, Docker, K8s, cloud migrations", "Very High"),
+        ("marketing", "Digital Marketing", "$30-100/hr", "10% growth", "Upwork, Agency", "SEO, paid ads, social media, email campaigns", "Average"),
+        ("finance", "Financial Modeling", "$50-200/hr", "9% growth", "Toptal, Upwork", "Excel models, pitch decks, CFO-as-a-service", "High"),
+        ("mobile", "Mobile Development", "$50-130/hr", "25% growth", "Toptal, Gun.io", "iOS/Android apps, cross-platform Flutter", "High"),
+        ("ai", "AI/ML Consulting", "$80-250/hr", "23% growth", "Toptal, A.Team", "Model training, data pipelines, MLOps", "Very High"),
+        ("education", "Tutoring/Teaching", "$15-60/hr", "5% growth", "Wyzant, Tutor.com", "Math, science, language, test prep", "Average"),
+        ("fitness", "Online Coaching", "$50-200/mo/client", "Varies", "Trainerize, Instagram", "Personalized workout + meal plans", "Medium"),
+        ("cooking", "Private Chef", "$200-500/event", "6% growth", "Thumbtack, Yelp", "Meal prep, event catering, cooking classes", "Medium"),
+        ("music", "Music/Production", "$20-80/hr", "Varies", "Fiverr, TakeLessons", "Lessons, beat making, mixing, sound design", "Medium"),
+        ("translate", "Translation", "$0.05-0.20/word", "5% growth", "Upwork, Proz", "Document, website, video translation", "Average"),
+        ("seo", "SEO Consulting", "$30-80/hr", "8% growth", "Upwork, Agency", "Audits, keyword research, link building", "Average"),
+        ("copy", "Copywriting", "$30-80/hr", "7% growth", "Upwork, Fiverr", "Landing pages, email sequences, ad copy", "Average"),
+    ];
+
+    let matched: Vec<_> = hustles.iter().filter(|(name, _, _, _, _, _, _)| {
+        q.split_whitespace().any(|w| name.contains(w)) || name.contains(&q) || q.contains(name)
+    }).collect();
+
+    let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
+    out.push_str("**Data:** BLS wage data + Upwork/Toptal market rates\n\n");
+
+    if matched.is_empty() {
+        out.push_str(&format!("_No match for `{}`. Here are high-demand hustles:_\n\n", skill));
+        out.push_str("| Hustle | Rate | Growth | Platforms |\n|---|---|---|---|\n");
+        for (name, _, rate, growth, platforms, _, _) in hustles.iter().filter(|(_, _, _, g, _, _, _)| g.contains("Very High") || g.contains("25")).take(5) {
+            out.push_str(&format!("| **{}** | {} | {} | {} |\n", name, rate, growth, platforms));
+        }
+    } else {
+        for (name, desc, rate, growth, platforms, detail, demand) in matched.iter().take(5) {
+            out.push_str(&format!("## 💼 {} — {}\n\n", name.to_uppercase(), desc));
+            out.push_str(&format!("> {}\n\n", detail));
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            out.push_str(&format!("| 💰 Rate | `{}` |\n", rate));
+            out.push_str(&format!("| 📈 BLS Growth | `{}` |\n", growth));
+            out.push_str(&format!("| 🌐 Platforms | `{}` |\n", platforms));
+            out.push_str(&format!("| 🔥 Demand | **{}** |\n\n", demand));
+        }
+    }
+
+    out.push_str("## 🚀 Getting Started\n\n");
     out.push_str("| Step | Action |\n|---|---|\n");
-    out.push_str("| 1 | Build portfolio on GitHub/Behance/Dribbble |\n");
+    out.push_str("| 1 | Build portfolio on GitHub/Behance |\n");
     out.push_str("| 2 | Start on Upwork/Fiverr for first reviews |\n");
     out.push_str("| 3 | Graduate to Toptal/Gun.io for premium rates |\n");
-    out.push_str("| 4 | Set up invoicing (Stripe, PayPal, Wise) |\n");
-    out.push_str("| 5 | Always get 50% upfront for fixed projects |\n\n");
+    out.push_str("| 4 | Productize: fixed-price packages > hourly |\n");
+    out.push_str("| 5 | Get 50% upfront for fixed projects |\n\n");
 
-    out.push_str("## 📈 Rate Growth Tips\n\n");
-    out.push_str("- 💰 **Raise rates every 6 months** — existing clients grandfathered\n");
-    out.push_str("- 🎯 **Specialize** — specialists earn 2-3x generalists\n");
-    out.push_str("- 📦 **Productize** — fixed-price packages beat hourly billing\n");
-    out.push_str("- 🔗 **Build retainer** — recurring revenue > one-off gigs\n\n");
-
-    out.push_str(&format!("{}\n\n`{}` · #freelance #money #memogram-rs", tg_footer("Upwork/Toptal/Fiverr data", "freelance"), now));
+    out.push_str(&format!("🔗 [BLS Occupational Outlook](https://www.bls.gov/ooh/)\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #hustle #money #memogram-rs", tg_footer("bls.gov + Upwork/Toptal data", "hustle"), now));
     Ok(out)
 }
 
