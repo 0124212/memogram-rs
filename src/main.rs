@@ -77,10 +77,8 @@ enum Command {
     Ph,
     Weekly,
     Habit(String),
-    Plan(String),
     Quote,
     Read(String),
-    Fact,
     Queue,
     Review,
     Clip(String),
@@ -205,7 +203,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "deadline".into(), description: "deadline (Vikunja)".into() },
         teloxide::types::BotCommand { command: "weekly".into(), description: "weekly review (Vikunja)".into() },
         teloxide::types::BotCommand { command: "habit".into(), description: "track habit streak".into() },
-        teloxide::types::BotCommand { command: "plan".into(), description: "research plan for a topic".into() },
         teloxide::types::BotCommand { command: "quote".into(), description: "daily quote".into() },
         teloxide::types::BotCommand { command: "read".into(), description: "read article from URL".into() },
         teloxide::types::BotCommand { command: "fact".into(), description: "random fun fact".into() },
@@ -400,10 +397,8 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Habit(args) => { let txt = fetch_habit(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Plan(topic) => { let txt = fetch_plan(&topic, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Quote => { let txt = fetch_quote_wellness().await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Read(url) => { let txt = fetch_read_url(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Fact => { let txt = fetch_fact_wellness().await.unwrap_or_else(|e| format!("fact err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Queue => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
