@@ -76,9 +76,21 @@ enum Command {
     Lobsters,
     Ph,
     Weekly,
+    Habit(String),
+    Plan(String),
+    Quote,
+    Read(String),
+    Fact,
+    Queue,
+    Review,
+    Clip(String),
+    Snippet(String),
+    Note(String),
     Species(String),
     Prereqs(String),
     Mcat(String),
+    Molecule(String),
+    Pathway(String),
     Scholar(String),
     Reddit(String),
     News(String),
@@ -223,6 +235,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "species".into(), description: "taxonomy lookup".into() },
         teloxide::types::BotCommand { command: "prereqs".into(), description: "health prof prereqs".into() },
         teloxide::types::BotCommand { command: "mcat".into(), description: "MCAT study guide".into() },
+        teloxide::types::BotCommand { command: "molecule".into(), description: "PubChem compound lookup".into() },
+        teloxide::types::BotCommand { command: "pathway".into(), description: "KEGG pathway + gene lookup".into() },
         teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "subreddit top posts".into() },
         teloxide::types::BotCommand { command: "news".into(), description: "news on any topic".into() },
@@ -370,6 +384,8 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Species(q) => { let txt = fetch_species(&q).await.unwrap_or_else(|e| format!("species err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Prereqs(track) => { let txt = create_prereqs(&track); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Mcat(topic) => { let txt = fetch_mcat(&topic).await.unwrap_or_else(|e| format!("mcat err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Molecule(q) => { let txt = fetch_compound(&q).await.unwrap_or_else(|e| format!("molecule err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Pathway(q) => { let txt = fetch_pathway(&q).await.unwrap_or_else(|e| format!("pathway err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
@@ -4554,6 +4570,313 @@ async fn fetch_species(query: &str) -> Result<String> {
         out.push_str("\n\n");
     }
     out.push_str(&format!("{}\n\n`{}` · #species #bio #memogram-rs", tg_footer("gbif.org", "species"), now));
+    Ok(out)
+}
+
+async fn fetch_compound(query: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok("usage: `/compound <name or CID>` — e.g. `/compound aspirin`, `/compound caffeine`, `/compound 2244`".into());
+    }
+
+    // Step 1: Resolve name to CID
+    let search_url = format!("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/cids/JSON", urlencoding::encode(query));
+    let search_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&search_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let cid = search_v["IdentifierList"]["CID"].as_array()
+        .and_then(|a| a.first())
+        .and_then(|c| c.as_u64())
+        .unwrap_or(0);
+
+    if cid == 0 {
+        return Ok(format!("{}\n\n_No compound found for `{}`_\n\n> Try: aspirin, caffeine, ibuprofen, glucose, atorvastatin, metformin\n\n{}\n\n`{}` · #compound #bio #memogram-rs",
+            tg_header("🧪", "Compound", query), query, tg_footer("pubchem.ncbi.nlm.nih.gov", "compound"), now));
+    }
+
+    // Step 2: Get properties
+    let prop_url = format!("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{}/property/MolecularFormula,MolecularWeight,IUPACName,CanonicalSMILES,IsomericSMILES,XLogP,TPSA,Complexity,Charge,HBondDonorCount,HBondAcceptorCount,RotatableBondCount,HeavyAtomCount,ExactMass,MonsterPublicKey,InChIKey,InChI/JSON", cid);
+    let prop_v: serde_json::Value = HTTP.get(&prop_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let props = prop_v["PropertyTable"]["Properties"].as_array()
+        .and_then(|a| a.first())
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
+
+    // Step 3: Get description
+    let desc_url = format!("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{}/description/JSON", cid);
+    let desc_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&desc_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let description = desc_v["InformationList"]["Information"].as_array()
+        .and_then(|a| a.first())
+        .and_then(|i| i["Description"].as_str())
+        .unwrap_or("");
+
+    // Step 4: Get safety/hazard data
+    let safety_url = format!("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{}/safety/JSON", cid);
+    let safety_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&safety_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+
+    // Step 5: Get pharmacology
+    let pharma_url = format!("https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{}/JSON?heading=Pharmacology", cid);
+    let pharma_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&pharma_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+
+    // Step 6: Get classification
+    let class_url = format!("https://pubchem.ncbi.nlm.nih.gov/rest/pug_view/data/compound/{}/JSON?heading=Classification", cid);
+    let class_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&class_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+
+    let formula = props["MolecularFormula"].as_str().unwrap_or("?");
+    let weight = props["MolecularWeight"].as_f64().unwrap_or(0.0);
+    let iupac = props["IUPACName"].as_str().unwrap_or("?");
+    let smiles = props["CanonicalSMILES"].as_str().unwrap_or("?");
+    let iso_smiles = props["IsomericSMILES"].as_str().unwrap_or("?");
+    let xlogp = props["XLogP"].as_f64();
+    let tpsa = props["TPSA"].as_f64();
+    let complexity = props["Complexity"].as_f64();
+    let hbd = props["HBondDonorCount"].as_u64().unwrap_or(0);
+    let hba = props["HBondAcceptorCount"].as_u64().unwrap_or(0);
+    let rotatable = props["RotatableBondCount"].as_u64().unwrap_or(0);
+    let heavy_atoms = props["HeavyAtomCount"].as_u64().unwrap_or(0);
+    let exact_mass = props["ExactMass"].as_f64();
+    let inchikey = props["InChIKey"].as_str().unwrap_or("?");
+
+    let mut out = format!("{}\n\n", tg_header("🧪", "Compound", &format!("{} (CID: {})", query, cid)));
+    out.push_str(&format!("**CID:** `{}` · **Name:** `{}`\n\n", cid, iupac));
+
+    // Description
+    if !description.is_empty() {
+        out.push_str("## 📖 Description\n\n");
+        let desc = description.chars().take(600).collect::<String>();
+        out.push_str(&format!("> {}\n\n", desc));
+    }
+
+    // Molecular Properties
+    out.push_str("## 🔬 Molecular Properties\n\n");
+    out.push_str("| Property | Value |\n|---|---|\n");
+    out.push_str(&format!("| Molecular Formula | `{}` |\n", formula));
+    out.push_str(&format!("| Molecular Weight | `{} g/mol` |\n", weight));
+    if let Some(em) = exact_mass { out.push_str(&format!("| Exact Mass | `{} g/mol` |\n", em)); }
+    out.push_str(&format!("| Heavy Atom Count | `{}` |\n", heavy_atoms));
+    out.push_str(&format!("| Complexity | `{}` |\n", complexity.map(|c| format!("{:.1}", c)).unwrap_or("?".into())));
+    out.push_str(&format!("| Canonical SMILES | `{}` |\n", if smiles.len() > 60 { format!("{}...", &smiles[..60]) } else { smiles.to_string() }));
+    if iso_smiles != smiles { out.push_str(&format!("| Isomeric SMILES | `{}` |\n", if iso_smiles.len() > 60 { format!("{}...", &iso_smiles[..60]) } else { iso_smiles.to_string() })); }
+    out.push_str(&format!("| InChIKey | `{}` |\n", inchikey));
+
+    // Lipinski's Rule of Five (drug-likeness)
+    out.push_str("\n## 💊 Drug-Likeness (Lipinski's Rule of 5)\n\n");
+    out.push_str("| Rule | Value | Threshold | Pass? |\n|---|---|---|---|\n");
+    let mw_pass = weight <= 500.0;
+    let logp_pass = xlogp.unwrap_or(0.0) <= 5.0;
+    let hbd_pass = hbd <= 5;
+    let hba_pass = hba <= 10;
+    out.push_str(&format!("| MW | `{:.1}` | ≤500 | {} |\n", weight, if mw_pass { "✅" } else { "❌" }));
+    out.push_str(&format!("| XLogP | `{}` | ≤5 | {} |\n", xlogp.map(|x| format!("{:.1}", x)).unwrap_or("?".into()), if logp_pass { "✅" } else { "❌" }));
+    out.push_str(&format!("| H-Bond Donors | `{}` | ≤5 | {} |\n", hbd, if hbd_pass { "✅" } else { "❌" }));
+    out.push_str(&format!("| H-Bond Acceptors | `{}` | ≤10 | {} |\n", hba, if hba_pass { "✅" } else { "❌" }));
+    let violations = [!mw_pass, !logp_pass, !hbd_pass, !hba_pass].iter().filter(|&&x| x).count();
+    out.push_str(&format!("\n**{}/4 violations** — {}\n\n", violations, if violations == 0 { "✅ Likely drug-like" } else if violations == 1 { "⚠️ Marginal — may still be bioavailable" } else { "❌ Unlikely to be orally bioavailable" }));
+
+    // Additional descriptors
+    out.push_str("## 📊 Additional Descriptors\n\n");
+    out.push_str("| Descriptor | Value | Significance |\n|---|---|---|\n");
+    if let Some(tp) = tpsa {
+        let permeability = if tp < 60.0 { "Good oral absorption" } else if tp < 90.0 { "Moderate absorption" } else { "Poor absorption" };
+        out.push_str(&format!("| TPSA | `{:.1} Å²` | {} |\n", tp, permeability));
+    }
+    out.push_str(&format!("| Rotatable Bonds | `{}` | {} |\n", rotatable, if rotatable <= 10 { "Good flexibility" } else { "High flexibility — may reduce binding" }));
+    out.push_str(&format!("| Heavy Atoms | `{}` | Size indicator |\n\n", heavy_atoms));
+
+    // Safety
+    if let Some(safety_list) = safety_v["InformationList"]["Information"].as_array() {
+        if !safety_list.is_empty() {
+            out.push_str("## ⚠️ Safety / GHS Hazards\n\n");
+            for s in safety_list.iter().take(5) {
+                if let Some(hazard) = s["HazardStatement"]["Description"].as_str() {
+                    out.push_str(&format!("- 🚨 {}\n", hazard));
+                }
+                if let Some(precaution) = s["PrecautionaryStatement"]["Description"].as_str() {
+                    out.push_str(&format!("  🛡️ {}\n", precaution));
+                }
+            }
+            out.push('\n');
+        }
+    }
+
+    // Pharmacology
+    if let Some(pharma_sections) = pharma_v["Record"]["Section"].as_array() {
+        let pharma_text = pharma_sections.iter()
+            .filter_map(|s| s["Section"].as_array())
+            .flatten()
+            .filter_map(|ss| ss["Information"].as_array())
+            .flatten()
+            .filter_map(|info| info["StringValue"].as_str().or_else(|| info["StringWithMarkup"].as_array().and_then(|a| a.first()).and_then(|m| m["String"].as_str())))
+            .take(3)
+            .collect::<Vec<_>>();
+        if !pharma_text.is_empty() {
+            out.push_str("## 💊 Pharmacology\n\n");
+            for text in &pharma_text {
+                let truncated = text.chars().take(300).collect::<String>();
+                out.push_str(&format!("> {}\n\n", truncated));
+            }
+        }
+    }
+
+    // Classification
+    if let Some(class_sections) = class_v["Record"]["Section"].as_array() {
+        let class_nodes: Vec<String> = class_sections.iter()
+            .filter_map(|s| s["Section"].as_array())
+            .flatten()
+            .filter_map(|ss| ss["Information"].as_array())
+            .flatten()
+            .filter_map(|info| info["StringWithMarkup"].as_array())
+            .flatten()
+            .filter_map(|m| m["String"].as_str())
+            .take(5)
+            .map(|s| format!("- {}", s))
+            .collect();
+        if !class_nodes.is_empty() {
+            out.push_str("## 🏷️ Classification\n\n");
+            out.push_str(&class_nodes.join("\n"));
+            out.push_str("\n\n");
+        }
+    }
+
+    // Links
+    out.push_str("## 🔗 Links\n\n");
+    out.push_str(&format!("- [PubChem CID {}](https://pubchem.ncbi.nlm.nih.gov/compound/{})\n", cid, cid));
+    out.push_str(&format!("- [2D Structure](https://pubchem.ncbi.nlm.nih.gov/compound/{}#section=2D-Structure)\n", cid));
+    out.push_str(&format!("- [3D Conformer](https://pubchem.ncbi.nlm.nih.gov/compound/{}#section=3D-Conformer)\n", cid));
+    out.push_str(&format!("- [Safety Data](https://pubchem.ncbi.nlm.nih.gov/compound/{}#section=Safety-and-Hazards)\n\n", cid));
+
+    out.push_str(&format!("{}\n\n`{}` · #compound #bio #memogram-rs", tg_footer("pubchem.ncbi.nlm.nih.gov", "compound"), now));
+    Ok(out)
+}
+
+async fn fetch_pathway(query: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok("usage: `/pathway <gene or pathway>` — e.g. `/pathway BRCA1`, `/pathway glycolysis`, `/pathway TP53`".into());
+    }
+
+    // Step 1: Search for genes on NCBI
+    let gene_search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&term={}&retmax=5&retmode=json", urlencoding::encode(query));
+    let gene_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&gene_search_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let gene_ids: Vec<String> = gene_v["esearchresult"]["idlist"].as_array()
+        .map(|a| a.iter().filter_map(|id| id.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    // Step 2: Get gene summaries
+    let mut out = format!("{}\n\n", tg_header("🧬", "Gene & Pathway", query));
+
+    if gene_ids.is_empty() {
+        out.push_str("_No genes found. Try: BRCA1, TP53, EGFR, KRAS, CFTR, VEGFA_\n\n");
+    } else {
+        let ids_str = gene_ids.join(",");
+        let summary_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gene&id={}&retmode=json", ids_str);
+        let summary_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&summary_url).header("User-Agent", "memogram-rs").send()).await {
+            Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+            _ => serde_json::Value::Null,
+        };
+
+        if let Some(result) = summary_v["result"].as_object() {
+            for (gid, data) in result {
+                if gid == "uids" { continue; }
+                let name = data["name"].as_str().unwrap_or("?");
+                let symbol = data["name"].as_str().unwrap_or("?");
+                let alias = data["alias"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).take(5).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                let chromo = data["chromosome"].as_str().unwrap_or("?");
+                let map_loc = data["maplocation"].as_str().unwrap_or("?");
+                let desc = data["description"].as_str().unwrap_or("");
+                let gene_type = data["type_of_gene"].as_str().unwrap_or("?");
+                let summary_text = data["summary"].as_str().unwrap_or("");
+
+                out.push_str(&format!("## 🧬 {} ({})\n\n", symbol, gid));
+                out.push_str("| Property | Value |\n|---|---|\n");
+                out.push_str(&format!("| Full Name | {} |\n", desc));
+                out.push_str(&format!("| Gene Type | `{}` |\n", gene_type));
+                out.push_str(&format!("| Chromosome | `{}` |\n", chromo));
+                out.push_str(&format!("| Map Location | `{}` |\n", map_loc));
+                if !alias.is_empty() {
+                    out.push_str(&format!("| Aliases | `{}` |\n", alias));
+                }
+                out.push('\n');
+
+                if !summary_text.is_empty() {
+                    out.push_str(&format!("> {}\n\n", summary_text.chars().take(500).collect::<String>()));
+                }
+
+                // Step 3: Get pathways from Reactome
+                let reactome_url = format!("https://reactome.org/ContentService/search/query?query={}&types=Pathway&species=Homo+sapiens&cluster=true&page=1&pageSize=5", urlencoding::encode(name));
+                let reactome_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&reactome_url).header("User-Agent", "memogram-rs").send()).await {
+                    Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+                    _ => serde_json::Value::Null,
+                };
+                if let Some(entries) = reactome_v["results"].as_array() {
+                    if !entries.is_empty() {
+                        out.push_str("## 🔗 Reactome Pathways\n\n");
+                        out.push_str("| Pathway | Species | ID |\n|---|---|---|\n");
+                        for entry in entries.iter().take(5) {
+                            let pw_name = entry["name"].as_str().unwrap_or("?");
+                            let species = entry["species"].as_array().and_then(|a| a.first()).and_then(|s| s["name"].as_str()).unwrap_or("?");
+                            let db_id = entry["dbId"].as_str().unwrap_or("?");
+                            let pw_url = format!("[{}](https://reactome.org/content/detail/{})", pw_name, db_id);
+                            out.push_str(&format!("| {} | {} | {} |\n", pw_url, species, db_id));
+                        }
+                        out.push('\n');
+                    }
+                }
+
+                // Step 4: Get GO annotations
+                let go_url = format!("https://rest.uniprot.org/uniprotkb/search?query=gene:{}+AND+organism_id:9606&format=json&size=1", urlencoding::encode(name));
+                let go_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&go_url).header("User-Agent", "memogram-rs").send()).await {
+                    Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+                    _ => serde_json::Value::Null,
+                };
+                if let Some(results) = go_v["results"].as_array() {
+                    if let Some(entry) = results.first() {
+                        let accession = entry["primaryAccession"].as_str().unwrap_or("?");
+                        let protein = entry["proteinDescription"]["recommendedName"]["fullName"]["value"].as_str()
+                            .or_else(|| entry["proteinDescription"]["submissionNames"].as_array().and_then(|a| a.first()).and_then(|n| n["fullName"]["value"].as_str()))
+                            .unwrap_or("?");
+                        let go_terms: Vec<String> = entry["uniProtKBCrossReferences"].as_array()
+                            .map(|a| a.iter()
+                                .filter(|x| x["database"].as_str() == Some("GO"))
+                                .filter_map(|x| x["properties"].as_array().and_then(|p| p.first()).and_then(|pp| pp["value"].as_str()))
+                                .take(5)
+                                .map(|s| format!("`{}`", s))
+                                .collect())
+                            .unwrap_or_default();
+
+                        out.push_str("## 🧪 UniProt Protein\n\n");
+                        out.push_str(&format!("**Accession:** [{}](https://www.uniprot.org/uniprot/{})\n", accession, accession));
+                        out.push_str(&format!("**Protein:** {}\n\n", protein));
+                        if !go_terms.is_empty() {
+                            out.push_str(&format!("**GO Terms:** {}\n\n", go_terms.join(" · ")));
+                        }
+                    }
+                }
+
+                out.push_str(&format!("🔗 [Gene {} on NCBI](https://www.ncbi.nlm.nih.gov/gene/{})\n\n", gid, gid));
+            }
+        }
+    }
+
+    out.push_str(&format!("{}\n\n`{}` · #pathway #bio #memogram-rs", tg_footer("ncbi + reactome + uniprot", "pathway"), now));
     Ok(out)
 }
 
