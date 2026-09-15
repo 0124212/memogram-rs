@@ -49,7 +49,6 @@ enum Command {
     Summarize(String),
     Save(String),
     Pubmed(String),
-    Ip(String),
     Freelance(String),
     Flashback(String),
     Compound(String),
@@ -66,9 +65,6 @@ enum Command {
     Meal(String),
     Breathe(String),
     Calories(String),
-    Dns(String),
-    Json(String),
-    Regex(String),
     Http(String),
     Wind(String),
     Uv(String),
@@ -91,10 +87,6 @@ enum Command {
     Note(String),
     Flashcard(String),
     Concept(String),
-    Species(String),
-    Prereqs(String),
-    Mcat(String),
-    Molecule(String),
     Pathway(String),
     Scholar(String),
     Reddit(String),
@@ -194,11 +186,12 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "alerts".into(), description: "price alerts".into() },
         teloxide::types::BotCommand { command: "markets".into(), description: "market indices".into() },
         teloxide::types::BotCommand { command: "translate".into(), description: "translate text".into() },
-        teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
-        teloxide::types::BotCommand { command: "json".into(), description: "pretty-print JSON".into() },
-        teloxide::types::BotCommand { command: "regex".into(), description: "regex tester".into() },
+        teloxide::types::BotCommand { command: "man".into(), description: "Linux man page".into() },
+        teloxide::types::BotCommand { command: "css".into(), description: "CSS property reference".into() },
+        teloxide::types::BotCommand { command: "html".into(), description: "HTML element reference".into() },
+        teloxide::types::BotCommand { command: "astro".into(), description: "Astro docs".into() },
         teloxide::types::BotCommand { command: "http".into(), description: "HTTP request inspector".into() },
-        teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup".into() },
+        teloxide::types::BotCommand { command: "grep".into(), description: "grep/ripgrep patterns".into() },
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
@@ -250,10 +243,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "todo".into(), description: "Vikunja task".into() },
         teloxide::types::BotCommand { command: "lobsters".into(), description: "lobste.rs top stories".into() },
         teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt today".into() },
-        teloxide::types::BotCommand { command: "species".into(), description: "taxonomy lookup".into() },
-        teloxide::types::BotCommand { command: "prereqs".into(), description: "health prof prereqs".into() },
-        teloxide::types::BotCommand { command: "mcat".into(), description: "MCAT study guide".into() },
-        teloxide::types::BotCommand { command: "molecule".into(), description: "PubChem compound lookup".into() },
         teloxide::types::BotCommand { command: "pathway".into(), description: "KEGG pathway + gene lookup".into() },
         teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "subreddit top posts".into() },
@@ -311,7 +300,11 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Fx(pair) => { let txt = fetch_fx(&pair).await.unwrap_or_else(|e| format!("fx err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
-        Command::Containers => { let txt = fetch_containers(&app.memos_url).await.unwrap_or_else(|e| format!("containers err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Man(cmd) => { let txt = fetch_man(&cmd).await.unwrap_or_else(|e| format!("man err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Css(prop) => { let txt = fetch_css(&prop).await.unwrap_or_else(|e| format!("css err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Html(elem) => { let txt = fetch_html(&elem).await.unwrap_or_else(|e| format!("html err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Astro(topic) => { let txt = fetch_astro(&topic).await.unwrap_or_else(|e| format!("astro err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Grep(pattern) => { let txt = fetch_grep(&pattern).await.unwrap_or_else(|e| format!("grep err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Arxiv(topic) => { let txt = fetch_arxiv(&topic).await.unwrap_or_else(|e| format!("arxiv err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
@@ -358,7 +351,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Book(args) => { let txt = fetch_book(&args).await.unwrap_or_else(|e| format!("book err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Ip(ip) => { let txt = fetch_ip(&ip).await.unwrap_or_else(|e| format!("ip err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
@@ -384,9 +376,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Youtube(url) => { let txt = fetch_youtube(&url).await.unwrap_or_else(|e| format!("youtube err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Learn(topic) => { let txt = fetch_learn(&topic).await.unwrap_or_else(|e| format!("learn err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Dns(domain) => { let txt = fetch_dns(&domain).await.unwrap_or_else(|e| format!("dns err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Json(text) => { let txt = create_json(&text); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Regex(args) => { let txt = create_regex(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Http(url) => { let txt = fetch_http(&url).await.unwrap_or_else(|e| format!("http err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Wind(loc) => { let txt = fetch_wind(&loc).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Uv(loc) => { let txt = fetch_uv(&loc).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
@@ -399,10 +388,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Lobsters => { let txt = fetch_lobsters().await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Species(q) => { let txt = fetch_species(&q).await.unwrap_or_else(|e| format!("species err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Prereqs(track) => { let txt = create_prereqs(&track); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Mcat(topic) => { let txt = fetch_mcat(&topic).await.unwrap_or_else(|e| format!("mcat err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Molecule(q) => { let txt = fetch_compound(&q).await.unwrap_or_else(|e| format!("molecule err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Pathway(q) => { let txt = fetch_pathway(&q).await.unwrap_or_else(|e| format!("pathway err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
@@ -4807,6 +4792,139 @@ async fn fetch_http(url: &str) -> Result<String> {
     }
 
     out.push_str(&format!("{}\n\n`{}` · #http #dev #memogram-rs", tg_footer("memogram-rs", "http"), now));
+    Ok(out)
+}
+
+// === DEV: LINUX + WEB FRAMEWORK TOOLS ===
+
+async fn fetch_man(cmd: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let cmd = cmd.trim().to_string();
+    if cmd.is_empty() { return Ok("usage: `/man <command>` — e.g. `/man grep`, `/man ssh`, `/man docker`".into()); }
+    let cheat_url = format!("https://cheat.sh/{}", urlencoding::encode(&cmd));
+    let cheat_body = HTTP.get(&cheat_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
+    let tldr_url = format!("https://cheat.sh/tldr/{}", urlencoding::encode(&cmd));
+    let tldr_body = HTTP.get(&tldr_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(5)).send().await?.text().await.unwrap_or_default();
+    let mut out = format!("{}\n\n", tg_header("📖", "Linux Command", &cmd));
+    if !tldr_body.trim().is_empty() && !tldr_body.contains("Sorry") {
+        out.push_str("## 📋 Quick Reference\n\n");
+        out.push_str(&format!("```\n{}\n```\n\n", tldr_body.chars().take(2000).collect::<String>()));
+    }
+    if !cheat_body.trim().is_empty() && !cheat_body.contains("Sorry") && cheat_body != tldr_body {
+        out.push_str("## 📖 Detailed Examples\n\n");
+        out.push_str(&format!("```\n{}\n```\n\n", cheat_body.chars().take(3000).collect::<String>()));
+    }
+    if cheat_body.is_empty() && tldr_body.is_empty() {
+        out.push_str("_No manual found._\n\n**Popular:** `ls`, `grep`, `find`, `awk`, `sed`, `curl`, `ssh`, `docker`, `git`, `vim`, `tmux`\n\n");
+    }
+    out.push_str(&format!("🔗 [man7.org](https://man7.org/linux/man-pages/man1/{}.1.html)\n\n", cmd));
+    out.push_str(&format!("{}\n\n`{}` · #man #dev #memogram-rs", tg_footer("cheat.sh", "man"), now));
+    Ok(out)
+}
+
+async fn fetch_css(prop: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let prop = prop.trim().to_string();
+    if prop.is_empty() { return Ok("usage: `/css <property>` — e.g. `/css flexbox`, `/css grid`, `/css position`".into()); }
+    let url = format!("https://developer.mozilla.org/en-US/search?q={}&locale=en-US&topic=css", urlencoding::encode(&prop));
+    let search_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let mut out = format!("{}\n\n", tg_header("🎨", "CSS Reference", &prop));
+    let docs = search_v["documents"].as_array().cloned().unwrap_or_default();
+    if !docs.is_empty() {
+        for doc in docs.iter().take(3) {
+            let title = doc["title"].as_str().unwrap_or("?");
+            let summary = doc["summary"].as_str().unwrap_or("");
+            let mdn_url = doc["url"].as_str().unwrap_or("#");
+            out.push_str(&format!("### 📄 {}\n\n> {}\n\n🔗 [MDN Docs]({})\n\n", title, summary.chars().take(200).collect::<String>(), mdn_url));
+        }
+    } else {
+        out.push_str("_No results. Try: `flexbox`, `grid`, `position`, `animation`, `transform`, `variables`_\n\n");
+        out.push_str("**Popular:** `display`, `position`, `flex`, `grid`, `gap`, `margin`, `padding`, `color`, `background`, `border`, `transition`, `transform`\n\n");
+    }
+    out.push_str(&format!("{}\n\n`{}` · #css #dev #memogram-rs", tg_footer("developer.mozilla.org", "css"), now));
+    Ok(out)
+}
+
+async fn fetch_html(elem: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let elem = elem.trim().to_string();
+    if elem.is_empty() { return Ok("usage: `/html <element>` — e.g. `/html div`, `/html form`, `/html canvas`".into()); }
+    let url = format!("https://developer.mozilla.org/en-US/search?q={}&locale=en-US&topic=html", urlencoding::encode(&elem));
+    let search_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let mut out = format!("{}\n\n", tg_header("📄", "HTML Reference", &elem));
+    let docs = search_v["documents"].as_array().cloned().unwrap_or_default();
+    if !docs.is_empty() {
+        for doc in docs.iter().take(3) {
+            let title = doc["title"].as_str().unwrap_or("?");
+            let summary = doc["summary"].as_str().unwrap_or("");
+            let mdn_url = doc["url"].as_str().unwrap_or("#");
+            out.push_str(&format!("### 📄 {}\n\n> {}\n\n🔗 [MDN Docs]({})\n\n", title, summary.chars().take(200).collect::<String>(), mdn_url));
+        }
+    } else {
+        out.push_str("_No results. Try: `div`, `form`, `input`, `table`, `video`, `canvas`, `dialog`_\n\n");
+        out.push_str("**Popular:** `div`, `span`, `a`, `img`, `form`, `input`, `button`, `table`, `section`, `header`, `nav`, `article`\n\n");
+    }
+    out.push_str(&format!("{}\n\n`{}` · #html #dev #memogram-rs", tg_footer("developer.mozilla.org", "html"), now));
+    Ok(out)
+}
+
+async fn fetch_astro(topic: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let topic = topic.trim().to_string();
+    if topic.is_empty() { return Ok("usage: `/astro <topic>` — e.g. `/astro components`, `/astro islands`, `/astro deploy`".into()); }
+    let docs_base = "https://docs.astro.build";
+    let topic_map: std::collections::HashMap<&str, (&str, &str)> = [
+        ("components", ("components", "Build reusable UI components")),
+        ("islands", ("concepts/islands", "Partial hydration — interactive UI in static pages")),
+        ("layouts", ("core-concepts/layouts", "Shared page layouts and wrappers")),
+        ("pages", ("core-concepts/routing", "File-based routing and page creation")),
+        ("styles", ("guides/styling", "CSS styling in Astro")),
+        ("deploy", ("guides/deploy", "Deploy to Vercel, Netlify, Cloudflare")),
+        ("content", ("guides/content-collections", "Type-safe content collections")),
+        ("ssr", ("guides/server-side-rendering", "Server-side and hybrid rendering")),
+        ("api", ("guides/api-routes", "API endpoints")),
+        ("config", ("reference/configuration-reference", "astro.config.mjs reference")),
+        ("typescript", ("guides/typescript", "TypeScript support")),
+        ("markdown", ("guides/markdown-content", "Markdown and MDX")),
+        ("images", ("guides/images", "Image optimization")),
+        ("data", ("guides/data-fetching", "Data fetching")),
+        ("middleware", ("guides/middleware", "Request middleware")),
+        ("testing", ("guides/testing", "Testing components")),
+        ("security", ("guides/security", "Security best practices")),
+    ].iter().cloned().collect();
+    let mut out = format!("{}\n\n", tg_header("🚀", "Astro Docs", &topic));
+    let topic_lower = topic.to_lowercase();
+    if let Some((path, desc)) = topic_map.get(topic_lower.as_str()) {
+        out.push_str(&format!("## 📚 {}\n\n> {}\n\n🔗 [Read the docs]({}/{})\n\n", path, desc, docs_base, path));
+    }
+    out.push_str("## 🗂️ All Topics\n\n| Topic | Description |\n|---|---|\n");
+    for (t, (path, desc)) in &topic_map {
+        out.push_str(&format!("| `{}` | {} |\n", t, desc));
+    }
+    out.push_str(&format!("\n🔗 [Astro Docs Home]({})\n\n", docs_base));
+    out.push_str(&format!("{}\n\n`{}` · #astro #dev #memogram-rs", tg_footer("docs.astro.build", "astro"), now));
+    Ok(out)
+}
+
+async fn fetch_grep(pattern: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let pattern = pattern.trim().to_string();
+    if pattern.is_empty() { return Ok("usage: `/grep <pattern>` — ripgrep/awk/sed cheat sheet\n\nExamples:\n- `/grep find files`\n- `/grep docker compose`\n- `/grep git rebase`\n- `/grep awk fields`".into()); }
+    let url = format!("https://cheat.sh/{}", urlencoding::encode(&pattern));
+    let body = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
+    let mut out = format!("{}\n\n", tg_header("🔍", "Search Patterns", &pattern));
+    if !body.trim().is_empty() && !body.contains("Sorry") {
+        out.push_str(&format!("```\n{}\n```\n\n", body.chars().take(3000).collect::<String>()));
+    } else {
+        out.push_str("_No patterns found._\n\n**Common:** `grep recursive`, `grep ignore case`, `ripgrep exclude`, `awk fields`, `sed replace`, `find files`\n\n");
+    }
+    out.push_str(&format!("{}\n\n`{}` · #grep #dev #memogram-rs", tg_footer("cheat.sh", "grep"), now));
     Ok(out)
 }
 
