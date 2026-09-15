@@ -5441,10 +5441,12 @@ async fn fetch_quote_wellness() -> Result<String> {
     // Fetch 3 quotes to make a rich doc
     let mut quotes: Vec<(String, String)> = Vec::new();
     for _ in 0..3 {
-        if let Ok(v) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").send()).await {
-            if let Ok(Ok(r)) = v { if let Ok(arr) = r.json::<serde_json::Value>().await { if let Some(q) = arr.as_array().and_then(|a| a.first()) {
-                quotes.push((q["q"].as_str().unwrap_or("").to_string(), q["a"].as_str().unwrap_or("Unknown").to_string()));
-            }}}
+        if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").send()).await {
+            if let Ok(arr) = r.json::<serde_json::Value>().await {
+                if let Some(q) = arr.as_array().and_then(|a| a.first()) {
+                    quotes.push((q["q"].as_str().unwrap_or("").to_string(), q["a"].as_str().unwrap_or("Unknown").to_string()));
+                }
+            }
         }
     }
     if quotes.is_empty() {
