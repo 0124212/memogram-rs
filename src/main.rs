@@ -22,7 +22,6 @@ enum Command {
     Memos,
     Streak,
     Hn,
-    Weather(String),
     Define(String),
     Wiki(String),
     Gh(String),
@@ -61,17 +60,18 @@ enum Command {
     Learn(String),
     Workout(String),
     Recipe(String),
-    Nutrition(String),
-    Meal(String),
+    Stoic,
+    Mind(String),
     Posture(String),
     Calories(String),
     Http(String),
-    Wind(String),
-    Uv(String),
-    Moon,
-    Pollen(String),
-    Snow(String),
-    Tide(String),
+    Chord(String),
+    Scale(String),
+    Progress(String),
+    Circle,
+    Song(String),
+    Artist(String),
+    Tempo(String),
     Project(String),
     Todo(String),
     Lobsters,
@@ -179,7 +179,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "search".into(), description: "search memos".into() },
         teloxide::types::BotCommand { command: "hn".into(), description: "HackerNews top 5".into() },
         teloxide::types::BotCommand { command: "arxiv".into(), description: "arXiv latest papers".into() },
-        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city>".into() },
+        teloxide::types::BotCommand { command: "chord".into(), description: "chord notes + fingering".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
         teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
         teloxide::types::BotCommand { command: "gh".into(), description: "GitHub search/repo".into() },
@@ -228,8 +228,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
         teloxide::types::BotCommand { command: "recipe".into(), description: "healthy recipe <diet>".into() },
-        teloxide::types::BotCommand { command: "nutrition".into(), description: "full nutrient breakdown".into() },
-        teloxide::types::BotCommand { command: "meal".into(), description: "recipe card <cuisine>".into() },
+        teloxide::types::BotCommand { command: "stoic".into(), description: "stoic wisdom + reflection".into() },
+        teloxide::types::BotCommand { command: "mind".into(), description: "CBT thought record".into() },
         teloxide::types::BotCommand { command: "posture".into(), description: "posture correction <issue>".into() },
         teloxide::types::BotCommand { command: "calories".into(), description: "calories burned <activity> <min>".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "PubMed papers".into() },
@@ -237,12 +237,12 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
         teloxide::types::BotCommand { command: "youtube".into(), description: "summarize video".into() },
         teloxide::types::BotCommand { command: "learn".into(), description: "learning overview".into() },
-        teloxide::types::BotCommand { command: "wind".into(), description: "wind forecast".into() },
-        teloxide::types::BotCommand { command: "uv".into(), description: "UV index".into() },
-        teloxide::types::BotCommand { command: "moon".into(), description: "moon phase".into() },
-        teloxide::types::BotCommand { command: "pollen".into(), description: "pollen forecast".into() },
-        teloxide::types::BotCommand { command: "snow".into(), description: "snow report".into() },
-        teloxide::types::BotCommand { command: "tide".into(), description: "tide schedule".into() },
+        teloxide::types::BotCommand { command: "scale".into(), description: "scale notes + formula".into() },
+        teloxide::types::BotCommand { command: "progress".into(), description: "chord progressions in key".into() },
+        teloxide::types::BotCommand { command: "circle".into(), description: "circle of fifths".into() },
+        teloxide::types::BotCommand { command: "song".into(), description: "song lookup (MusicBrainz)".into() },
+        teloxide::types::BotCommand { command: "artist".into(), description: "artist lookup (MusicBrainz)".into() },
+        teloxide::types::BotCommand { command: "tempo".into(), description: "BPM → delay times".into() },
         teloxide::types::BotCommand { command: "project".into(), description: "Vikunja project".into() },
         teloxide::types::BotCommand { command: "todo".into(), description: "Vikunja task".into() },
         teloxide::types::BotCommand { command: "lobsters".into(), description: "lobste.rs top stories".into() },
@@ -299,11 +299,13 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             bot.send_message(msg.chat.id, res).await?;
         }
         Command::Hn => { let txt = fetch_hn().await.unwrap_or_else(|e| format!("hn err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
-        Command::Weather(city) => {
-            let c = if city.trim().is_empty() { "Thousand Oaks, CA".to_string() } else { city };
-            let txt = fetch_weather(&c).await.unwrap_or_else(|e| format!("weather err: {e}"));
-            create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?;
-        }
+        Command::Chord(name) => { let txt = fetch_chord(&name); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Scale(name) => { let txt = fetch_scale(&name); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Progress(key) => { let txt = fetch_progress(&key); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Circle => { let txt = fetch_circle(); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Song(title) => { let txt = fetch_song(&title).await.unwrap_or_else(|e| format!("song err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Artist(name) => { let txt = fetch_artist(&name).await.unwrap_or_else(|e| format!("artist err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Tempo(args) => { let txt = fetch_tempo(&args); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Define(w) => { let txt = fetch_define(&w).await.unwrap_or_else(|e| format!("define err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
@@ -327,7 +329,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_streak(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("streak err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?;
         }
         Command::Remind(args) => { let txt = set_reminder(&args, &app).await; bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Portfolio(args) => {
@@ -343,7 +345,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_inbox(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("inbox err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?;
         }
         Command::Undo => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -364,12 +366,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Workout(q) => { let txt = fetch_workout(&q).await.unwrap_or_else(|e| format!("workout err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Nutrition(q) => { let txt = fetch_nutrition(&q, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("nutrition err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Meal(q) => { let txt = fetch_meal(&q).await.unwrap_or_else(|e| format!("meal err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Stoic => { let txt = fetch_stoic().await.unwrap_or_else(|e| format!("stoic err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Mind(topic) => { let txt = fetch_mind(&topic); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Posture(args) => { let txt = fetch_posture(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Calories(args) => { let txt = fetch_calories(&args, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("calories err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
+        Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Save(args) => { let txt = fetch_save(&args).await.unwrap_or_else(|e| format!("save err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         
@@ -380,22 +382,16 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_digest(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("digest err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?;
         }
         Command::Youtube(url) => { let txt = fetch_youtube(&url).await.unwrap_or_else(|e| format!("youtube err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Learn(topic) => { let txt = fetch_learn(&topic).await.unwrap_or_else(|e| format!("learn err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Http(url) => { let txt = fetch_http(&url).await.unwrap_or_else(|e| format!("http err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Wind(loc) => { let txt = fetch_wind(&loc).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Uv(loc) => { let txt = fetch_uv(&loc).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Moon => { let txt = fetch_moon("").await.unwrap_or_else(|e| format!("moon err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Pollen(loc) => { let txt = fetch_pollen(&loc).await.unwrap_or_else(|e| format!("pollen err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Snow(loc) => { let txt = fetch_snow(&loc).await.unwrap_or_else(|e| format!("snow err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Tide(loc) => { let txt = fetch_tide(&loc).await.unwrap_or_else(|e| format!("tide err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Project(args) => { let txt = vikunja_project(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Todo(args) => { let txt = vikunja_todo(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Project(args) => { let txt = vikunja_project(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
+        Command::Todo(args) => { let txt = vikunja_todo(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
         Command::Lobsters => { let txt = fetch_lobsters().await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
-        Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
         Command::Pathway(q) => { let txt = fetch_pathway(&q).await.unwrap_or_else(|e| format!("pathway err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Molecule(q) => { let txt = fetch_compound(&q).await.unwrap_or_else(|e| format!("molecule err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Amino(code) => { let txt = fetch_amino(&code); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
@@ -404,24 +400,24 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
-        Command::Habit(args) => { let txt = fetch_habit(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Quote => { let txt = fetch_quote_wellness().await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Read(url) => { let txt = fetch_read_url(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Habit(args) => { let txt = fetch_habit(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
+        Command::Quote => { let txt = fetch_quote_wellness().await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?; }
+        Command::Read(url) => { let txt = fetch_read_url(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?; }
         Command::Queue => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_queue(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("queue err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?;
         }
         Command::Review => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_review(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("review err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+            create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?;
         }
         Command::Clip(url) => { let txt = fetch_clip(&url).await.unwrap_or_else(|e| format!("clip err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Note(args) => { let txt = create_note_smart(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Focus(args) => { let txt = set_focus(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Focus(args) => { let txt = set_focus(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
         Command::Flashcard(args) => { let txt = create_flashcard(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Concept(topic) => { let txt = fetch_concept(&topic, &app).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Flashback(topic) => {
@@ -2128,7 +2124,7 @@ fn create_review(args: &str) -> String {
         .blank()
         .push("> _Tip: Review weekly. Keep wins visible, gaps actionable._")
         .blank()
-        .push(&format!("{}\n\n`{}` · #review #planning", tg_footer("memogram", "review"), now))
+        .push(&format!("{}\n\n`{}` · #review #tasks", tg_footer("memogram", "review"), now))
         .build()
 }
 
@@ -2163,7 +2159,7 @@ fn create_project(args: &str) -> String {
     let desc = parts.get(1).unwrap_or(&"");
     let date = Local::now().format("%Y-%m-%d").to_string();
     format!(
-        "# Project: {name}\n\n**Created:** {date}\n**Status:** 🟡 In Progress\n\n## Goal\n{desc}\n\n## Tasks\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Timeline\n- **Week 1:** \n- **Week 2:** \n\n#project #planning",
+        "# Project: {name}\n\n**Created:** {date}\n**Status:** 🟡 In Progress\n\n## Goal\n{desc}\n\n## Tasks\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Timeline\n- **Week 1:** \n- **Week 2:** \n\n#project #tasks",
         name = name, date = date, desc = desc
     )
 }
@@ -2785,55 +2781,94 @@ async fn fetch_nutrition(query: &str, api_key: &str) -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_meal(query: &str) -> Result<String> {
+
+async fn fetch_stoic() -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let query = query.trim();
-    if query.is_empty() { return Ok("usage: `/meal <cuisine or dish>` — e.g. `/meal italian`, `/meal chicken`".into()); }
-
-    let url = format!("https://www.themealdb.com/api/json/v1/1/search.php?s={}", urlencoding::encode(query));
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-
-    let meals = v["meals"].as_array().ok_or_else(|| anyhow::anyhow!("no meals"))?;
-    if meals.is_empty() || meals[0].is_null() {
-        return Ok(format!("{}\n\n_No meals found for `{}`_\n\n> Try: `chicken`, `pasta`, `curry`, `salad`, `mexican`\n\n{}\n\n`{}` · #meal #wellness #memogram-rs",
-            tg_header("🍽️", "Recipe", query), query, tg_footer("themealdb.com", "meal"), now));
-    }
-
-    let meal = &meals[0];
-    let name = meal["strMeal"].as_str().unwrap_or("?");
-    let category = meal["strCategory"].as_str().unwrap_or("?");
-    let area = meal["strArea"].as_str().unwrap_or("?");
-    let instructions = meal["strInstructions"].as_str().unwrap_or("");
-    let tags = meal["strTags"].as_str().unwrap_or("None");
-    let youtube = meal["strYoutube"].as_str().unwrap_or("");
-
-    let mut out = format!("{}\n\n", tg_header("🍽️", name, area));
-    out.push_str(&format!("**Category:** `{}` · **Cuisine:** `{}` · **Tags:** `{}`\n\n", category, area, tags));
-
-    // Ingredients table
-    out.push_str("## 📋 Ingredients\n\n");
-    out.push_str("| Ingredient | Measure |\n|---|---|\n");
-    for i in 1..=20 {
-        let ingredient = meal[&format!("strIngredient{}", i)].as_str().unwrap_or("").trim();
-        let measure = meal[&format!("strMeasure{}", i)].as_str().unwrap_or("").trim();
-        if !ingredient.is_empty() {
-            out.push_str(&format!("| {} | {} |\n", ingredient, measure));
+    // Live quotes from ZenQuotes (256 curated figures: Aurelius, Seneca, Epictetus, Lao Tzu)
+    let mut quotes: Vec<(String, String)> = Vec::new();
+    for _ in 0..3 {
+        if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").send()).await {
+            if let Ok(arr) = r.json::<serde_json::Value>().await {
+                if let Some(q) = arr.as_array().and_then(|a| a.first()) {
+                    quotes.push((q["q"].as_str().unwrap_or("").to_string(), q["a"].as_str().unwrap_or("Unknown").to_string()));
+                }
+            }
         }
     }
-    out.push('\n');
-
-    // Instructions
-    out.push_str("## 🔪 Instructions\n\n");
-    for (i, step) in instructions.split("\r\n").filter(|s| !s.trim().is_empty()).enumerate() {
-        out.push_str(&format!("{}. {}\n\n", i + 1, step.trim()));
+    if quotes.is_empty() {
+        quotes.push(("The impediment to action advances action. What stands in the way becomes the way.".into(), "Marcus Aurelius".into()));
+        quotes.push(("We suffer more often in imagination than in reality.".into(), "Seneca".into()));
+        quotes.push(("No man is free who is not master of himself.".into(), "Epictetus".into()));
     }
-
-    if !youtube.is_empty() {
-        out.push_str(&format!("🎬 [Video Tutorial]({})\n\n", youtube));
+    let (quote, author) = &quotes[0];
+    let mut out = format!("{}\n\n", tg_header("🏛️", "Stoic Wisdom", author));
+    out.push_str("## 💬 Today's Passage\n\n");
+    out.push_str(&format!("> _\"{}\"_\n\n— **{}**\n\n", quote, author));
+    // Stoic source context
+    let context = match author.to_lowercase().as_str() {
+        a if a.contains("aurelius") => "Meditations — personal journal of Rome's philosopher-emperor (161–180 AD), never meant for publication.",
+        a if a.contains("seneca") => "Letters to Lucilius — 124 letters on ethics, time, and death (c. 65 AD).",
+        a if a.contains("epictetus") => "Discourses via Arrian — a freed slave's lectures on what is / isn't in our control.",
+        a if a.contains("lao") => "Tao Te Ching — c. 6th century BC foundation of Taoist thought on effortless action.",
+        _ => "Stoic and adjacent wisdom tradition — focus on what you control, accept what you don't.",
+    };
+    out.push_str("## 📚 Source Context\n\n");
+    out.push_str(&format!("> {}\n\n", context));
+    out.push_str("## 🪞 The Dichotomy of Control\n\n");
+    out.push_str("| In your control | Not in your control |\n|---|---|\n");
+    out.push_str("| Your judgments | Other people's opinions |\n");
+    out.push_str("| Your actions | Outcomes |\n");
+    out.push_str("| Your responses | The past |\n\n");
+    if quotes.len() > 1 {
+        out.push_str("## 📖 More to Sit With\n\n");
+        for (q, a) in &quotes[1..] {
+            out.push_str(&format!("> _\"{}\"_\n> — **{}**\n\n", q, a));
+        }
     }
-
-    out.push_str(&format!("{}\n\n`{}` · #meal #wellness #memogram-rs", tg_footer("themealdb.com", "meal"), now));
+    out.push_str("## ✍️ Reflection\n\n");
+    out.push_str("1. What is one thing bothering you that is outside your control?\n");
+    out.push_str("2. What is one action fully inside your control today?\n");
+    out.push_str("3. What would you do differently if you accepted #1 completely?\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #stoic #wellness #memogram-rs", tg_footer("zenquotes.io", "stoic"), now));
     Ok(out)
+}
+
+fn fetch_mind(topic: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let topic = topic.trim().to_string();
+    let mut out = format!("{}\n\n", tg_header("🧠", "CBT Thought Record", if topic.is_empty() { "new entry" } else { &topic }));
+    out.push_str("**Framework:** Cognitive Behavioral Therapy thought record (Beck Institute). Evidence-based for anxiety and low mood.\n\n");
+    if !topic.is_empty() {
+        out.push_str(&format!("**Situation:** {}\n\n", topic));
+    } else {
+        out.push_str("**Situation:** _(run `/mind <what happened>` to pre-fill this)_\n\n");
+    }
+    out.push_str("## 1️⃣ Automatic Thought\n\n");
+    out.push_str("- What went through your mind? _Write it raw, no filter._\n\n");
+    out.push_str("## 2️⃣ Emotion Check\n\n");
+    out.push_str("| Emotion | Intensity (0-100) |\n|---|---|\n");
+    out.push_str("| Anxious |  |\n");
+    out.push_str("| Sad |  |\n");
+    out.push_str("| Angry |  |\n");
+    out.push_str("| Ashamed |  |\n\n");
+    out.push_str("## 3️⃣ Evidence\n\n");
+    out.push_str("| For the thought | Against the thought |\n|---|---|\n");
+    out.push_str("|  |  |\n");
+    out.push_str("|  |  |\n\n");
+    out.push_str("## 4️⃣ Cognitive Distortions (check any)\n\n");
+    out.push_str("- [ ] Catastrophizing — assuming the worst\n");
+    out.push_str("- [ ] Mind reading — assuming you know what others think\n");
+    out.push_str("- [ ] All-or-nothing — no middle ground\n");
+    out.push_str("- [ ] Should statements — rigid rules for yourself\n");
+    out.push_str("- [ ] Discounting positives — good doesn't count\n\n");
+    out.push_str("## 5️⃣ Balanced Thought\n\n");
+    out.push_str("- _Rewrite the original thought more fairly:_\n\n");
+    out.push_str("## 6️⃣ Re-rate\n\n");
+    out.push_str("| Emotion | Before | After |\n|---|---|---|\n");
+    out.push_str("|  | /100 | /100 |\n\n");
+    out.push_str("> Complete the record, then re-read it tomorrow with `/review`. Patterns emerge over weeks, not days.\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #mind #wellness #memogram-rs", tg_footer("CBT thought record (Beck Institute)", "mind"), now));
+    out
 }
 
 fn create_breathe(args: &str) -> String {
@@ -4957,6 +4992,414 @@ async fn fetch_grep(pattern: &str) -> Result<String> {
     Ok(out)
 }
 
+// === MUSIC: THEORY ENGINE + MUSICBRAINZ ===
+
+const NOTE_NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+fn note_index(name: &str) -> Option<usize> {
+    let n = name.trim().to_uppercase().replace("DB", "C#").replace("EB", "D#").replace("GB", "F#").replace("AB", "G#").replace("BB", "A#");
+    NOTE_NAMES.iter().position(|x| *x == n)
+}
+
+fn note_at(root_idx: usize, offset: usize) -> &'static str {
+    NOTE_NAMES[(root_idx + offset) % 12]
+}
+
+/// Parse "Am7" -> (root_idx, quality_key). Returns (idx, normalized_quality).
+fn parse_chord(input: &str) -> Option<(usize, String)> {
+    let s = input.trim();
+    if s.is_empty() { return None; }
+    let chars: Vec<char> = s.chars().collect();
+    let root_letter = chars[0].to_ascii_uppercase();
+    if !"ABCDEFG".contains(root_letter) { return None; }
+    let mut root = root_letter.to_string();
+    let mut rest_start = 1;
+    if chars.len() > 1 && (chars[1] == '#' || chars[1] == 'b' || chars[1] == '♯' || chars[1] == '♭') {
+        root.push(if chars[1] == 'b' || chars[1] == '♭' { 'b' } else { '#' });
+        rest_start = 2;
+    }
+    let idx = note_index(&root)?;
+    let quality: String = chars[rest_start..].iter().collect::<String>().to_lowercase();
+    Some((idx, quality))
+}
+
+fn chord_formula(quality: &str) -> Option<(&'static str, Vec<usize>)> {
+    match quality {
+        "" | "maj" | "major" => Some(("major triad", vec![0, 4, 7])),
+        "m" | "min" | "minor" => Some(("minor triad", vec![0, 3, 7])),
+        "7" | "dom7" => Some(("dominant 7th", vec![0, 4, 7, 10])),
+        "maj7" | "M7" | "delta" => Some(("major 7th", vec![0, 4, 7, 11])),
+        "m7" | "min7" => Some(("minor 7th", vec![0, 3, 7, 10])),
+        "dim" | "o" => Some(("diminished triad", vec![0, 3, 6])),
+        "dim7" | "o7" => Some(("diminished 7th", vec![0, 3, 6, 9])),
+        "m7b5" | "ø" | "halfdim" => Some(("half-diminished 7th", vec![0, 3, 6, 10])),
+        "aug" | "+" => Some(("augmented triad", vec![0, 4, 8])),
+        "sus2" => Some(("suspended 2nd", vec![0, 2, 7])),
+        "sus4" | "sus" => Some(("suspended 4th", vec![0, 5, 7])),
+        "6" => Some(("major 6th", vec![0, 4, 7, 9])),
+        "m6" | "min6" => Some(("minor 6th", vec![0, 3, 7, 9])),
+        "9" => Some(("dominant 9th", vec![0, 4, 7, 10, 14])),
+        "add9" => Some(("add 9", vec![0, 4, 7, 14])),
+        "5" | "power" | "5chord" => Some(("power chord", vec![0, 7])),
+        _ => None,
+    }
+}
+
+fn open_shape(root: &str, quality: &str) -> Option<&'static str> {
+    match (root, quality) {
+        ("C", "") => Some("x32010 — ring on A3, middle D2, index B1"),
+        ("A", "") => Some("x02220 — index D2, middle G2, ring B2"),
+        ("G", "") => Some("320003 — middle A2, index E3(low), ring E3(high)"),
+        ("E", "") => Some("022100 — middle A2, ring D2, index G1"),
+        ("D", "") => Some("xx0232 — index G2, ring B3, middle E2(high)"),
+        ("A", "m") => Some("x02210 — middle D2, ring G2, index B1"),
+        ("E", "m") => Some("022000 — middle A2, ring D2"),
+        ("D", "m") => Some("xx0231 — index G2, middle B3, ring E2(high)"),
+        ("G", "7") => Some("320001 — standard open G7"),
+        ("C", "7") => Some("x32310 — open C7"),
+        ("D", "7") => Some("xx0212 — open D7"),
+        ("E", "7") => Some("020100 — open E7"),
+        ("A", "7") => Some("x02020 — open A7"),
+        ("C", "maj7") => Some("x32000 — open Cmaj7"),
+        ("A", "m7") => Some("x02010 — open Am7"),
+        ("E", "m7") => Some("020000 — open Em7"),
+        _ => None,
+    }
+}
+
+fn fetch_chord(name: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let name = name.trim();
+    if name.is_empty() {
+        let mut out = format!("{}\n\n", tg_header("🎸", "Chord Lookup", ""));
+        out.push_str("usage: `/chord <name>` — e.g. `/chord Am`, `/chord G7`, `/chord F#m7b5`\n\n");
+        out.push_str("**Qualities:** maj, m, 7, maj7, m7, dim, dim7, m7b5, aug, sus2, sus4, 6, m6, 9, add9, 5\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #chord #music #memogram-rs", tg_footer("music theory", "chord"), now));
+        return out;
+    }
+    let (root_idx, quality) = match parse_chord(name) {
+        Some(v) => v,
+        None => return format!("⚠️ Could not parse `{}`. Try `/chord Am7`.", name),
+    };
+    let root = NOTE_NAMES[root_idx];
+    let (qname, formula) = match chord_formula(&quality) {
+        Some(v) => v,
+        None => return format!("⚠️ Unknown quality `{}`. Majors: maj m 7 maj7 m7 dim aug sus4 9.", quality),
+    };
+    let notes: Vec<&str> = formula.iter().map(|o| note_at(root_idx, *o)).collect();
+    let mut out = format!("{}\n\n", tg_header("🎸", "Chord", &format!("{}{}", root, if quality.is_empty() { "" } else { &quality })));
+    out.push_str(&format!("**Chord:** `{}{}` · **Type:** _{}_\n\n", root, quality, qname));
+    out.push_str("## 🎵 Notes\n\n| Degree | Interval | Note |\n|---|---|---|\n");
+    let degrees = ["Root (1)", "3rd", "5th", "7th", "9th"];
+    for (i, o) in formula.iter().enumerate() {
+        let deg = degrees.get(i).unwrap_or(&"extension");
+        out.push_str(&format!("| {} | `+{}` semitones | **{}** |\n", deg, o, note_at(root_idx, *o)));
+    }
+    out.push('\n');
+    out.push_str("## 🤏 Guitar Fingering\n\n");
+    if let Some(shape) = open_shape(root, &quality) {
+        out.push_str(&format!("**Open shape:** `{}`\n\n", shape));
+    } else {
+        // Movable barre templates
+        let e_fret = (root_idx + 12 - note_index("E").unwrap()) % 12;
+        let a_fret = (root_idx + 12 - note_index("A").unwrap()) % 12;
+        out.push_str(&format!("**E-shape barre:** fret `{}` (root on low E string)\n", e_fret));
+        out.push_str(&format!("**A-shape barre:** fret `{}` (root on A string)\n\n", a_fret));
+        out.push_str("_Tip: learn the E and A barre shapes once, move them anywhere._\n\n");
+    }
+    out.push_str("## 🎹 Practice\n\n");
+    out.push_str(&format!("- Arpeggiate slowly: {} — listen to each interval\n", notes.join(" → ")));
+    out.push_str(&format!("- Try it in a progression: `/progress {}`\n", root));
+    out.push_str(&format!("- Find songs using it: `/song {} {}`\n\n", root, quality));
+    out.push_str(&format!("{}\n\n`{}` · #chord #music #memogram-rs", tg_footer("music theory", "chord"), now));
+    out
+}
+
+fn scale_formula(name: &str) -> Option<(&'static str, Vec<usize>)> {
+    match name {
+        "major" | "ionian" => Some(("major (Ionian) — WWHWWWH", vec![0, 2, 4, 5, 7, 9, 11])),
+        "minor" | "aeolian" | "natural minor" => Some(("natural minor (Aeolian) — WHWWHWW", vec![0, 2, 3, 5, 7, 8, 10])),
+        "harmonic minor" => Some(("harmonic minor — WHWWH+WH", vec![0, 2, 3, 5, 7, 8, 11])),
+        "melodic minor" => Some(("melodic minor (ascending) — WHWWWWH", vec![0, 2, 3, 5, 7, 9, 11])),
+        "dorian" => Some(("Dorian mode — WHWWWHW", vec![0, 2, 3, 5, 7, 9, 10])),
+        "phrygian" => Some(("Phrygian mode — HWWWHWW", vec![0, 1, 3, 5, 7, 8, 10])),
+        "lydian" => Some(("Lydian mode — WWWHWWH", vec![0, 2, 4, 6, 7, 9, 11])),
+        "mixolydian" => Some(("Mixolydian mode — WWHWWHW", vec![0, 2, 4, 5, 7, 9, 10])),
+        "locrian" => Some(("Locrian mode — HWWHWWW", vec![0, 1, 3, 5, 6, 8, 10])),
+        "major pentatonic" | "pentatonic major" => Some(("major pentatonic", vec![0, 2, 4, 7, 9])),
+        "minor pentatonic" | "pentatonic" | "pentatonic minor" => Some(("minor pentatonic", vec![0, 3, 5, 7, 10])),
+        "blues" => Some(("blues scale (minor pentatonic + ♭5)", vec![0, 3, 5, 6, 7, 10])),
+        _ => None,
+    }
+}
+
+fn fetch_scale(name: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let name = name.trim();
+    if name.is_empty() {
+        let mut out = format!("{}\n\n", tg_header("🎼", "Scale Lookup", ""));
+        out.push_str("usage: `/scale <root> <type>` — e.g. `/scale A minor`, `/scale C major`, `/scale E blues`\n\n");
+        out.push_str("**Types:** major, minor, harmonic minor, melodic minor, dorian, phrygian, lydian, mixolydian, locrian, major pentatonic, minor pentatonic, blues\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #scale #music #memogram-rs", tg_footer("music theory", "scale"), now));
+        return out;
+    }
+    // Split root and type: first token(s) = root note, rest = scale type
+    let lower = name.to_lowercase();
+    let (root_str, scale_key) = if lower.len() > 1 && (lower.chars().nth(1) == Some('#') || lower.chars().nth(1) == Some('b')) {
+        (&name[..2], name[2..].trim().to_lowercase())
+    } else {
+        let first_space = name.find(' ').unwrap_or(name.len());
+        (&name[..first_space], name[first_space..].trim().to_lowercase())
+    };
+    let root_idx = match note_index(root_str) {
+        Some(i) => i,
+        None => return format!("⚠️ Unknown root `{}`. Use A–G with optional #/b.", root_str),
+    };
+    let root = NOTE_NAMES[root_idx];
+    let scale_key = if scale_key.is_empty() { "major".to_string() } else { scale_key };
+    let (sname, formula) = match scale_formula(&scale_key) {
+        Some(v) => v,
+        None => return format!("⚠️ Unknown scale `{}`. Try major, minor, dorian, blues, pentatonic.", scale_key),
+    };
+    let notes: Vec<&str> = formula.iter().map(|o| note_at(root_idx, *o)).collect();
+    let mut out = format!("{}\n\n", tg_header("🎼", "Scale", &format!("{} {}", root, sname.split(" —").next().unwrap_or(&sname))));
+    out.push_str(&format!("**Scale:** `{} {}` · **Pattern:** `{}`\n\n", root, sname, sname.split("— ").nth(1).unwrap_or("")));
+    out.push_str("## 🎵 Notes\n\n| Degree | Note | Semitones from root |\n|---|---|---|\n");
+    let romans = ["I", "II", "III", "IV", "V", "VI", "VII"];
+    for (i, o) in formula.iter().enumerate() {
+        out.push_str(&format!("| {} | **{}** | `+{}` |\n", romans.get(i).unwrap_or(&"?"), note_at(root_idx, *o), o));
+    }
+    out.push('\n');
+    out.push_str("## 🎸 Diatonic Triads (chords in this key)\n\n| Chord | Notes |\n|---|---|\n");
+    if formula.len() == 7 {
+        let qualities = ["", "m", "m", "", "", "m", "dim"];
+        for (i, q) in qualities.iter().enumerate() {
+            let cn = note_at(root_idx, formula[i]);
+            let cn_notes: Vec<&str> = chord_formula(q).map(|(_, f)| f.iter().map(|o| note_at(root_idx, (formula[i] + o) % 12)).collect()).unwrap_or_default();
+            out.push_str(&format!("| `{}{}` | {} |\n", cn, q, cn_notes.join(" - ")));
+        }
+    } else {
+        out.push_str(&format!("_Pentatonic subset of the full scale — see `/scale {} major` for all 7 diatonic chords._\n", root));
+    }
+    out.push('\n');
+    out.push_str("## 🎹 Practice\n\n");
+    out.push_str(&format!("- Play ascending + descending: {}\n", notes.join(" - ")));
+    out.push_str(&format!("- Improvise using only these notes over a `/progress {}` backing\n", root));
+    out.push_str(&format!("- Learn the relative key: `/scale {} {}`\n\n", root, if sname.contains("minor") { "major" } else { "minor" }));
+    out.push_str(&format!("{}\n\n`{}` · #scale #music #memogram-rs", tg_footer("music theory", "scale"), now));
+    out
+}
+
+fn fetch_progress(key: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let key = key.trim();
+    if key.is_empty() {
+        let mut out = format!("{}\n\n", tg_header("🎶", "Chord Progressions", ""));
+        out.push_str("usage: `/progress <key>` — e.g. `/progress C`, `/progress Am`, `/progress G`\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory", "progress"), now));
+        return out;
+    }
+    // Parse key: root + optional minor
+    let lower = key.to_lowercase();
+    let (root_str, is_minor) = if lower.len() > 1 && (lower.chars().nth(1) == Some('#') || lower.chars().nth(1) == Some('b')) {
+        (&key[..2], key[2..].trim().to_lowercase().starts_with('m'))
+    } else {
+        let sp = key.find(' ').unwrap_or(key.len());
+        (&key[..sp], key[sp..].trim().to_lowercase().starts_with('m') || (key.len() > 1 && key.chars().nth(1) == Some('m')))
+    };
+    let root_idx = match note_index(root_str) {
+        Some(i) => i,
+        None => return format!("⚠️ Unknown key `{}`. Try C, G, D, A, E, Am, Em.", key),
+    };
+    let root = NOTE_NAMES[root_idx];
+    // Diatonic triads of the parallel major for reference
+    let major_triads = ["", "m", "m", "", "", "m", "dim"];
+    let major_notes: Vec<String> = [0, 2, 4, 5, 7, 9, 11].iter().enumerate().map(|(i, o)| format!("{}{}", note_at(root_idx, *o), major_triads[i])).collect();
+    let mut out = format!("{}\n\n", tg_header("🎶", "Progressions", &format!("key of {}{}", root, if is_minor { "m" } else { "" })));
+    out.push_str(&format!("**Key:** `{}{}`\n\n", root, if is_minor { " minor" } else { " major" }));
+    out.push_str("## 🎼 Diatonic Chords\n\n| I | ii | iii | IV | V | vi | vii° |\n|---|---|---|---|---|---|---|\n");
+    out.push_str(&format!("| {} |\n\n", major_notes.iter().map(|c| format!("`{}`", c)).collect::<Vec<_>>().join(" | ")));
+    let roman: Vec<String> = if is_minor {
+        // natural minor: i ii° III iv v VI VII
+        [0, 2, 3, 5, 7, 8, 10].iter().enumerate().map(|(i, o)| {
+            let qs = ["m", "dim", "", "m", "m", "", ""];
+            format!("{}{}", note_at(root_idx, *o), qs[i])
+        }).collect()
+    } else { major_notes.clone() };
+    let _ = roman;
+    out.push_str("## 🎵 Essential Progressions\n\n");
+    let c = |deg: usize, q: &str| format!("{}{}", note_at(root_idx, [0, 2, 4, 5, 7, 9, 11][deg]), q);
+    out.push_str(&format!("| Name | Chords | Vibe |\n|---|---|---|\n"));
+    out.push_str(&format!("| Pop (I–V–vi–IV) | `{} - {} - {} - {}` | Uplifting, everywhere |\n", c(0, ""), c(4, ""), c(5, "m"), c(3, "")));
+    out.push_str(&format!("| Sensitive (vi–IV–I–V) | `{} - {} - {} - {}` | Emotional ballads |\n", c(5, "m"), c(3, ""), c(0, ""), c(4, "")));
+    out.push_str(&format!("| 12-Bar Blues (I–IV–V) | `{}7 - {}7 - {}7` | Blues, rock |\n", c(0, ""), c(3, ""), c(4, "")));
+    out.push_str(&format!("| Jazz (ii–V–I) | `{} - {} - {}` | Jazz standard turnaround |\n", c(1, "m7"), c(4, "7"), c(0, "maj7")));
+    out.push_str(&format!("| Andalusian (vi–V–IV–III) | `{} - {} - {} - {}` | Flamenco, metal |\n", c(5, "m"), c(4, ""), c(3, ""), c(2, "")));
+    out.push_str(&format!("| Doo-wop (I–vi–IV–V) | `{} - {} - {} - {}` | 50s pop |\n\n", c(0, ""), c(5, "m"), c(3, ""), c(4, "")));
+    out.push_str("## 🎹 Practice\n\n");
+    out.push_str("- Loop the pop progression with a metronome (`/tempo 90`)\n");
+    out.push_str("- Learn each chord shape with `/chord <name>`\n");
+    out.push_str("- Transpose: pick a new key and rebuild the same numerals\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory", "progress"), now));
+    out
+}
+
+fn fetch_circle() -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    // Key of the day rotates by date
+    let day_num: u64 = Local::now().format("%j").to_string().parse().unwrap_or(1);
+    let keys = ["C", "G", "D", "A", "E", "B", "F#", "Db", "Ab", "Eb", "Bb", "F"];
+    let kotd = keys[(day_num as usize) % 12];
+    let mut out = format!("{}\n\n", tg_header("⭕", "Circle of Fifths", ""));
+    out.push_str(&format!("**🎯 Key of the day:** `{}` — practice its scale and progressions today\n\n", kotd));
+    out.push_str("## 🔄 The Circle (clockwise = up a fifth)\n\n");
+    out.push_str("| Position | Major | Minor (relative) | Sharps/Flats |\n|---|---|---|---|\n");
+    let rows = [
+        ("12 o'clock", "C", "Am", "none"),
+        ("1", "G", "Em", "1♯ (F♯)"),
+        ("2", "D", "Bm", "2♯ (F♯ C♯)"),
+        ("3", "A", "F#m", "3♯ (F♯ C♯ G♯)"),
+        ("4", "E", "C#m", "4♯"),
+        ("5", "B", "G#m", "5♯"),
+        ("6", "F#/Gb", "D#m/Ebm", "6♯ / 6♭"),
+        ("7", "Db", "Bbm", "5♭"),
+        ("8", "Ab", "Fm", "4♭"),
+        ("9", "Eb", "Cm", "3♭ (B♭ E♭ A♭)"),
+        ("10", "Bb", "Gm", "2♭ (B♭ E♭)"),
+        ("11", "F", "Dm", "1♭ (B♭)"),
+    ];
+    for (pos, maj, min, acc) in &rows {
+        let mark = if *maj == kotd { " ← today" } else { "" };
+        out.push_str(&format!("| {} | **{}** | {} | {}{} |\n", pos, maj, min, acc, mark));
+    }
+    out.push('\n');
+    out.push_str("## 🧭 How to read it\n\n");
+    out.push_str("- **Neighbors** share all but one note — easiest modulations\n");
+    out.push_str("- **Opposite sides** (tritone apart) clash the most\n");
+    out.push_str("- **Inside ring** = relative minors (same key signature)\n\n");
+    out.push_str("## 🎹 Practice\n\n");
+    out.push_str(&format!("- `/scale {} major` + `/scale {} minor`\n", kotd, kotd));
+    out.push_str(&format!("- `/progress {}` — play the diatonic chords\n", kotd));
+    out.push_str("- Move one step clockwise and repeat tomorrow\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #circle #music #memogram-rs", tg_footer("music theory", "circle"), now));
+    out
+}
+
+async fn fetch_song(title: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let title = title.trim();
+    if title.is_empty() { return Ok("usage: `/song <title>` — e.g. `/song Bohemian Rhapsody`".into()); }
+    let url = format!("https://musicbrainz.org/ws/2/recording/?query=recording:{}&fmt=json&limit=5", urlencoding::encode(title));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs/1.0 (telegram bot)").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let recs = v["recordings"].as_array().cloned().unwrap_or_default();
+    if recs.is_empty() {
+        return Ok(format!("{}\n\n_No recordings found for `{}`_\n\n{}\n\n`{}` · #song #music #memogram-rs",
+            tg_header("🎵", "Song", title), title, tg_footer("musicbrainz.org", "song"), now));
+    }
+    let mut out = format!("{}\n\n", tg_header("🎵", "Song Search", title));
+    out.push_str(&format!("**{} results** for _{}_\n\n", v["count"].as_u64().unwrap_or(0), title));
+    for (i, r) in recs.iter().enumerate() {
+        let name = r["title"].as_str().unwrap_or("?");
+        let artist = r["artist-credit"].as_array().and_then(|a| a.first()).and_then(|a| a["name"].as_str()).unwrap_or("?");
+        let length = r["length"].as_u64().unwrap_or(0);
+        let mins = length / 60000;
+        let secs = (length % 60000) / 1000;
+        let mbid = r["id"].as_str().unwrap_or("");
+        let releases: Vec<String> = r["releases"].as_array().map(|a| a.iter().take(2).filter_map(|rel| rel["title"].as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+        out.push_str(&format!("### {}. {} — {}\n\n", i + 1, name, artist));
+        out.push_str(&format!("**Length:** `{}:{:02}` · **On:** {}\n", mins, secs, if releases.is_empty() { "—".to_string() } else { releases.join(", ") }));
+        out.push_str(&format!("🔗 [MusicBrainz](https://musicbrainz.org/recording/{})\n\n", mbid));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #song #music #memogram-rs", tg_footer("musicbrainz.org", "song"), now));
+    Ok(out)
+}
+
+async fn fetch_artist(name: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let name = name.trim();
+    if name.is_empty() { return Ok("usage: `/artist <name>` — e.g. `/artist Radiohead`".into()); }
+    let url = format!("https://musicbrainz.org/ws/2/artist/?query=artist:{}&fmt=json&limit=3", urlencoding::encode(name));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs/1.0 (telegram bot)").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let artists = v["artists"].as_array().cloned().unwrap_or_default();
+    if artists.is_empty() {
+        return Ok(format!("{}\n\n_No artists found for `{}`_\n\n{}\n\n`{}` · #artist #music #memogram-rs",
+            tg_header("🎤", "Artist", name), name, tg_footer("musicbrainz.org", "artist"), now));
+    }
+    let mut out = format!("{}\n\n", tg_header("🎤", "Artist Search", name));
+    for (i, a) in artists.iter().enumerate() {
+        let aname = a["name"].as_str().unwrap_or("?");
+        let atype = a["type"].as_str().unwrap_or("?");
+        let country = a["country"].as_str().unwrap_or("?");
+        let life = a["life-span"].as_object();
+        let begin = life.and_then(|l| l["begin"].as_str()).unwrap_or("?");
+        let end = life.and_then(|l| l["ended"].as_bool()).map(|e| if e { life.and_then(|l| l["end"].as_str()).unwrap_or("?") } else { "present" }).unwrap_or("?");
+        let mbid = a["id"].as_str().unwrap_or("");
+        let tags: Vec<String> = a["tags"].as_array().map(|t| t.iter().take(4).filter_map(|x| x["name"].as_str()).map(|s| format!("`{}`", s)).collect()).unwrap_or_default();
+        out.push_str(&format!("### {}. {}\n\n", i + 1, aname));
+        out.push_str("| Detail | Value |\n|---|---|\n");
+        out.push_str(&format!("| Type | `{}` |\n", atype));
+        out.push_str(&format!("| Country | `{}` |\n", country));
+        out.push_str(&format!("| Active | `{} – {}` |\n", begin, end));
+        if !tags.is_empty() { out.push_str(&format!("| Tags | {} |\n", tags.join(" "))); }
+        out.push('\n');
+        // Top release groups
+        let rg_url = format!("https://musicbrainz.org/ws/2/release-group/?artist={}&fmt=json&limit=5", mbid);
+        if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&rg_url).header("User-Agent", "memogram-rs/1.0 (telegram bot)").send()).await {
+            if let Ok(rv) = r.json::<serde_json::Value>().await {
+                if let Some(rgs) = rv["release-groups"].as_array() {
+                    if !rgs.is_empty() {
+                        out.push_str("**Top releases:**\n");
+                        for rg in rgs.iter() {
+                            let t = rg["title"].as_str().unwrap_or("?");
+                            let y = rg["first-release-date"].as_str().unwrap_or("????");
+                            let y = if y.len() >= 4 { &y[..4] } else { y };
+                            let typ = rg["primary-type"].as_str().unwrap_or("");
+                            out.push_str(&format!("- {} ({}, {})\n", t, y, typ));
+                        }
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+        out.push_str(&format!("🔗 [MusicBrainz](https://musicbrainz.org/artist/{})\n\n", mbid));
+    }
+    out.push_str(&format!("{}\n\n`{}` · #artist #music #memogram-rs", tg_footer("musicbrainz.org", "artist"), now));
+    Ok(out)
+}
+
+fn fetch_tempo(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let bpm: f64 = args.trim().split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+    if bpm <= 0.0 || bpm > 300.0 {
+        let mut out = format!("{}\n\n", tg_header("⏱️", "Tempo Calculator", ""));
+        out.push_str("usage: `/tempo <bpm>` — e.g. `/tempo 120`\n\n");
+        out.push_str("**Common tempos:**\n\n| Style | BPM |\n|---|---|\n");
+        out.push_str("| Ballad | 60–80 |\n| Hip-hop | 80–100 |\n| Pop | 100–120 |\n| House | 120–128 |\n| Techno | 128–140 |\n| Drum & bass | 170–180 |\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #tempo #music #memogram-rs", tg_footer("music theory", "tempo"), now));
+        return out;
+    }
+    let beat_ms = 60000.0 / bpm;
+    let mut out = format!("{}\n\n", tg_header("⏱️", "Tempo", &format!("{} BPM", bpm as u32)));
+    out.push_str(&format!("**Tempo:** `{}` BPM · **Frequency:** `{:.2} Hz` · **Beat:** `{:.1} ms`\n\n", bpm, bpm / 60.0, beat_ms));
+    out.push_str("## ⏲️ Note Values (delay times)\n\n| Note | Beats | Milliseconds |\n|---|---|---|\n");
+    out.push_str(&format!("| Whole | 4 | `{:.0}` |\n", beat_ms * 4.0));
+    out.push_str(&format!("| Half | 2 | `{:.0}` |\n", beat_ms * 2.0));
+    out.push_str(&format!("| Quarter | 1 | `{:.0}` |\n", beat_ms));
+    out.push_str(&format!("| Dotted 8th | 0.75 | `{:.0}` |\n", beat_ms * 0.75));
+    out.push_str(&format!("| 8th | 0.5 | `{:.0}` |\n", beat_ms * 0.5));
+    out.push_str(&format!("| 8th triplet | 0.333 | `{:.0}` |\n", beat_ms / 3.0));
+    out.push_str(&format!("| 16th | 0.25 | `{:.0}` |\n\n", beat_ms * 0.25));
+    out.push_str("## 🎛️ For pedals & DAW\n\n");
+    out.push_str(&format!("- **Slapback:** `150–200` ms (use `{:.0}` ms 16th for tight slap)\n", beat_ms * 0.25));
+    out.push_str(&format!("- **Dotted-8th delay (U2 style):** `{:.0}` ms\n", beat_ms * 0.75));
+    out.push_str(&format!("- **Ping-pong:** `{:.0}` ms L / `{:.0}` ms R\n\n", beat_ms * 0.75, beat_ms * 0.5));
+    out.push_str("## 🎹 Practice\n\n");
+    out.push_str(&format!("- Set metronome to `{}` BPM, play `/scale` notes in quarter notes\n", bpm as u32));
+    out.push_str(&format!("- Loop a `/progress` progression at `{}` BPM\n\n", bpm as u32));
+    out.push_str(&format!("{}\n\n`{}` · #tempo #music #memogram-rs", tg_footer("music theory", "tempo"), now));
+    out
+}
+
 // === NEWS: LOBSTERS + PRODUCT HUNT ===
 
 async fn fetch_lobsters() -> Result<String> {
@@ -5075,7 +5518,7 @@ async fn fetch_weekly(memos_url: &str, token: &str) -> Result<String> {
     out.push_str("- What took longer than expected?\n");
     out.push_str("- What should I stop doing?\n");
     out.push_str("- What should I start doing next week?\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #weekly #planning #memogram-rs", tg_footer("memogram-rs", "weekly"), now.format("%Y-%m-%d %H:%M")));
+    out.push_str(&format!("{}\n\n`{}` · #weekly #tasks #memogram-rs", tg_footer("memogram-rs", "weekly"), now.format("%Y-%m-%d %H:%M")));
     Ok(out)
 }
 
@@ -5098,7 +5541,7 @@ fn create_retro(args: &str) -> String {
     out.push_str("| Carry-over |  |\n");
     out.push_str("| Velocity |  |\n\n");
     out.push_str("> _Tip: Be honest. What will we actually change?_\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #retro #planning #memogram-rs", tg_footer("memogram-rs", "retro"), now));
+    out.push_str(&format!("{}\n\n`{}` · #retro #tasks #memogram-rs", tg_footer("memogram-rs", "retro"), now));
     out
 }
 
@@ -6500,7 +6943,7 @@ async fn set_focus(args: &str, app: &App) -> String {
     out.push_str("| Key insight | Short bursts of focus > long unfocused hours |\n\n");
 
     out.push_str(&format!("> ⏰ You'll get a push notification when time is up!\n\n"));
-    out.push_str(&format!("{}\n\n`{}` · #focus #planning #memogram-rs", tg_footer("memogram-rs", "focus"), now));
+    out.push_str(&format!("{}\n\n`{}` · #focus #tasks #memogram-rs", tg_footer("memogram-rs", "focus"), now));
     out
 }
 
@@ -6744,7 +7187,7 @@ async fn fetch_habit(args: &str, app: &App) -> String {
             out.push_str(&format!("- 🔥 **{}** — every rep counts\n", habit));
             out.push_str("- 💪 Consistency > intensity\n");
             out.push_str("- 📈 Track with `/digest` to see your memo count grow\n\n");
-            out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
+            out.push_str(&format!("{}\n\n`{}` · #habit #tasks #memogram-rs", tg_footer("memogram-rs", "habit"), now));
             out
         }
         "miss" => {
@@ -6760,7 +7203,7 @@ async fn fetch_habit(args: &str, app: &App) -> String {
             out.push_str("- 🔄 Missed one day? Double up tomorrow\n");
             out.push_str("- 🎯 Focus on getting back on track, not perfection\n");
             out.push_str("- 📊 Check `/streak` to see your overall consistency\n\n");
-            out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
+            out.push_str(&format!("{}\n\n`{}` · #habit #tasks #memogram-rs", tg_footer("memogram-rs", "habit"), now));
             out
         }
         _ => {
@@ -6782,7 +7225,7 @@ async fn fetch_habit(args: &str, app: &App) -> String {
             out.push_str("| `/habit done pushups` | Exercise name, muscles, equipment |\n");
             out.push_str("| `/habit done running` | Cardio details, calories |\n");
             out.push_str("| `/habit done squats` | Form, target muscles |\n\n");
-            out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
+            out.push_str(&format!("{}\n\n`{}` · #habit #tasks #memogram-rs", tg_footer("memogram-rs", "habit"), now));
             out
         }
     }
@@ -6839,7 +7282,7 @@ async fn fetch_plan(topic: &str, app: &App) -> String {
     out.push_str("| Project built | ⬜ |\n");
     out.push_str("| Presented / reviewed | ⬜ |\n\n");
 
-    out.push_str(&format!("{}\n\n`{}` · #plan #planning #memogram-rs", tg_footer("memogram-rs", "plan"), now));
+    out.push_str(&format!("{}\n\n`{}` · #plan #tasks #memogram-rs", tg_footer("memogram-rs", "plan"), now));
     out
 }
 
@@ -6849,7 +7292,7 @@ async fn vikunja_todo(args: &str, app: &App) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let date = Local::now().format("%Y-%m-%d").to_string();
     if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
-        return format!("{}\n\n⚠️ _Vikunja not configured. Set `VIKUNJA_URL` and `VIKUNJA_TOKEN`._\n\n{}\n\n`{}` · #todo #planning",
+        return format!("{}\n\n⚠️ _Vikunja not configured. Set `VIKUNJA_URL` and `VIKUNJA_TOKEN`._\n\n{}\n\n`{}` · #todo #tasks",
             tg_header("📋", "Todo", ""), tg_footer("memogram-rs", "todo"), now);
     }
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
@@ -6868,7 +7311,7 @@ async fn vikunja_todo(args: &str, app: &App) -> String {
             if !note.is_empty() {
                 out.push_str(&format!("**Note:** {}\n\n", note));
             }
-            out.push_str(&format!("{}\n\n`{}` · #todo #planning #memogram-rs", tg_footer("vikunja", "todo"), now));
+            out.push_str(&format!("{}\n\n`{}` · #todo #tasks #memogram-rs", tg_footer("vikunja", "todo"), now));
             out
         }
         Err(e) => format!("❌ Vikunja error: {e}\n\n_Task not created._")
@@ -6897,7 +7340,7 @@ async fn vikunja_deadline(args: &str, app: &App) -> String {
                 out.push_str(&format!("⏳ **{} days** until deadline\n\n", days_left));
             }
             out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
-            out.push_str(&format!("{}\n\n`{}` · #deadline #planning #memogram-rs", tg_footer("vikunja", "deadline"), now));
+            out.push_str(&format!("{}\n\n`{}` · #deadline #tasks #memogram-rs", tg_footer("vikunja", "deadline"), now));
             out
         }
         Err(e) => format!("❌ Vikunja error: {e}")
@@ -6921,7 +7364,7 @@ async fn vikunja_priority(args: &str, app: &App) -> String {
             let mut out = format!("{}\n\n", tg_header("🔥", "Priority Task", title));
             out.push_str(&format!("**Task:** `{}`\n**Priority:** {} `{}`\n**Vikunja ID:** `#{}`\n\n", title, emoji, label, task_id));
             out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
-            out.push_str(&format!("{}\n\n`{}` · #priority #planning #memogram-rs", tg_footer("vikunja", "priority"), now));
+            out.push_str(&format!("{}\n\n`{}` · #priority #tasks #memogram-rs", tg_footer("vikunja", "priority"), now));
             out
         }
         Err(e) => format!("❌ Vikunja error: {e}")
@@ -6961,7 +7404,7 @@ async fn vikunja_goal(args: &str, app: &App) -> String {
                 out.push_str(&format!("- [ ] {} (task #{})\n", m, tid));
             }
             out.push_str(&format!("\n🔗 [Open in Vikunja]({}/projects/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id));
-            out.push_str(&format!("{}\n\n`{}` · #goal #planning #memogram-rs", tg_footer("vikunja", "goal"), now));
+            out.push_str(&format!("{}\n\n`{}` · #goal #tasks #memogram-rs", tg_footer("vikunja", "goal"), now));
             out
         }
         Err(e) => format!("❌ Vikunja project creation failed: {e}")
@@ -6981,7 +7424,7 @@ async fn vikunja_project(args: &str, app: &App) -> String {
             let mut out = format!("{}\n\n", tg_header("📂", "Project Created", name));
             out.push_str(&format!("**Project:** `{}`\n**Vikunja ID:** `#{}`\n\n", name, project_id));
             out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id));
-            out.push_str(&format!("{}\n\n`{}` · #project #planning #memogram-rs", tg_footer("vikunja", "project"), now));
+            out.push_str(&format!("{}\n\n`{}` · #project #tasks #memogram-rs", tg_footer("vikunja", "project"), now));
             out
         }
         Err(e) => format!("❌ Vikunja error: {e}")
@@ -6999,7 +7442,7 @@ async fn vikunja_weekly(app: &App) -> String {
         out.push_str("## ✅ Completed This Week\n\n- [ ] \n\n");
         out.push_str("## ⏳ Still Open\n\n- [ ] \n\n");
         out.push_str("## 💡 Reflection\n\n- What went well?\n- What needs adjustment?\n\n");
-        out.push_str(&format!("{}\n\n`{}` · #weekly #planning #memogram-rs", tg_footer("memogram-rs", "weekly"), now.format("%Y-%m-%d %H:%M")));
+        out.push_str(&format!("{}\n\n`{}` · #weekly #tasks #memogram-rs", tg_footer("memogram-rs", "weekly"), now.format("%Y-%m-%d %H:%M")));
         return out;
     }
 
@@ -7044,7 +7487,7 @@ async fn vikunja_weekly(app: &App) -> String {
     out.push_str("- Top priority for next week?\n\n");
 
     out.push_str(&format!("🔗 [Vikunja Dashboard]({})\n\n", app.vikunja_url.trim_end_matches('/')));
-    out.push_str(&format!("{}\n\n`{}` · #weekly #planning #memogram-rs", tg_footer("vikunja", "weekly"), now.format("%Y-%m-%d %H:%M")));
+    out.push_str(&format!("{}\n\n`{}` · #weekly #tasks #memogram-rs", tg_footer("vikunja", "weekly"), now.format("%Y-%m-%d %H:%M")));
     out
 }
 
