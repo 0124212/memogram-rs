@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "arxiv".into(), description: "arXiv latest papers".into() },
         teloxide::types::BotCommand { command: "devto".into(), description: "dev.to top posts".into() },
         teloxide::types::BotCommand { command: "tldr".into(), description: "TLDR tech digest".into() },
-        teloxide::types::BotCommand { command: "weather".into(), description: "weather 7-day <city>".into() },
+        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city> (3-day)".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
         teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
         teloxide::types::BotCommand { command: "gh".into(), description: "GitHub search".into() },
@@ -1461,55 +1461,6 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
         .send().await?.json::<serde_json::Value>().await?;
     let name = resp["name"].as_str().unwrap_or("?");
     Ok(format!("📓 **Daily note created**\n\n`{name}`\n\n> Open in Memos to edit · #daily"))
-}
-
-// --- forecast ---
-
-async fn fetch_forecast(city: &str) -> Result<String> {
-    let city = if city.trim().is_empty() { "Thousand Oaks, CA".to_string() } else { city.trim().to_string() };
-    let display_city = city.clone();
-    let url = format!("http://wttr.in/{}?format=j1", urlencoding::encode(&city));
-    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&url).send()).await {
-        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(e) => return Ok(format!("{}\n\n_Forecast unavailable for `{}`: {}_\n\n{}", tg_header("🌤️", "Forecast", &display_city), display_city, e, tg_footer("wttr.in", "forecast"))) },
-        Ok(Err(e)) => return Ok(format!("{}\n\n_Forecast unavailable for `{}`: {}_\n\n{}", tg_header("🌤️", "Forecast", &display_city), display_city, e, tg_footer("wttr.in", "forecast"))),
-        Err(_) => return Ok(format!("{}\n\n_Forecast unavailable for `{}` (timeout). Try again._\n\n{}", tg_header("🌤️", "Forecast", &display_city), display_city, tg_footer("wttr.in", "forecast"))),
-    };
-    let cur = &v["current_condition"][0];
-    let temp = cur["temp_C"].as_str().unwrap_or("?");
-    let desc = cur["weatherDesc"][0]["value"].as_str().unwrap_or("");
-    let humidity = cur["humidity"].as_str().unwrap_or("?");
-    let wind = cur["windspeedKmph"].as_str().unwrap_or("?");
-    let emoji = match desc.to_lowercase().as_str() {
-        s if s.contains("sun") || s.contains("clear") => "☀️",
-        s if s.contains("cloud") => "☁️",
-        s if s.contains("rain") => "🌧️",
-        s if s.contains("snow") => "❄️",
-        _ => "🌤️",
-    };
-    let mut out = format!("{}\n\n**Now:** `{}`°C {} 💧 {}% · 💨 {} km/h\n\n", tg_header(emoji, "Forecast", &display_city), temp, desc, humidity, wind);
-    // Add sunrise/sunset if available
-    if let Some(astronomy) = v["weather"].as_array().and_then(|a| a.first()).and_then(|d| d["astronomy"].as_array()).and_then(|a| a.first()) {
-        let sunrise = astronomy["sunrise"].as_str().unwrap_or("");
-        let sunset = astronomy["sunset"].as_str().unwrap_or("");
-        if !sunrise.is_empty() || !sunset.is_empty() {
-            out.push_str(&format!("🌅 Sunrise: `{}` · 🌇 Sunset: `{}`\n\n", sunrise, sunset));
-        }
-    }
-    if let Some(arr) = v["weather"].as_array() {
-        out.push_str("## 📅 3-Day Forecast\n\n");
-        out.push_str("| Date | High | Low | Condition | Rain |\n|---|---|---|---|---|\n");
-        for day in arr.iter().take(3) {
-            let date = day["date"].as_str().unwrap_or("");
-            let maxt = day["maxtempC"].as_str().unwrap_or("?");
-            let mint = day["mintempC"].as_str().unwrap_or("?");
-            let hourly = day["hourly"].as_array();
-            let noon = hourly.and_then(|h| h.get(4)).and_then(|h| h["weatherDesc"][0]["value"].as_str()).unwrap_or("");
-            let rain = hourly.and_then(|h| h.get(4)).and_then(|h| h["chanceofrain"].as_str()).unwrap_or("?");
-            out.push_str(&format!("| {} | ↑{}°C | ↓{}°C | {} | {}% |\n", date, maxt, mint, noon, rain));
-        }
-    }
-    out.push_str(&format!("\n{}", tg_footer("wttr.in", "forecast")));
-    Ok(out)
 }
 
 // --- number trivia ---
@@ -3253,211 +3204,7 @@ async fn fetch_snow(loc: &str) -> Result<String> {
     Ok(format!("{}\n\n⚠️ _No snow data for `{}`_\n\n{}", tg_header("❄️", "Snow Report", city), city, tg_footer("wttr.in", "snow")))
 }
 
-// === FUN COMMANDS ===
-
-async fn fetch_joke(category: &str) -> Result<String> {
-    let cat = if category.trim().is_empty() { "Any" } else { category.trim() };
-    let url = format!("https://v2.jokeapi.dev/joke/{}?blacklistFlags=nsfw,racist,sexist", urlencoding::encode(cat));
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    if v["error"].as_bool().unwrap_or(false) {
-        return Ok(format!("{}\n\n⚠️ _No jokes found for category `{}`_\n\n> Try: `Any`, `Programming`, `Misc`, `Pun`, `Spooky`, `Christmas`\n\n{}\n\n`{}` · #joke",
-            tg_header("😂", "Joke", cat), cat, tg_footer("jokeapi.dev", "joke"), now));
-    }
-    let joke_type = v["type"].as_str().unwrap_or("single");
-    let mut out = format!("{}\n\n", tg_header("😂", "Joke", cat));
-    out.push_str(&format!("**Category:** `{}` · **Type:** `{}`\n\n", cat, joke_type));
-    if joke_type == "single" {
-        let joke = v["joke"].as_str().unwrap_or("?");
-        out.push_str(&format!("> {}\n\n", joke));
-    } else {
-        let setup = v["setup"].as_str().unwrap_or("?");
-        let delivery = v["delivery"].as_str().unwrap_or("?");
-        out.push_str(&format!("> {}\n\n> ||{}||\n\n", setup, delivery));
-    }
-    if let Some(lang) = v["lang"].as_str() {
-        out.push_str(&format!("🌐 `{}`\n\n", lang));
-    }
-    out.push_str(&format!("{}\n\n`{}` · #joke #fun", tg_footer("jokeapi.dev", "joke"), now));
-    Ok(out)
-}
-
-async fn fetch_fortune(_args: &str) -> Result<String> {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    // Try multiple fortune APIs
-    let mut fortune_text = String::new();
-    // Try 1: fortunecookieapi.com
-    if let Ok(v) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("https://fortuneapi.com/fortune").header("User-Agent", "memogram-rs").send()).await {
-        if let Ok(r) = v {
-            if let Ok(j) = r.json::<serde_json::Value>().await {
-                if let Some(f) = j["fortune"].as_str() {
-                    fortune_text = f.to_string();
-                }
-            }
-        }
-    }
-    // Try 2:本地 JSON
-    if fortune_text.is_empty() {
-        let url = "https://raw.githubusercontent.com/ianramzy/random-fortune/main/fortunes.json";
-        if let Ok(v) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(url).header("User-Agent", "memogram-rs").send()).await {
-            if let Ok(r) = v {
-                if let Ok(j) = r.json::<serde_json::Value>().await {
-                    if let Some(fortunes) = j.as_array() {
-                        if let Some(f) = fortunes.choose(&mut rand::rng()) {
-                            fortune_text = f.as_str().unwrap_or("").to_string();
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // Fallback: local fortunes
-    if fortune_text.is_empty() {
-        let local_fortunes = [
-            "A beautiful, smart, and loving person is coming into your life.",
-            "A dubious friend may be an enemy in camouflage.",
-            "A faithful friend is a strong defense.",
-            "A fresh start will put you on your way.",
-            "A golden egg of opportunity falls into your lap this month.",
-            "A good time to finish up old tasks.",
-            "A lifetime of happiness lies ahead of you.",
-            "A light heart carries you through all the hard times.",
-            "A new perspective will come with the new year.",
-            "A pleasant truth is heading your way.",
-            "A thrilling time is in your future.",
-            "Adventure can be real happiness.",
-            "All the effort you are making will ultimately pay off.",
-            "An important person will offer you support.",
-            "Believe in yourself and others will too.",
-            "Change is happening in your life, so go with the flow!",
-            "Courage is not the absence of fear; it is acting in spite of it.",
-            "Don't just think, act!",
-            "Every flower must grow through dirt.",
-            "Good news will come to you by mail.",
-            "Happiness begins with facing life with a smile and a wink.",
-            "Hard work pays off in the future, however laziness pays off now.",
-            "Imagination is the highest kite one can fly.",
-            "In the middle of difficulty lies opportunity.",
-            "Keep your face to the sunshine and you cannot see a shadow.",
-            "Laughter is the best medicine.",
-            "Let the beauty of what you love be what you do.",
-            "Listen to everyone, ideas can come from anywhere.",
-            "Love is on its way.",
-            "Now is the time to try something new.",
-            "Others appreciate your talents and abilities.",
-            "Your future is as boundless as the lofty sky.",
-        ];
-        let idx = (chrono::Utc::now().timestamp() as usize) % local_fortunes.len();
-        fortune_text = local_fortunes[idx].to_string();
-    }
-    let mut out = format!("{}\n\n", tg_header("🔮", "Fortune Cookie", &now));
-    out.push_str(&format!("## 🔮 Your Fortune\n\n> _{}_\n\n", fortune_text));
-    out.push_str("## 📊 Stats\n\n");
-    out.push_str("| Metric | Value |\n|---|---|\n");
-    out.push_str(&format!("| Time | `{}` |\n", now));
-    out.push_str(&format!("| Lucky Number | `{}` |\n\n", rand::rng().random::<u32>() % 100 + 1));
-    out.push_str(&format!("{}\n\n`{}` · #fortune #fun", tg_footer("fortunecookieapi.com", "fortune"), now));
-    Ok(out)
-}
-
-async fn fetch_quote(category: &str) -> Result<String> {
-    let cat = if category.trim().is_empty() { "" } else { category.trim() };
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let url = if cat.is_empty() { "https://api.quotable.io/random".to_string() } else { format!("https://api.quotable.io/random?tags={}", urlencoding::encode(cat)) };
-    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
-        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(_) => serde_json::Value::Null },
-        _ => serde_json::Value::Null,
-    };
-    if let Some(content) = v["content"].as_str() {
-        let author = v["author"].as_str().unwrap_or("?");
-        let tags = v["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>()).unwrap_or_default();
-        let mut out = format!("{}\n\n", tg_header("💬", "Quote", author));
-        out.push_str(&format!("## 💬 Quote\n\n> _\"{}\"_\n\n", content));
-        out.push_str(&format!("— **{}**\n\n", author));
-        if !tags.is_empty() {
-            out.push_str(&format!("🏷️ {}\n\n", tags.join(" · ")));
-        }
-        out.push_str(&format!("| Stat | Value |\n|---|---|\n| Characters | `{}` |\n| Words | `{}` |\n\n", content.len(), content.split_whitespace().count()));
-        out.push_str(&format!("{}\n\n`{}` · #quote #fun", tg_footer("quotable.io", "quote"), now));
-        return Ok(out);
-    }
-    // Fallback: local quotes
-    let quotes = [
-        ("The only way to do great work is to love what you do.", "Steve Jobs", "inspirational"),
-        ("Innovation distinguishes between a leader and a follower.", "Steve Jobs", "innovation"),
-        ("Stay hungry, stay foolish.", "Stewart Brand", "inspirational"),
-        ("Life is what happens when you're busy making other plans.", "John Lennon", "life"),
-        ("The future belongs to those who believe in the beauty of their dreams.", "Eleanor Roosevelt", "inspirational"),
-        ("It does not matter how slowly you go as long as you do not stop.", "Confucius", "philosophy"),
-        ("In the middle of difficulty lies opportunity.", "Albert Einstein", "inspirational"),
-        ("The best time to plant a tree was 20 years ago. The second best time is now.", "Chinese Proverb", "wisdom"),
-    ];
-    let idx = (chrono::Utc::now().timestamp() as usize) % quotes.len();
-    let (text, author, tag) = quotes[idx];
-    let mut out = format!("{}\n\n", tg_header("💬", "Quote", author));
-    out.push_str(&format!("## 💬 Quote\n\n> _\"{}\"_\n\n", text));
-    out.push_str(&format!("— **{}** · `{}`\n\n", author, tag));
-    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Characters | `{}` |\n| Words | `{}` |\n\n", text.len(), text.split_whitespace().count()));
-    out.push_str(&format!("{}\n\n`{}` · #quote #fun", tg_footer("quotable.io", "quote"), now));
-    Ok(out)
-}
-
-async fn fetch_truth() -> Result<String> {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let url = "https://api.truthordareapi.xyz/text?filter=pg&type=truth";
-    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(url).header("User-Agent", "memogram-rs").send()).await {
-        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(_) => serde_json::Value::Null },
-        _ => serde_json::Value::Null,
-    };
-    if let Some(truth) = v["truth"].as_str() {
-        let mut out = format!("{}\n\n", tg_header("🔴", "Truth", &now));
-        out.push_str(&format!("## 🔴 Truth\n\n> {}\n\n", truth));
-        out.push_str("_Answer honestly or take a dare!_\n\n");
-        out.push_str(&format!("{}\n\n`{}` · #truth #fun", tg_footer("truthordareapi.xyz", "truth"), now));
-        return Ok(out);
-    }
-    // Fallback: local truths
-    let truths = [
-        "What is your most embarrassing moment?",
-        "What is the last lie you told?",
-        "What is the most childish thing you still do?",
-        "What is a secret you've never told anyone?",
-        "What do you worry about the most?",
-        "What is the best compliment you've ever received?",
-        "What is the worst thing you've ever done?",
-        "If you could change one thing about yourself, what would it be?",
-        "What is your biggest regret?",
-        "What is the most illegal thing you've done?",
-        "When was the last time you cried and why?",
-        "What is the most spontaneous thing you've ever done?",
-        "If you could read minds, whose mind would you read first?",
-        "What is the strangest dream you've ever had?",
-        "What is the one thing you would bring to a desert island?",
-    ];
-    let idx = (chrono::Utc::now().timestamp() as usize) % truths.len();
-    let truth = truths[idx];
-    let mut out = format!("{}\n\n", tg_header("🔴", "Truth", &now));
-    out.push_str(&format!("## 🔴 Truth\n\n> {}\n\n", truth));
-    out.push_str("_Answer honestly or take a dare!_\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #truth #fun", tg_footer("truthordareapi.xyz", "truth"), now));
-    Ok(out)
-}
-
-async fn fetch_fact() -> Result<String> {
-    let url = "https://uselessfacts.jsph.pl/api/v2/facts/random?language=en";
-    let v: serde_json::Value = HTTP.get(url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    if let Some(fact) = v["text"].as_str() {
-        let source = v["source"].as_str().unwrap_or("?");
-        let lang = v["language"].as_str().unwrap_or("en");
-        let mut out = format!("{}\n\n", tg_header("🤯", "Fun Fact", &now));
-        out.push_str(&format!("## 🤯 Did You Know?\n\n> {}\n\n", fact));
-        out.push_str(&format!("| Stat | Value |\n|---|---|\n| Source | `{}` |\n| Language | `{}` |\n\n", source, lang));
-        out.push_str(&format!("{}\n\n`{}` · #fact #fun", tg_footer("uselessfacts.jsph.pl", "fact"), now));
-        return Ok(out);
-    }
-    Ok(format!("{}\n\n⚠️ _No facts available_\n\n{}\n\n`{}` · #fact", tg_header("🤯", "Fun Fact", "?"), tg_footer("uselessfacts.jsph.pl", "fact"), now))
-}
+// === WELLNESS COMMANDS ===
 
 async fn fetch_hustle(skill: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
@@ -3554,60 +3301,98 @@ async fn fetch_hustle(skill: &str) -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_bored(activity_type: &str) -> Result<String> {
+fn create_meditation(note: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let url = if activity_type.trim().is_empty() {
-        "https://www.boredapi.com/api/activity".to_string()
-    } else {
-        format!("https://www.boredapi.com/api/activity?type={}", urlencoding::encode(activity_type))
-    };
-    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
-        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(_) => serde_json::Value::Null },
-        _ => serde_json::Value::Null,
-    };
-    if let Some(activity) = v["activity"].as_str() {
-        let a_type = v["type"].as_str().unwrap_or("?");
-        let participants = v["participants"].as_u64().unwrap_or(0);
-        let price = v["price"].as_f64().unwrap_or(0.0);
-        let accessibility = v["accessibility"].as_f64().unwrap_or(0.0);
-        let link = v["link"].as_str().unwrap_or("");
-        let mut out = format!("{}\n\n", tg_header("🎲", "Bored?", a_type));
-        out.push_str(&format!("## 🎲 Activity\n\n> {}\n\n", activity));
-        let price_str = if price == 0.0 { "Free!".to_string() } else { format!("${:.2}", price) };
-        out.push_str(&format!("| Stat | Value |\n|---|---|\n| Type | `{}` |\n| Participants | `{}` |\n| Price | `{}` |\n| Accessibility | `{:.0}%` |\n\n", a_type, participants, price_str, accessibility * 100.0));
-        if !link.is_empty() {
-            out.push_str(&format!("🔗 [Learn More]({})\n\n", link));
-        }
-        out.push_str(&format!("{}\n\n`{}` · #bored #daily", tg_footer("boredapi.com", "bored"), now));
-        return Ok(out);
-    }
-    // Fallback: local activities
-    let activities = [
-        ("recreational", "Learn a new instrument", 1, 0.1, 0.2),
-        ("recreational", "Take a hike", 1, 0.0, 0.3),
-        ("recreational", "Pick up an old hobby again", 1, 0.0, 0.1),
-        ("social", "Call an old friend you haven't spoken to in a while", 2, 0.0, 0.3),
-        ("social", "Organize a game night with friends", 4, 0.1, 0.5),
-        ("diy", "Build something out of LEGO", 1, 0.3, 0.1),
-        ("diy", "Fix something that's been broken for a while", 1, 0.0, 0.4),
-        ("charity", "Volunteer at a local shelter", 1, 0.0, 0.7),
-        ("charity", "Donate clothes you no longer wear", 1, 0.0, 0.2),
-        ("cooking", "Try a new recipe you've never made before", 1, 0.3, 0.3),
-        ("cooking", "Bake cookies from scratch", 1, 0.2, 0.2),
-        ("music", "Create a new playlist", 1, 0.0, 0.1),
-        ("music", "Learn to play a song on guitar", 1, 0.1, 0.5),
-        ("relaxation", "Take a 20-minute nap", 1, 0.0, 0.0),
-        ("relaxation", "Do a 10-minute meditation", 1, 0.0, 0.1),
-        ("busywork", "Organize your desk/workspace", 1, 0.0, 0.3),
-        ("busywork", "Write a letter to someone you appreciate", 1, 0.0, 0.2),
+    let skill_lower = skill.trim().to_lowercase();
+
+    // Curated side hustle database indexed by skill/keyword
+    let hustles: Vec<(&str, &str, &str, &str, &str, &str)> = vec![
+        // Tech
+        ("python", "Freelance Python Automation", "Build scripts, web scrapers, data pipelines for clients", "$30-100/hr", "Medium", "upwork.com, fiverr.com"),
+        ("javascript", "Contract Web Development", "Landing pages, Shopify tweaks, WordPress sites", "$25-80/hr", "Medium", "upwork.com, toptal.com"),
+        ("rust", "Systems Contracting", "CLI tools, embedded firmware, performance-critical services", "$60-150/hr", "Hard", "github.com/jobs, LinkedIn"),
+        ("go", "Backend/API Freelance", "Microservices, DevOps tooling, cloud functions", "$40-120/hr", "Medium", "upwork.com, arc.dev"),
+        ("react", "Frontend Freelance", "Dashboards, SPAs, component libraries", "$30-90/hr", "Medium", "upwork.com, gun.io"),
+        ("swift", "iOS App Development", "MVPs, SwiftUI prototypes, App Store releases", "$50-150/hr", "Hard", "toptal.com, upwork.com"),
+        ("flutter", "Cross-platform Mobile", "Ship iOS + Android from one codebase", "$35-100/hr", "Medium", "upwork.com, flutterjobs.com"),
+        ("devops", "DevOps Consulting", "CI/CD, Docker, K8s, cloud migrations", "$50-200/hr", "Hard", "toptal.com, arc.dev"),
+        ("machine learning", "ML Consulting", "Model training, data pipelines, MLOps", "$60-200/hr", "Hard", "kaggle.com, upwork.com"),
+        ("data", "Data Analytics Freelance", "Dashboards, ETL, Excel automation", "$25-75/hr", "Medium", "upwork.com, toptal.com"),
+        // Creative
+        ("design", "UI/UX Design Freelance", "Figma prototypes, brand kits, design systems", "$30-100/hr", "Medium", "dribbble.com, upwork.com"),
+        ("video", "Video Editing Services", "YouTube edits, reels, ad creatives", "$20-75/hr", "Easy", "fiverr.com, upwork.com"),
+        ("photo", "Photography Side Gig", "Events, product shots, real estate", "$50-500/event", "Easy", "thumbtack.com, yelp"),
+        ("writing", "Technical Writing", "Docs, blog posts, API guides", "$0.10-0.50/word", "Easy", "upwork.com, technicalwritinghq.com"),
+        ("copywriting", "Copywriting Services", "Landing pages, email sequences, ad copy", "$25-100/hr", "Medium", "copyblogger.com, upwork.com"),
+        // Business
+        ("marketing", "Digital Marketing Consulting", "SEO, paid ads, social media strategy", "$30-100/hr", "Medium", "upwork.com, LinkedIn"),
+        ("seo", "SEO Freelancing", "Audits, keyword research, link building", "$25-80/hr", "Easy", "upwork.com, semrush.com"),
+        ("finance", "Financial Modeling / Consulting", "Excel models, pitch decks, CFO-as-a-service", "$50-200/hr", "Hard", "toptal.com, cruwix.com"),
+        ("account", "Bookkeeping Side Gig", "QuickBooks, Xero, tax prep for small biz", "$20-50/hr", "Easy", "bookkeeper.com, upwork.com"),
+        ("legal", "Contract Review Freelance", "NDAs, SOWs, employment agreements", "$50-150/hr", "Hard", "lawtradr.com, upwork.com"),
+        // General
+        ("tutor", "Online Tutoring", "Math, science, language tutoring", "$15-60/hr", "Easy", "wyzant.com, tutor.com"),
+        ("translate", "Translation Services", "Document, website, video translation", "$0.05-0.20/word", "Easy", "upwork.com, proz.com"),
+        ("music", "Music Lessons / Production", "Instrument tutoring, beat making, mixing", "$20-80/hr", "Easy", "takelessons.com, fiverr.com"),
+        ("fitness", "Online Coaching", "Personalized workout + meal plans", "$50-200/mo per client", "Medium", "trainerize.com, Instagram"),
+        ("cook", "Private Chef / Meal Prep", "Weekly meal prep, event catering", "$200-500/event", "Medium", "thumbtack.com, yelp"),
     ];
-    let idx = (chrono::Utc::now().timestamp() as usize) % activities.len();
-    let (a_type, activity, participants, price, accessibility) = activities[idx];
-    let mut out = format!("{}\n\n", tg_header("🎲", "Bored?", a_type));
-    out.push_str(&format!("## 🎲 Activity\n\n> {}\n\n", activity));
-    let price_str = if price == 0.0 { "Free!".to_string() } else { format!("${:.1}", price) };
-    out.push_str(&format!("| Stat | Value |\n|---|---|\n| Type | `{}` |\n| Participants | `{}` |\n| Price | `{}` |\n| Accessibility | `{:.0}%` |\n\n", a_type, participants, price_str, accessibility * 100.0));
-    out.push_str(&format!("{}\n\n`{}` · #bored #daily", tg_footer("boredapi.com", "bored"), now));
+
+    // Find matching hustles by skill keyword
+    let matched: Vec<_> = if skill_lower.is_empty() {
+        // Random general picks when no skill given
+        hustles.iter().choose_multiple(&mut rand::rng(), 5).into_iter().cloned().collect()
+    } else {
+        let mut matches: Vec<_> = hustles.iter()
+            .filter(|(k, _, _, _, _, _)| skill_lower.contains(k) || k.contains(&skill_lower))
+            .cloned()
+            .collect();
+        if matches.is_empty() {
+            // Fallback: fuzzy match on description
+            matches = hustles.iter()
+                .filter(|(_, title, desc, _, _, _)| {
+                    let combined = format!("{} {}", title.to_lowercase(), desc.to_lowercase());
+                    skill_lower.split_whitespace().any(|w| combined.contains(w))
+                })
+                .cloned()
+                .collect();
+        }
+        if matches.is_empty() {
+            // Still nothing — give general advice
+            let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
+            out.push_str(&format!("No specific matches for **{}**, but here are universal high-ROI hustles:\n\n", skill));
+            out.push_str("| Hustle | Why | Effort |\n|---|---|---|\n");
+            out.push_str("| Freelance consulting | Package what you already know | Low |\n");
+            out.push_str("| Digital products | Templates, courses, presets | Medium |\n");
+            out.push_str("| Open source + sponsorship | Build in public, get sponsors | High |\n\n");
+            out.push_str("💡 **Tip:** Tell me your specific skill (e.g. `/hustle python` or `/hustle design`) for tailored ideas.\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #hustle #money", tg_footer("memogram-rs", "hustle"), now));
+            return Ok(out);
+        }
+        matches
+    };
+
+    let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
+    out.push_str(&format!("**{} matches** for _{}_\n\n", matched.len(), if skill.is_empty() { "general picks" } else { skill }));
+
+    for (i, (_, title, desc, pay, difficulty, platforms)) in matched.iter().enumerate() {
+        let diff_emoji = match *difficulty {
+            "Easy" => "🟢",
+            "Medium" => "🟡",
+            "Hard" => "🔴",
+            _ => "⚪",
+        };
+        out.push_str(&format!("**{}. {}**\n", i + 1, title));
+        out.push_str(&format!("{}\n", desc));
+        out.push_str(&format!("   💵 {} · {} {} · 📍 {}\n\n", pay, diff_emoji, difficulty, platforms));
+    }
+
+    out.push_str("## 🚀 Next Steps\n\n");
+    out.push_str("1. Pick one that matches your current skills\n");
+    out.push_str("2. Create a profile on the listed platform\n");
+    out.push_str("3. Start with a small gig to build reviews\n");
+    out.push_str("4. Use `/brief <platform>` to learn how to succeed there\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #hustle #money", tg_footer("memogram-rs", "hustle"), now));
     Ok(out)
 }
 
@@ -4132,30 +3917,6 @@ async fn fetch_ghrepo(repo: &str) -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_weather7(city: &str) -> Result<String> {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let url = format!("https://wttr.in/{}?format=j1", urlencoding::encode(city));
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-    let current = &v["current_condition"][0];
-    let temp = current["temp_C"].as_str().unwrap_or("?");
-    let desc = current["weatherDesc"][0]["value"].as_str().unwrap_or("?");
-    let humidity = current["humidity"].as_str().unwrap_or("?");
-    let wind = current["windspeedKmph"].as_str().unwrap_or("?");
-    let mut out = format!("{}\n\n", tg_header("🌤️", "7-Day Forecast", city));
-    out.push_str(&format!("**Current:** {}°C — {} · 💧 {}% · 💨 {} km/h\n\n", temp, desc, humidity, wind));
-    out.push_str("| Day | High | Low | Condition |\n|---|---|---|---|\n");
-    for (i, day) in v["weather"].as_array().unwrap_or(&vec![]).iter().take(7).enumerate() {
-        let date = day["date"].as_str().unwrap_or("?");
-        let max = day["maxtempC"].as_str().unwrap_or("?");
-        let min = day["mintempC"].as_str().unwrap_or("?");
-        let cond = day["hourly"][4]["weatherDesc"][0]["value"].as_str().unwrap_or("?");
-        let emoji = if cond.contains("Sun") { "☀️" } else if cond.contains("Cloud") { "☁️" } else if cond.contains("Rain") { "🌧️" } else if cond.contains("Snow") { "❄️" } else { "🌤️" };
-        out.push_str(&format!("| {}{} | {}°C | {}°C | {} {} |\n", if i==0{"📍 "}else{""}, date, max, min, emoji, cond));
-    }
-    out.push_str(&format!("\n{}\n\n`{}` · #weather7", tg_footer("wttr.in", "weather7"), now));
-    Ok(out)
-}
-
 async fn fetch_ip(ip: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let url = if ip.trim().is_empty() || ip.trim() == "me" { "http://ip-api.com/json/".to_string() } else { format!("http://ip-api.com/json/{}", ip.trim()) };
@@ -4243,46 +4004,6 @@ async fn fetch_zen() -> Result<String> {
         .build())
 }
 
-async fn fetch_astro(sign: &str) -> Result<String> {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let q = if sign.trim().is_empty() { "aries" } else { sign.trim() };
-    let url = format!("https://horoscope-api.herokuapp.com/horoscope/today/{}", q.to_lowercase());
-    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
-        Ok(Ok(r)) => match r.json::<serde_json::Value>().await { Ok(j) => j, Err(_) => serde_json::Value::Null },
-        _ => serde_json::Value::Null,
-    };
-    if let Some(horoscope) = v["horoscope"].as_str() {
-        let sign_name = v["sunsign"].as_str().unwrap_or(q);
-        let mut out = format!("{}\n\n", tg_header("🔮", "Daily Horoscope", sign_name));
-        out.push_str(&format!("**Sign:** `{}` · **Date:** `{}`\n\n", sign_name, now));
-        out.push_str(&format!("## 🔮 Your Horoscope\n\n> {}\n\n", horoscope));
-        out.push_str(&format!("{}\n\n`{}` · #astro #fun", tg_footer("horoscope-api.herokuapp.com", "astro"), now));
-        return Ok(out);
-    }
-    // Fallback
-    let horoscopes = [
-        ("aries", "A bold move today will pay off. Trust your instincts and take the leap."),
-        ("taurus", "Financial matters align in your favor. A practical solution emerges."),
-        ("gemini", "Communication flows easily. An important conversation brings clarity."),
-        ("cancer", "Home and family bring comfort. A nurturing gesture strengthens bonds."),
-        ("leo", "Your creativity shines. A leadership opportunity presents itself."),
-        ("virgo", "Details matter today. Your analytical skills solve a complex problem."),
-        ("libra", "Balance is key. A partnership or relationship reaches new harmony."),
-        ("scorpio", "Deep insights surface. Trust your intuition on a mysterious matter."),
-        ("sagittarius", "Adventure calls. An unexpected opportunity expands your horizons."),
-        ("capricorn", "Discipline pays off. A long-term goal moves closer to completion."),
-        ("aquarius", "Innovation wins. Your unique perspective inspires those around you."),
-        ("pisces", "Creativity flows. A dream or intuition leads to a meaningful discovery."),
-    ];
-    let idx = horoscopes.iter().position(|(s, _)| s == &q.to_lowercase()).unwrap_or(0);
-    let (sign_name, horoscope) = horoscopes[idx];
-    let mut out = format!("{}\n\n", tg_header("🔮", "Daily Horoscope", sign_name));
-    out.push_str(&format!("**Sign:** `{}` · **Date:** `{}`\n\n", sign_name, now));
-    out.push_str(&format!("## 🔮 Your Horoscope\n\n> {}\n\n", horoscope));
-    out.push_str(&format!("{}\n\n`{}` · #astro #fun", tg_footer("horoscope-api.herokuapp.com", "astro"), now));
-    Ok(out)
-}
-
 async fn fetch_summarize(url: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let resp = HTTP.get(url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(10)).send().await?;
@@ -4354,7 +4075,6 @@ async fn run_preview() -> Result<()> {
         ("stock", try_fetch("stock", fetch_stock("AAPL")).await.1),
         ("crypto", try_fetch("crypto", fetch_crypto("bitcoin")).await.1),
         ("translate", try_fetch("translate", fetch_translate("hello world")).await.1),
-        ("forecast", try_fetch("forecast", fetch_forecast("London")).await.1),
         ("npm", try_fetch("npm", fetch_npm("express")).await.1),
         ("pypi", try_fetch("pypi", fetch_pypi("requests")).await.1),
         ("crates", try_fetch("crates", fetch_crates("tokio")).await.1),
@@ -4373,12 +4093,6 @@ async fn run_preview() -> Result<()> {
         ("devto", try_fetch("devto", fetch_devto()).await.1),
         ("tldr", try_fetch("tldr", fetch_tldr()).await.1),
         ("markets", try_fetch("markets", fetch_markets()).await.1),
-        ("joke", try_fetch("joke", fetch_joke("")).await.1),
-        ("fortune", try_fetch("fortune", fetch_fortune("")).await.1),
-        ("bored", try_fetch("bored", fetch_bored("")).await.1),
-        ("quote", try_fetch("quote", fetch_quote("")).await.1),
-        ("truth", try_fetch("truth", fetch_truth()).await.1),
-        ("fact", try_fetch("fact", fetch_fact()).await.1),
         ("hustle", try_fetch("hustle", fetch_hustle("python")).await.1),
     ];
 
@@ -4396,7 +4110,6 @@ async fn run_preview() -> Result<()> {
         ("meditation", create_meditation("10m focused on breath")),
         ("affirmation", create_affirmation("I am capable and calm")),
         ("reflection", create_reflection("Today I learned to iterate quickly")),
-        ("journal", create_journal("Today I shipped the new markdown pipeline")),
         ("goal", create_goal("Ship memogram v2 clean markdown")),
         ("deadline", create_deadline("2026-09-10 Ship v2")),
         ("plan", create_plan("1. Fix markdown\n2. Test live\n3. Deploy")),
@@ -4429,7 +4142,6 @@ async fn run_preview() -> Result<()> {
         ("list", create_list("Groceries: milk, eggs, bread, coffee")),
         ("clip", create_clip("https://example.com article about rust async")),
         ("mood", create_mood_entry("7 productive day, shipped features")),
-        ("gratitude", create_gratitude_entry("Good coffee, clean code, team support")),
         ("habit", create_habit_entry("meditation 10m done, reading 20m done")),
         ("wisdom", fetch_wisdom().await.unwrap_or_else(|e| format!("wisdom err: {e}"))),
         ("review", create_review("Shipped 3 features, fixed 2 bugs, reviewed 4 PRs")),
@@ -4445,10 +4157,8 @@ async fn run_preview() -> Result<()> {
         ("containers", try_fetch("containers", fetch_containers("http://localhost:6100")).await.1),
         // REPLACED COMMANDS
         ("ghrepo", try_fetch("ghrepo", fetch_ghrepo("rust-lang/rust")).await.1),
-        ("weather7", try_fetch("weather7", fetch_weather7("London")).await.1),
         ("ip", try_fetch("ip", fetch_ip("8.8.8.8")).await.1),
         ("zen", try_fetch("zen", fetch_zen()).await.1),
-        ("astro", try_fetch("astro", fetch_astro("aries")).await.1),
         ("summarize", try_fetch("summarize", fetch_summarize("https://example.com")).await.1),
         ("bmi", fetch_bmi("175 70")),
     ];
