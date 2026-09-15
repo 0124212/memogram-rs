@@ -55,6 +55,12 @@ enum Command {
     Digest,
     Youtube(String),
     Learn(String),
+    Workout(String),
+    Health(String),
+    Nutrition(String),
+    Meal(String),
+    Breathe(String),
+    Calories(String),
     Dns(String),
     Json(String),
     Regex(String),
@@ -90,6 +96,7 @@ struct App {
     ntfy_url: String,
     vikunja_url: String,
     vikunja_token: String,
+    api_ninjas_key: String,
 }
 
 impl App {
@@ -148,8 +155,9 @@ async fn main() -> Result<()> {
     let ntfy_url = env::var("NTFY_URL").ok().unwrap_or_default();
     let vikunja_url = env::var("VIKUNJA_URL").ok().unwrap_or_default();
     let vikunja_token = env::var("VIKUNJA_TOKEN").ok().unwrap_or_default();
+    let api_ninjas_key = env::var("API_NINJAS_KEY").ok().unwrap_or_default();
     let store = Arc::new(RwLock::new(load_store(&store_path).await));
-    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token };
+    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token, api_ninjas_key };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
 
@@ -191,6 +199,12 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
+        teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
+        teloxide::types::BotCommand { command: "health".into(), description: "health dashboard <w> <h> <age>".into() },
+        teloxide::types::BotCommand { command: "nutrition".into(), description: "full nutrient breakdown".into() },
+        teloxide::types::BotCommand { command: "meal".into(), description: "recipe card <cuisine>".into() },
+        teloxide::types::BotCommand { command: "breathe".into(), description: "breathing exercise".into() },
+        teloxide::types::BotCommand { command: "calories".into(), description: "calories burned <activity> <min>".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "PubMed papers".into() },
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
@@ -317,6 +331,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Workout(q) => { let txt = fetch_workout(&q).await.unwrap_or_else(|e| format!("workout err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Health(args) => { let txt = fetch_health(&args).await.unwrap_or_else(|e| format!("health err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Nutrition(q) => { let txt = fetch_nutrition(&q, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("nutrition err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Meal(q) => { let txt = fetch_meal(&q).await.unwrap_or_else(|e| format!("meal err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Breathe(args) => { let txt = create_breathe(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Calories(args) => { let txt = fetch_calories(&args, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("calories err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -2442,6 +2462,422 @@ fn create_mood_entry(args: &str) -> String {
         "# 😊 Mood — `{}`\n\n**Date:** `{}` · **Mood:** `{}`\n**Note:** {}\n\n## 📊 Check\n\n| Mood | Energy | Stress |\n|---|---|---|\n| {} | /10 | /10 |\n\n## 📈 Last 7 Days (sample)\n\n| Date | Mood | Note |\n|---|---|---|\n| {} | {} | {} |\n| 2026-09-03 | ok |  |\n| 2026-09-02 | good |  |\n\n> _Tip: Name it to tame it. 1 breath, note 1 good._\n\n{}\n\n`{}` · #wellness #memogram-rs",
         mood, date, mood, note, mood, day, mood, note, tg_header("😊", "Mood", mood), date
     )
+}
+
+// === WELLNESS: EVIDENCE-BASED API-POWERED COMMANDS ===
+
+async fn fetch_workout(query: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return Ok("usage: `/workout <muscle>` — e.g. `/workout chest`, `/workout back`, `/workout legs`".into());
+    }
+    let url = format!("https://v2.exercisedb.dev/exercises?limit=10&offset=0");
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let all = v.as_array().cloned().unwrap_or_default();
+    let matched: Vec<&serde_json::Value> = all.iter().filter(|e| {
+        let body = e["bodyParts"].as_array().map(|a| a.iter().any(|b| b.as_str().unwrap_or("").to_lowercase().contains(&query))).unwrap_or(false);
+        let muscles = e["targetMuscles"].as_array().map(|a| a.iter().any(|m| m.as_str().unwrap_or("").to_lowercase().contains(&query))).unwrap_or(false);
+        let name = e["name"].as_str().unwrap_or("").to_lowercase().contains(&query);
+        body || muscles || name
+    }).collect();
+
+    let mut out = format!("{}\n\n", tg_header("💪", "Workout Plan", &query));
+    if matched.is_empty() {
+        out.push_str("_No exercises found. Try: chest, back, legs, shoulders, arms, core, cardio_\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #workout #wellness #memogram-rs", tg_footer("exercisedb", "workout"), now));
+        return Ok(out);
+    }
+    out.push_str(&format!("**{} exercises** for _{}_\n\n", matched.len(), query));
+    for (i, ex) in matched.iter().enumerate() {
+        let name = ex["name"].as_str().unwrap_or("?");
+        let body_parts: Vec<String> = ex["bodyParts"].as_array().map(|a| a.iter().filter_map(|b| b.as_str()).map(|s| format!("`{}`", s)).collect()).unwrap_or_default();
+        let muscles: Vec<String> = ex["targetMuscles"].as_array().map(|a| a.iter().filter_map(|m| m.as_str()).map(|s| format!("`{}`", s)).collect()).unwrap_or_default();
+        let equip = ex["equipments"].as_array().map(|a| a.iter().filter_map(|e| e.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+        let ex_type = ex["exerciseType"].as_str().unwrap_or("?");
+        let overview = ex["overview"].as_str().unwrap_or("");
+        let instructions: Vec<String> = ex["instructions"].as_array().map(|a| a.iter().filter_map(|s| s.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+        let tips: Vec<String> = ex["exerciseTips"].as_array().map(|a| a.iter().filter_map(|s| s.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+
+        out.push_str(&format!("### {}. {} \n\n", i + 1, name));
+        out.push_str("| Detail | Value |\n|---|---|\n");
+        out.push_str(&format!("| Body Part | {} |\n", body_parts.join(", ")));
+        out.push_str(&format!("| Target Muscles | {} |\n", muscles.join(", ")));
+        out.push_str(&format!("| Equipment | `{}` |\n", equip));
+        out.push_str(&format!("| Type | `{}` |\n\n", ex_type));
+        if !overview.is_empty() {
+            out.push_str(&format!("> {}\n\n", overview));
+        }
+        if !instructions.is_empty() {
+            out.push_str("**Steps:**\n");
+            for (j, step) in instructions.iter().enumerate() {
+                out.push_str(&format!("{}. {}\n", j + 1, step));
+            }
+            out.push('\n');
+        }
+        if !tips.is_empty() {
+            out.push_str("**Tips:**\n");
+            for tip in &tips {
+                out.push_str(&format!("- {}\n", tip));
+            }
+            out.push('\n');
+        }
+    }
+    out.push_str(&format!("{}\n\n`{}` · #workout #wellness #memogram-rs", tg_footer("exercisedb.dev", "workout"), now));
+    Ok(out)
+}
+
+async fn fetch_health(args: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 3 {
+        return Ok("usage: `/health <weight_kg> <height_cm> <age> [male|female]`\n\nExample: `/health 75 180 25 male`".into());
+    }
+    let weight: f64 = parts[0].parse().unwrap_or(0.0);
+    let height: f64 = parts[1].parse().unwrap_or(0.0);
+    let age: u32 = parts[2].parse().unwrap_or(25);
+    let gender = parts.get(3).unwrap_or(&"male").to_lowercase();
+
+    if weight <= 0.0 || height <= 0.0 { return Ok("⚠️ Invalid weight or height.".into()); }
+
+    let url = format!("https://myplate.food/api/v1/calculate/calorie-needs?weight={}&height={}&age={}&gender={}", weight, height, age, gender);
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+
+    let height_m = height / 100.0;
+    let bmi = weight / (height_m * height_m);
+    let bmi_cat = if bmi < 18.5 { "Underweight" } else if bmi < 25.0 { "Normal" } else if bmi < 30.0 { "Overweight" } else { "Obese" };
+    let bmr = v["bmr"].as_f64().unwrap_or(0.0);
+    let tdee = v["tdee"].as_object().map(|o| o.len()).unwrap_or(0);
+
+    let mut out = format!("{}\n\n", tg_header("🏥", "Health Dashboard", &format!("{}kg {}cm {}yr {}", weight, height, age, gender)));
+    out.push_str(&format!("**Date:** `{}`\n\n", now));
+
+    // BMI
+    out.push_str("## 📊 Body Mass Index\n\n");
+    out.push_str("| Metric | Value | Category |\n|---|---|---|\n");
+    out.push_str(&format!("| BMI | `{:.1}` | **{}** |\n\n", bmi, bmi_cat));
+    out.push_str("```\n");
+    out.push_str(&format!("Underweight: <18.5\nNormal:       18.5-24.9  ← {}\nOverweight:   25.0-29.9\nObese:        30.0+\n", if bmi < 25.0 { "you are here" } else { "" }));
+    out.push_str("```\n\n");
+
+    // TDEE
+    out.push_str("## 🔥 Total Daily Energy Expenditure\n\n");
+    out.push_str("| Activity Level | Calories/day |\n|---|---|\n");
+    if let Some(tdee_obj) = v["tdee"].as_object() {
+        for (level, cal) in tdee_obj {
+            let cal_num = cal.as_f64().unwrap_or(0.0) as u32;
+            out.push_str(&format!("| {} | `{}` |\n", level.replace('-', " "), cal_num));
+        }
+    }
+    out.push('\n');
+
+    // BMR
+    out.push_str(&format!("**BMR (Mifflin-St Jeor):** `{}` cal/day\n\n", bmr as u32));
+
+    // Macros
+    out.push_str("## 🥗 Recommended Macros (at maintenance)\n\n");
+    out.push_str("| Macro | Grams | Calories | % |\n|---|---|---|---|\n");
+    if let Some(macros) = v["macros"].as_object() {
+        let total_cal = v["tdee"]["lightly-active"].as_f64().unwrap_or(2000.0);
+        for (name, data) in macros {
+            let grams = data["grams"].as_f64().unwrap_or(0.0);
+            let cal_per_g = match name.as_str() {
+                "protein" => 4.0,
+                "carbohydrates" => 4.0,
+                "fat" => 9.0,
+                _ => 4.0,
+            };
+            let cal = grams * cal_per_g;
+            let pct = if total_cal > 0.0 { cal / total_cal * 100.0 } else { 0.0 };
+            out.push_str(&format!("| **{}** | `{:.0}g` | `{:.0}` | `{:.0}%` |\n", name, grams, cal, pct));
+        }
+    }
+    out.push('\n');
+
+    // Ideal weight
+    out.push_str("## ⚖️ Ideal Weight Ranges\n\n");
+    out.push_str("| Formula | Weight |\n|---|---|\n");
+    if let Some(iw) = v["ideal_weight"].as_object() {
+        for (formula, wt) in iw {
+            if let Some(w) = wt.as_f64() {
+                out.push_str(&format!("| {} | `{:.1} kg` |\n", formula, w));
+            }
+        }
+    }
+    if let Some(range) = v["healthy_bmi_range"].as_str() {
+        out.push_str(&format!("| Healthy BMI Range | `{}` |\n", range));
+    }
+    out.push('\n');
+
+    // Hydration
+    let water_liters = weight * 0.033;
+    out.push_str("## 💧 Hydration Target\n\n");
+    out.push_str(&format!("| Guideline | Target |\n|---|---|\n"));
+    out.push_str(&format!("| Water (33ml/kg) | `{:.1}L` ({:.0}oz) |\n", water_liters, water_liters * 33.8));
+    out.push_str(&format!("| Glasses (250ml) | `{}` |\n\n", (water_liters * 4.0) as u32));
+
+    // Deficit tiers
+    if let Some(deficits) = v["deficit_tiers"].as_object() {
+        out.push_str("## 📉 Weight Loss Plan\n\n");
+        out.push_str("| Tier | Calories | Weekly Loss |\n|---|---|---|\n");
+        for (tier, data) in deficits {
+            let cal = data["calories"].as_f64().unwrap_or(0.0) as u32;
+            let loss = data["weekly_loss_kg"].as_f64().unwrap_or(0.0);
+            out.push_str(&format!("| {} | `{}` | `{:.2} kg/week` |\n", tier, cal, loss));
+        }
+        out.push('\n');
+    }
+
+    out.push_str("> _Source: Mifflin-St Jeor equation, USDA DRI data. Not medical advice._\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #health #wellness #memogram-rs", tg_footer("myplate.food", "health"), now));
+    Ok(out)
+}
+
+async fn fetch_nutrition(query: &str, api_key: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let query = query.trim();
+    if query.is_empty() { return Ok("usage: `/nutrition <food>` — e.g. `/nutrition 2 eggs and toast`".into()); }
+    if api_key.is_empty() { return Ok("⚠️ `API_NINJAS_KEY` not set. Get free key at api.api-ninjas.com".into()); }
+
+    let url = format!("https://api.api-ninjas.com/v1/nutrition?query={}", urlencoding::encode(query));
+    let v: serde_json::Value = HTTP.get(&url).header("X-Api-Key", api_key).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+
+    let items = v.as_array().ok_or_else(|| anyhow::anyhow!("no results"))?;
+    if items.is_empty() {
+        return Ok(format!("{}\n\n_No food found for `{}`_\n\n{}", tg_header("🥗", "Nutrition", query), query, tg_footer("api-ninjas.com", "nutrition")));
+    }
+
+    let mut out = format!("{}\n\n", tg_header("🥗", "Nutrition Breakdown", query));
+    let mut total_cal = 0.0_f64;
+    let mut total_protein = 0.0_f64;
+    let mut total_carbs = 0.0_f64;
+    let mut total_fat = 0.0_f64;
+    let mut total_fiber = 0.0_f64;
+
+    for item in items {
+        let name = item["name"].as_str().unwrap_or("?");
+        let cal = item["calories"].as_f64().unwrap_or(0.0);
+        let serving = item["serving_size_g"].as_f64().unwrap_or(0.0);
+        let protein = item["protein_g"].as_f64().unwrap_or(0.0);
+        let carbs = item["carbohydrates_total_g"].as_f64().unwrap_or(0.0);
+        let fat = item["fat_total_g"].as_f64().unwrap_or(0.0);
+        let fiber = item["fiber_g"].as_f64().unwrap_or(0.0);
+        let sugar = item["sugar_g"].as_f64().unwrap_or(0.0);
+        let sat_fat = item["fat_saturated_g"].as_f64().unwrap_or(0.0);
+        let sodium = item["sodium_mg"].as_f64().unwrap_or(0.0);
+        let cholesterol = item["cholesterol_mg"].as_f64().unwrap_or(0.0);
+        let potassium = item["potassium_mg"].as_f64().unwrap_or(0.0);
+
+        total_cal += cal; total_protein += protein; total_carbs += carbs; total_fat += fat; total_fiber += fiber;
+
+        out.push_str(&format!("### 🍽️ {} ({:.0}g)\n\n", name, serving));
+        out.push_str("| Nutrient | Amount |\n|---|---|\n");
+        out.push_str(&format!("| Calories | `{:.0}` kcal |\n", cal));
+        out.push_str(&format!("| Protein | `{:.1}g` |\n", protein));
+        out.push_str(&format!("| Carbs | `{:.1}g` |\n", carbs));
+        out.push_str(&format!("| Fat | `{:.1}g` (saturated: {:.1}g) |\n", fat, sat_fat));
+        out.push_str(&format!("| Fiber | `{:.1}g` |\n", fiber));
+        out.push_str(&format!("| Sugar | `{:.1}g` |\n", sugar));
+        out.push_str(&format!("| Sodium | `{:.0}mg` |\n", sodium));
+        out.push_str(&format!("| Cholesterol | `{:.0}mg` |\n", cholesterol));
+        out.push_str(&format!("| Potassium | `{:.0}mg` |\n\n", potassium));
+    }
+
+    if items.len() > 1 {
+        out.push_str("## 📊 Totals\n\n");
+        out.push_str("| Nutrient | Total |\n|---|---|\n");
+        out.push_str(&format!("| Calories | `{:.0}` kcal |\n", total_cal));
+        out.push_str(&format!("| Protein | `{:.1}g` |\n", total_protein));
+        out.push_str(&format!("| Carbs | `{:.1}g` |\n", total_carbs));
+        out.push_str(&format!("| Fat | `{:.1}g` |\n", total_fat));
+        out.push_str(&format!("| Fiber | `{:.1}g` |\n\n", total_fiber));
+    }
+
+    out.push_str(&format!("{}\n\n`{}` · #nutrition #wellness #memogram-rs", tg_footer("api-ninjas.com", "nutrition"), now));
+    Ok(out)
+}
+
+async fn fetch_meal(query: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let query = query.trim();
+    if query.is_empty() { return Ok("usage: `/meal <cuisine or dish>` — e.g. `/meal italian`, `/meal chicken`".into()); }
+
+    let url = format!("https://www.themealdb.com/api/json/v1/1/search.php?s={}", urlencoding::encode(query));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+
+    let meals = v["meals"].as_array().ok_or_else(|| anyhow::anyhow!("no meals"))?;
+    if meals.is_empty() || meals[0].is_null() {
+        return Ok(format!("{}\n\n_No meals found for `{}`_\n\n> Try: `chicken`, `pasta`, `curry`, `salad`, `mexican`\n\n{}\n\n`{}` · #meal #wellness #memogram-rs",
+            tg_header("🍽️", "Recipe", query), query, tg_footer("themealdb.com", "meal"), now));
+    }
+
+    let meal = &meals[0];
+    let name = meal["strMeal"].as_str().unwrap_or("?");
+    let category = meal["strCategory"].as_str().unwrap_or("?");
+    let area = meal["strArea"].as_str().unwrap_or("?");
+    let instructions = meal["strInstructions"].as_str().unwrap_or("");
+    let tags = meal["strTags"].as_str().unwrap_or("None");
+    let youtube = meal["strYoutube"].as_str().unwrap_or("");
+
+    let mut out = format!("{}\n\n", tg_header("🍽️", name, area));
+    out.push_str(&format!("**Category:** `{}` · **Cuisine:** `{}` · **Tags:** `{}`\n\n", category, area, tags));
+
+    // Ingredients table
+    out.push_str("## 📋 Ingredients\n\n");
+    out.push_str("| Ingredient | Measure |\n|---|---|\n");
+    for i in 1..=20 {
+        let ingredient = meal[&format!("strIngredient{}", i)].as_str().unwrap_or("").trim();
+        let measure = meal[&format!("strMeasure{}", i)].as_str().unwrap_or("").trim();
+        if !ingredient.is_empty() {
+            out.push_str(&format!("| {} | {} |\n", ingredient, measure));
+        }
+    }
+    out.push('\n');
+
+    // Instructions
+    out.push_str("## 🔪 Instructions\n\n");
+    for (i, step) in instructions.split("\r\n").filter(|s| !s.trim().is_empty()).enumerate() {
+        out.push_str(&format!("{}. {}\n\n", i + 1, step.trim()));
+    }
+
+    if !youtube.is_empty() {
+        out.push_str(&format!("🎬 [Video Tutorial]({})\n\n", youtube));
+    }
+
+    out.push_str(&format!("{}\n\n`{}` · #meal #wellness #memogram-rs", tg_footer("themealdb.com", "meal"), now));
+    Ok(out)
+}
+
+fn create_breathe(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let technique = args.trim().to_lowercase();
+
+    let techniques = vec![
+        ("box", "Box Breathing (4-4-4-4)", "Navy SEALs", "Stress relief, focus, calm",
+         vec![
+             "Sit upright. Close eyes. Breathe naturally for 30 seconds.",
+             "INHALE slowly through nose for 4 seconds.",
+             "HOLD breath for 4 seconds.",
+             "EXHALE slowly through mouth for 4 seconds.",
+             "HOLD empty for 4 seconds.",
+             "Repeat for 4-6 cycles (2-3 minutes).",
+         ],
+         "Proven to activate parasympathetic nervous system. Used by Navy SEALs for combat stress. Studies show reduced cortisol in 5 minutes."),
+        ("478", "4-7-8 Breathing", "Dr. Andrew Weil", "Sleep, anxiety, panic",
+         vec![
+             "Place tongue tip behind upper front teeth.",
+             "Exhale completely through mouth with whoosh sound.",
+             "INHALE quietly through nose for 4 seconds.",
+             "HOLD breath for 7 seconds.",
+             "EXHALE completely through mouth for 8 seconds.",
+             "Repeat 4 cycles. Build to 8 cycles over weeks.",
+         ],
+         "Dr. Weil calls this 'a natural tranquilizer for the nervous system.' Clinical evidence for reducing anxiety and aiding sleep onset."),
+        ("3min", "3-Minute Breathing Space", "MBCT (Segal, Williams, Teasdale)", "Daily mindfulness, mood regulation",
+         vec![
+             "MINUTE 1 — ACKNOWLEDGE: What am I experiencing right now? Notice thoughts, feelings, body sensations. Name them.",
+             "MINUTE 2 — GATHER: Focus attention on breathing. Feel the abdomen rise and fall. Anchor to present moment.",
+             "MINUTE 3 — EXPAND: Expand awareness to whole body. Carry this expanded awareness into the rest of your day.",
+         ],
+         "Core practice of Mindfulness-Based Cognitive Therapy (MBCT). Evidence-based for preventing depressive relapse. Recommended by NICE guidelines (UK)."),
+        ("physiological", "Physiological Sigh", "Stanford (Huberman Lab)", "Fastest calm-down (1 breath)",
+         vec![
+             "INHALE through nose (full breath).",
+             "Without exhaling, INHALE again through nose (double inhale — tops off alveoli).",
+             "LONG EXHALE through mouth (slow, extended — 6-8 seconds).",
+             "Even one cycle activates calm. 2-3 cycles for full effect.",
+         ],
+         "Stanford research (2023): double inhale + extended exhale is the fastest known way to voluntarily reduce stress. Works in a single breath cycle."),
+    ];
+
+    let mut out = format!("{}\n\n", tg_header("🫁", "Breathing Exercise", if technique.is_empty() { "pick a technique" } else { &technique }));
+
+    if technique.is_empty() {
+        out.push_str("**Techniques:** `box`, `478`, `3min`, `physiological`\n\n");
+        for (id, name, source, use_case, _, _) in &techniques {
+            out.push_str(&format!("- **/breathe {}** — {} ({})\n  📍 For: {}\n\n", id, name, source, use_case));
+        }
+        out.push_str(&format!("{}\n\n`{}` · #breathe #wellness #memogram-rs", tg_footer("evidence-based", "breathe"), now));
+        return out;
+    }
+
+    for (id, name, source, use_case, steps, evidence) in &techniques {
+        if *id == technique {
+            out.push_str(&format!("**Technique:** {} \n**Source:** {} \n**Use for:** {}\n\n", name, source, use_case));
+            out.push_str("## 📋 Protocol\n\n");
+            for (i, step) in steps.iter().enumerate() {
+                out.push_str(&format!("{}. {}\n\n", i + 1, step));
+            }
+            out.push_str("## 📚 Evidence\n\n");
+            out.push_str(&format!("> {}\n\n", evidence));
+            out.push_str(&format!("{}\n\n`{}` · #breathe #wellness #memogram-rs", tg_footer("evidence-based", "breathe"), now));
+            return out;
+        }
+    }
+
+    out.push_str("_Unknown technique. Available: `box`, `478`, `3min`, `physiological`_\n");
+    out.push_str(&format!("\n{}\n\n`{}` · #breathe #wellness #memogram-rs", tg_footer("evidence-based", "breathe"), now));
+    out
+}
+
+async fn fetch_calories(args: &str, api_key: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let activity = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("");
+    let duration: f64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(30.0);
+
+    if activity.is_empty() {
+        return Ok("usage: `/calories <activity> <minutes>` — e.g. `/calories running 30`".into());
+    }
+    if api_key.is_empty() { return Ok("⚠️ `API_NINJAS_KEY` not set.".into()); }
+
+    let url = format!("https://api.api-ninjas.com/v1/caloriesburned?activity={}&duration={}", urlencoding::encode(activity), duration);
+    let v: serde_json::Value = HTTP.get(&url).header("X-Api-Key", api_key).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+
+    let items = v.as_array().ok_or_else(|| anyhow::anyhow!("no results"))?;
+    if items.is_empty() {
+        return Ok(format!("{}\n\n_No activity found for `{}`_\n\n> Try: running, cycling, swimming, walking, weight training, yoga\n\n{}\n\n`{}` · #calories #wellness #memogram-rs",
+            tg_header("🔥", "Calories Burned", activity), activity, tg_footer("api-ninjas.com", "calories"), now));
+    }
+
+    let item = &items[0];
+    let total_cal = item["total_calories"].as_f64().unwrap_or(0.0);
+    let name = item["name"].as_str().unwrap_or(activity);
+    let total_duration = item["total_duration"].as_f64().unwrap_or(duration);
+    let calories_per_min = item["calories_per_hour"].as_f64().unwrap_or(0.0) / 60.0;
+    let met = item["met"].as_f64().unwrap_or(0.0);
+
+    let mut out = format!("{}\n\n", tg_header("🔥", "Calories Burned", name));
+    out.push_str(&format!("**Activity:** `{}` · **Duration:** `{} min`\n\n", name, total_duration as u32));
+
+    out.push_str("## 📊 Summary\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| Total Calories | **`{:.0}` kcal** |\n", total_cal));
+    out.push_str(&format!("| Calories/min | `{:.1}` kcal |\n", calories_per_min));
+    out.push_str(&format!("| MET value | `{:.1}` |\n\n", met));
+
+    // MET explanation
+    out.push_str("## 📖 What is MET?\n\n");
+    out.push_str("| MET | Intensity | Examples |\n|---|---|---|\n");
+    out.push_str("| 1-2 | Light | Walking, stretching |\n");
+    out.push_str("| 3-5 | Moderate | Brisk walking, cycling, yoga |\n");
+    out.push_str("| 6-8 | Vigorous | Running, swimming, sports |\n");
+    out.push_str("| 9+ | Intense | Sprinting, HIIT, rowing |\n\n");
+
+    // Weekly projection
+    let weekly = total_cal * 7.0;
+    let monthly = total_cal * 30.0;
+    out.push_str("## 📈 If You Do This Daily\n\n");
+    out.push_str("| Period | Calories |\n|---|---|\n");
+    out.push_str(&format!("| Weekly | `{:}` kcal |\n", weekly as u32));
+    out.push_str(&format!("| Monthly | `{:}` kcal |\n", monthly as u32));
+    out.push_str(&format!("| ~Fat equivalent | `{:.1} kg/month` |\n\n", monthly as f64 / 7700.0));
+
+    out.push_str(&format!("{}\n\n`{}` · #calories #wellness #memogram-rs", tg_footer("api-ninjas.com", "calories"), now));
+    Ok(out)
 }
 
 fn create_habit_entry(args: &str) -> String {
