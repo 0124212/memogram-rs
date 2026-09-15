@@ -75,7 +75,6 @@ enum Command {
     Transcribe(String),
     Morning(String),
     Evening(String),
-    Checkin(String),
     Log(String),
     Summary(String),
     Timestamp(String),
@@ -213,7 +212,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
         teloxide::types::BotCommand { command: "morning".into(), description: "morning check-in".into() },
         teloxide::types::BotCommand { command: "evening".into(), description: "evening reflection".into() },
-        teloxide::types::BotCommand { command: "checkin".into(), description: "quick check-in".into() },
         teloxide::types::BotCommand { command: "log".into(), description: "daily log".into() },
         teloxide::types::BotCommand { command: "summary".into(), description: "day summary".into() },
         teloxide::types::BotCommand { command: "inbox".into(), description: "untagged memos".into() },
@@ -425,12 +423,14 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Transcribe(text) => { let txt = create_transcribe(&text); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Morning(args) => { let txt = create_morning(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Checkin(args) => { let txt = create_checkin(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Timestamp(args) => { let txt = create_timestamp(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Dns(domain) => { let txt = fetch_dns(&domain).await.unwrap_or_else(|e| format!("dns err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Ports => { let txt = create_ports(); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Json(text) => { let txt = create_json(&text); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Regex(args) => { let txt = create_regex(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Uuid => { let txt = create_uuid(); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Wind(loc) => { let txt = fetch_wind(&loc).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Uv(loc) => { let txt = fetch_uv(&loc).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Moon => { let txt = fetch_moon("").await.unwrap_or_else(|e| format!("moon err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
@@ -3668,6 +3668,140 @@ fn create_ports() -> String {
 
     out.push_str(&format!("\n> 💡 **Tip:** Use `/containers` to check your own services\n\n"));
     out.push_str(&format!("{}\n\n`{}` · #ports #dev #memogram-rs", tg_footer("memogram-rs", "ports"), now));
+    out
+}
+
+fn create_json(text: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return "usage: `/json <text>` — pretty-print or validate JSON".into();
+    }
+    let mut out = format!("{}\n\n", tg_header("🔧", "JSON", ""));
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(v) => {
+            let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| trimmed.to_string());
+            let keys = v.as_object().map(|o| o.len()).unwrap_or(0);
+            let chars = pretty.len();
+            let obj_type = if v.is_object() { "Object" } else if v.is_array() { "Array" } else { "Primitive" };
+            let arr_len = v.as_array().map(|a| a.len()).unwrap_or(0);
+            out.push_str("## ✅ Valid JSON\n\n");
+            out.push_str("| Metric | Value |\n|---|---|\n");
+            out.push_str(&format!("| Type | `{}` |\n", obj_type));
+            if keys > 0 { out.push_str(&format!("| Keys | `{}` |\n", keys)); }
+            if arr_len > 0 { out.push_str(&format!("| Items | `{}` |\n", arr_len)); }
+            out.push_str(&format!("| Size | `{} bytes`\n\n", chars));
+            if pretty.len() <= 3000 {
+                out.push_str(&format!("```\n{}\n```\n", pretty));
+            } else {
+                out.push_str(&format!("```\n{}...\n```\n\n_Truncated — {} bytes total._\n", &pretty[..3000], chars));
+            }
+        }
+        Err(e) => {
+            out.push_str("## ❌ Invalid JSON\n\n");
+            out.push_str(&format!("**Error:** `{}`\n\n", e));
+            out.push_str(&format!("**Line:** `{}` · **Column:** `{}`\n\n", e.line(), e.column()));
+        }
+    }
+    out.push_str(&format!("{}\n\n`{}` · #json #dev #memogram-rs", tg_footer("memogram-rs", "json"), now));
+    out
+}
+
+fn create_regex(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let pattern = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("");
+    let test = parts.get(1).unwrap_or(&"");
+    let mut out = format!("{}\n\n", tg_header("🔍", "Regex Test", pattern));
+
+    if pattern.is_empty() {
+        out.push_str("usage: `/regex <pattern> <test string>`\n\n");
+        out.push_str("**Examples:**\n");
+        out.push_str("- `/regex \\d+ there are 3 apples`\n");
+        out.push_str("- `/regex [a-z]+@example\\.com test@email.com`\n");
+        out.push_str("- `/regex ^\\d{4}-\\d{2}-\\d{2}$ 2024-01-15`\n");
+        out.push_str(&format!("\n{}\n\n`{}` · #regex #dev #memogram-rs", tg_footer("memogram-rs", "regex"), now));
+        return out;
+    }
+
+    match regex::Regex::new(pattern) {
+        Ok(re) => {
+            out.push_str("## ✅ Valid Pattern\n\n");
+            out.push_str(&format!("**Pattern:** `{}`\n\n", pattern));
+            if test.is_empty() {
+                out.push_str("_Pass a test string to see matches._\n");
+            } else {
+                let matches: Vec<(usize, usize, &str)> = re.find_iter(test).map(|m| (m.start(), m.end(), m.as_str())).collect();
+                out.push_str(&format!("**Test:** `{}`\n\n", test));
+                out.push_str(&format!("**Matches:** `{}`\n\n", matches.len()));
+                if !matches.is_empty() {
+                    out.push_str("| # | Match | Start | End |\n|---|---|---|---|\n");
+                    for (i, (start, end, m)) in matches.iter().enumerate() {
+                        out.push_str(&format!("| {} | `{}` | {} | {} |\n", i + 1, m, start, end));
+                    }
+                    // Highlight matches in test string
+                    let mut highlighted = test.to_string();
+                    let mut offset = 0;
+                    for (_, end, m) in &matches {
+                        let insert_at = end + offset;
+                        highlighted.insert_str(insert_at, "**");
+                        offset += 2;
+                        let insert_at = end + offset;
+                        highlighted.insert_str(insert_at, "**");
+                        offset += 2;
+                    }
+                    out.push_str(&format!("\n**Highlighted:** {}\n", highlighted));
+                } else {
+                    out.push_str("_No matches found._\n");
+                }
+                // Named groups
+                let group_names: Vec<String> = re.capture_names().flatten().map(|s| s.to_string()).collect();
+                if !group_names.is_empty() {
+                    out.push_str(&format!("\n**Named groups:** `{}`\n", group_names.join("`, `")));
+                }
+            }
+        }
+        Err(e) => {
+            out.push_str("## ❌ Invalid Pattern\n\n");
+            out.push_str(&format!("**Error:** `{}`\n\n", e));
+            out.push_str("**Common patterns:**\n");
+            out.push_str("- `\\d+` — one or more digits\n");
+            out.push_str("- `[a-zA-Z]+` — one or more letters\n");
+            out.push_str("- `.*` — any characters\n");
+            out.push_str("- `^...$` — start/end anchors\n");
+            out.push_str("- `(group)` — capture groups\n");
+        }
+    }
+    out.push_str(&format!("\n{}\n\n`{}` · #regex #dev #memogram-rs", tg_footer("memogram-rs", "regex"), now));
+    out
+}
+
+fn create_uuid() -> String {
+    use rand::Rng;
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let uuid = {
+        let mut bytes = [0u8; 16];
+        rand::rng().fill(&mut bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15])
+    };
+    let mut out = format!("{}\n\n", tg_header("🆔", "UUID v4", &uuid));
+    out.push_str(&format!("**UUID:** `{}`\n\n", uuid));
+    out.push_str("## 📋 Format\n\n");
+    out.push_str("```\n");
+    out.push_str(&uuid);
+    out.push_str("\n```\n\n");
+    out.push_str("## ℹ️ Info\n\n");
+    out.push_str(&format!("| Field | Value |\n|---|---|\n"));
+    out.push_str("| Version | `4` (random) |\n");
+    out.push_str("| Variant | `RFC 4122` |\n");
+    out.push_str(&format!("| Generated | `{}` |\n\n", now));
+    out.push_str(&format!("{}\n\n`{}` · #uuid #dev #memogram-rs", tg_footer("memogram-rs", "uuid"), now));
     out
 }
 
