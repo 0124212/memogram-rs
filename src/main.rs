@@ -88,6 +88,9 @@ enum Command {
     Flashcard(String),
     Concept(String),
     Pathway(String),
+    Molecule(String),
+    Amino(String),
+    Genome(String),
     Scholar(String),
     Reddit(String),
     News(String),
@@ -244,6 +247,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "lobsters".into(), description: "lobste.rs top stories".into() },
         teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt today".into() },
         teloxide::types::BotCommand { command: "pathway".into(), description: "KEGG pathway + gene lookup".into() },
+        teloxide::types::BotCommand { command: "compound".into(), description: "PubChem compound lookup".into() },
+        teloxide::types::BotCommand { command: "amino".into(), description: "amino acid reference".into() },
+        teloxide::types::BotCommand { command: "genome".into(), description: "gene lookup (NCBI)".into() },
         teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "subreddit top posts".into() },
         teloxide::types::BotCommand { command: "news".into(), description: "news on any topic".into() },
@@ -389,6 +395,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Pathway(q) => { let txt = fetch_pathway(&q).await.unwrap_or_else(|e| format!("pathway err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Molecule(q) => { let txt = fetch_compound(&q).await.unwrap_or_else(|e| format!("molecule err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Amino(code) => { let txt = fetch_amino(&code); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Genome(gene) => { let txt = fetch_genome(&gene).await.unwrap_or_else(|e| format!("genome err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
@@ -2412,29 +2421,6 @@ async fn fetch_drug(name: &str) -> Result<String> {
         }
     }
     Ok(format!("{} \n\n_No drug info found._\n\n{}", tg_header("💊", "Drug", name), tg_footer("fda.gov", "drug")))
-}
-
-async fn fetch_genome(query: &str) -> Result<String> {
-    let url = format!("https://api.ncbi.nlm.nih.gov/datasets/v2/genus/+/taxon/{}/dataset_report?page_size=3", urlencoding::encode(query));
-    // Try datasets API, but don't fail hard — fall back to eutils on any error (e.g., invalid taxon like 'human')
-    if let Ok(resp) = HTTP.get(&url).send().await {
-        if let Ok(json) = resp.json::<serde_json::Value>().await {
-            if let Some(taxonomy) = json["assembly_summary"].as_array() {
-                if let Some(first) = taxonomy.first() {
-                    let name = first["organism_name"].as_str().unwrap_or("?");
-                    let acc = first["assembly_accession"].as_str().unwrap_or("?");
-                    let status = first["assembly_level"].as_str().unwrap_or("?");
-                    return Ok(format!("{}\n**Accession:** `{}`\n**Level:** {}\nhttps://www.ncbi.nlm.nih.gov/datasets/{}\n\n{}", tg_header("🧬", "Genome", name), acc, status, acc, tg_footer("ncbi.nlm.nih.gov", "genome")));
-                }
-            }
-        }
-    }
-    // Fallback: search NCBI nucleotide
-    let search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=nucleotide&retmax=3&term={}", urlencoding::encode(query));
-    let resp = HTTP.get(&search_url).send().await?.text().await?;
-    let ids: Vec<String> = Regex::new(r"<Id>(\d+)</Id>")?.captures_iter(&resp).map(|c| c[1].to_string()).collect();
-    if ids.is_empty() { return Ok(format!("{}\n\n_No genome results for `{}`._\n\n{}", tg_header("🧬", "Genome", query), query, tg_footer("ncbi.nlm.nih.gov", "genome"))); }
-    Ok(format!("{}\n\nIDs: {}\nhttps://www.ncbi.nlm.nih.gov/nuccore/{}\n\n{}", tg_header("🧬", "Genome", query), ids.join(", "), ids[0], tg_footer("ncbi.nlm.nih.gov", "genome")))
 }
 
 async fn fetch_protein(query: &str) -> Result<String> {
@@ -5467,6 +5453,102 @@ async fn fetch_pathway(query: &str) -> Result<String> {
     }
 
     out.push_str(&format!("{}\n\n`{}` · #pathway #bio #memogram-rs", tg_footer("ncbi + reactome + uniprot", "pathway"), now));
+    Ok(out)
+}
+
+fn fetch_amino(code: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let code = code.trim().to_uppercase();
+    if code.is_empty() { return "usage: `/amino <3-letter or 1-letter code>` — e.g. `/amino Ala`, `/amino A`".into(); }
+    let amino_acids = [
+        ("A", "Ala", "Alanine", "Nonpolar, aliphatic", "GCU, GCC, GCA, GCG", "CH₃", "71.08", "7.0", "Small, hydrophobic"),
+        ("R", "Arg", "Arginine", "Positive charged", "CGU, CGC, CGA, CGG, AGA, AGG", "C₆H₁₄N₄O₂", "174.20", "10.76", "Basic, forms salt bridges"),
+        ("N", "Asn", "Asparagine", "Polar uncharged", "AAU, AAC", "C₄H₈N₂O₃", "132.12", "5.41", "Amide group, N-linked glycosylation"),
+        ("D", "Asp", "Aspartic acid", "Negative charged", "GAU, GAC", "C₄H₇NO₄", "133.10", "2.77", "Proton donor, enzyme active sites"),
+        ("C", "Cys", "Cysteine", "Polar uncharged", "UGU, UGC", "C₃H₇NOS", "121.16", "5.07", "Disulfide bonds, redox active"),
+        ("E", "Glu", "Glutamic acid", "Negative charged", "GAA, GAG", "C₅H₉NO₄", "147.13", "3.22", "Neurotransmitter precursor"),
+        ("Q", "Gln", "Glutamine", "Polar uncharged", "CAA, CAG", "C₅H₁₀N₂O₃", "146.15", "5.65", "Nitrogen transport, fuel for immune cells"),
+        ("G", "Gly", "Glycine", "Nonpolar, aliphatic", "GGU, GGC, GGA, GGG", "C₂H₅NO", "75.03", "5.97", "Smallest AA, collagen structure"),
+        ("H", "His", "Histidine", "Positive charged", "CAU, CAC", "C₆H₉N₃O₂", "155.16", "7.59", "pH buffer, enzyme catalysis"),
+        ("I", "Ile", "Isoleucine", "Nonpolar, aliphatic", "AUU, AUC, AUA", "C₆H₁₃NO₂", "131.17", "6.02", "Hydrophobic core, structural"),
+        ("L", "Leu", "Leucine", "Nonpolar, aliphatic", "UUA, UUG, CUU, CUC, CUA, CUG", "C₆H₁₃NO₂", "131.17", "5.98", "Most common in proteins, mTOR activator"),
+        ("K", "Lys", "Lysine", "Positive charged", "AAA, AAG", "C₆H₁₄N₂O₂", "146.19", "9.74", "Histone modification, collagen crosslinks"),
+        ("M", "Met", "Methionine", "Nonpolar, aliphatic", "AUG", "C₅H₁₁NO₂S", "149.21", "5.74", "Start codon, methyl donor"),
+        ("F", "Phe", "Phenylalanine", "Aromatic", "UUU, UUC", "C₉H₁₁NO₂", "165.19", "5.48", "Hydrophobic core, PKU disease"),
+        ("P", "Pro", "Proline", "Nonpolar aliphatic", "CCU, CCC, CCA, CCG", "C₅H₉NO₂", "115.13", "6.30", "Helix breaker, collagen structure"),
+        ("S", "Ser", "Serine", "Polar uncharged", "UCU, UCC, UCA, UCG, AGU, AGC", "C₃H₇NO₃", "105.09", "5.68", "Phosphorylation target, enzyme catalysis"),
+        ("T", "Thr", "Threonine", "Polar uncharged", "ACU, ACC, ACA, ACG", "C₄H₉NO₃", "119.12", "5.60", "Phosphorylation, O-linked glycosylation"),
+        ("W", "Trp", "Tryptophan", "Aromatic", "UGG", "C₁₁H₁₂N₂O₂", "204.23", "5.89", "Serotonin precursor, UV absorption"),
+        ("Y", "Tyr", "Tyrosine", "Aromatic", "UAU, UAC", "C₉H₁₁NO₃", "181.19", "5.66", "Phosphorylation, melanin, T4 thyroid hormone"),
+        ("V", "Val", "Valine", "Nonpolar, aliphatic", "GUU, GUC, GUA, GUG", "C₅H₁₁NO₂", "117.15", "5.97", "Hydrophobic core, BCAA for muscle"),
+    ];
+    // Find by 1-letter or 3-letter code
+    let found = amino_acids.iter().find(|(l, t, _, _, _, _, _, _, _)| l.eq_ignore_ascii_case(&code) || t.eq_ignore_ascii_case(&code));
+    if let Some((letter, three_letter, name, category, codons, formula, weight, pi, role)) = found {
+        let mut out = format!("{}\n\n", tg_header("🧬", "Amino Acid", name));
+        out.push_str(&format!("**{}** ({}) — **{}**\n\n", name, three_letter, letter));
+        out.push_str("## 📊 Properties\n\n| Property | Value |\n|---|---|\n");
+        out.push_str(&format!("| Category | `{}` |\n", category));
+        out.push_str(&format!("| Formula | `{}` |\n", formula));
+        out.push_str(&format!("| Molecular Weight | `{}` Da |\n", weight));
+        out.push_str(&format!("| Isoelectric Point | `{}` |\n", pi));
+        out.push_str(&format!("| Codons | `{}` |\n", codons));
+        out.push_str(&format!("| Role | {}\n\n", role));
+        out.push_str("## 🔬 Structural Role\n\n");
+        out.push_str(&format!("- `{}` is classified as **{}**\n", three_letter, category));
+        out.push_str(&format!("- Common in: {}\n\n", if category.contains("Nonpolar") || category.contains("Aromatic") { "protein cores, membrane domains" } else if category.contains("charged") { "protein surfaces, active sites" } else { "binding interfaces, post-translational modification sites" }));
+        out.push_str(&format!("🔗 [PubChem](https://pubchem.ncbi.nlm.nih.gov/?term={})\n\n", urlencoding::encode(name)));
+        out.push_str(&format!("{}\n\n`{}` · #amino #bio #memogram-rs", tg_footer("biochemistry", "amino"), now));
+        return out;
+    }
+    // Show all if no match
+    let mut out = format!("{}\n\n", tg_header("🧬", "Amino Acids", "all 20"));
+    out.push_str(&format!("_No match for `_`{}`_. Here are all 20:\n\n", code));
+    out.push_str("| 1-Letter | 3-Letter | Name | Category | Codons |\n|---|---|---|---|---|\n");
+    for (letter, tl, name, cat, codons, _, _, _, _) in &amino_acids {
+        out.push_str(&format!("| `{}` | `{}` | {} | {} | `{}` |\n", letter, tl, name, cat, codons));
+    }
+    out.push_str(&format!("\n{}\n\n`{}` · #amino #bio #memogram-rs", tg_footer("biochemistry", "amino"), now));
+    out
+}
+
+async fn fetch_genome(gene: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let gene = gene.trim();
+    if gene.is_empty() { return Ok("usage: `/genome <gene>` — e.g. `/genome BRCA1`, `/genome TP53`, `/genome CFTR`".into()); }
+    let search_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&term={}[gene]+AND+human[orgn]&retmax=3&retmode=json", urlencoding::encode(gene));
+    let search_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&search_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let ids: Vec<String> = search_v["esearchresult"]["idlist"].as_array().map(|a| a.iter().filter_map(|id| id.as_str().map(|s| s.to_string())).collect()).unwrap_or_default();
+    if ids.is_empty() { return Ok(format!("{}\n\n_No genes found for `{}`_\n\n> Try: BRCA1, TP53, EGFR, KRAS, CFTR, VEGFA\n\n{}\n\n`{}` · #genome #bio #memogram-rs", tg_header("🧬", "Gene", gene), gene, tg_footer("ncbi.nlm.nih.gov", "genome"), now)); }
+    let sum_url = format!("https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gene&id={}&retmode=json", ids.join(","));
+    let sum_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&sum_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let mut out = format!("{}\n\n", tg_header("🧬", "Gene", gene));
+    if let Some(result) = sum_v["result"].as_object() {
+        for (gid, data) in result {
+            if gid == "uids" { continue; }
+            let symbol = data["name"].as_str().unwrap_or("?");
+            let desc = data["description"].as_str().unwrap_or("?");
+            let chromo = data["chromosome"].as_str().unwrap_or("?");
+            let map_loc = data["maplocation"].as_str().unwrap_or("?");
+            let gene_type = data["type_of_gene"].as_str().unwrap_or("?");
+            let summary = data["summary"].as_str().unwrap_or("");
+            out.push_str(&format!("## 🧬 {} ({})\n\n", symbol, gid));
+            out.push_str("| Property | Value |\n|---|---|\n");
+            out.push_str(&format!("| Full Name | {} |\n", desc));
+            out.push_str(&format!("| Gene Type | `{}` |\n", gene_type));
+            out.push_str(&format!("| Chromosome | `{}` |\n", chromo));
+            out.push_str(&format!("| Map Location | `{}` |\n\n", map_loc));
+            if !summary.is_empty() { out.push_str(&format!("> {}\n\n", summary.chars().take(500).collect::<String>())); }
+            out.push_str(&format!("🔗 [Gene {} on NCBI](https://www.ncbi.nlm.nih.gov/gene/{})\n\n", gid, gid));
+        }
+    }
+    out.push_str(&format!("{}\n\n`{}` · #genome #bio #memogram-rs", tg_footer("ncbi.nlm.nih.gov", "genome"), now));
     Ok(out)
 }
 
