@@ -204,6 +204,16 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "goal".into(), description: "set a goal (Vikunja)".into() },
         teloxide::types::BotCommand { command: "deadline".into(), description: "deadline (Vikunja)".into() },
         teloxide::types::BotCommand { command: "weekly".into(), description: "weekly review (Vikunja)".into() },
+        teloxide::types::BotCommand { command: "habit".into(), description: "track habit streak".into() },
+        teloxide::types::BotCommand { command: "plan".into(), description: "research plan for a topic".into() },
+        teloxide::types::BotCommand { command: "quote".into(), description: "daily quote".into() },
+        teloxide::types::BotCommand { command: "read".into(), description: "read article from URL".into() },
+        teloxide::types::BotCommand { command: "fact".into(), description: "random fun fact".into() },
+        teloxide::types::BotCommand { command: "queue".into(), description: "reading queue".into() },
+        teloxide::types::BotCommand { command: "review".into(), description: "review this week's memos".into() },
+        teloxide::types::BotCommand { command: "clip".into(), description: "bookmark URL with metadata".into() },
+        teloxide::types::BotCommand { command: "snippet".into(), description: "save code snippet".into() },
+        teloxide::types::BotCommand { command: "note".into(), description: "quick note with tags".into() },
         teloxide::types::BotCommand { command: "save".into(), description: "save anything".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
@@ -389,6 +399,26 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Habit(args) => { let txt = fetch_habit(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Plan(topic) => { let txt = fetch_plan(&topic, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Quote => { let txt = fetch_quote_wellness().await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Read(url) => { let txt = fetch_read_url(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Fact => { let txt = fetch_fact_wellness().await.unwrap_or_else(|e| format!("fact err: {e}")); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Queue => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_queue(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("queue err: {e}"));
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+        }
+        Command::Review => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_review(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("review err: {e}"));
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
+        }
+        Command::Clip(url) => { let txt = fetch_clip(&url).await.unwrap_or_else(|e| format!("clip err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Snippet(args) => { let txt = create_code_snippet(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Note(args) => { let txt = create_note_smart(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -5325,6 +5355,280 @@ async fn fetch_news(topic: &str) -> Result<String> {
 
     out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("hn.algolia.com", "news"), now));
     Ok(out)
+}
+
+// === FINAL 10: READING + DAILY + INBOX ===
+
+async fn fetch_quote_wellness() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let quote = v[0]["q"].as_str().unwrap_or("The only way to do great work is to love what you do.");
+    let author = v[0]["a"].as_str().unwrap_or("Unknown");
+    let mut out = format!("{}\n\n", tg_header("💬", "Daily Quote", author));
+    out.push_str(&format!("## 💬 Quote\n\n> _\"{}\"_\n\n", quote));
+    out.push_str(&format!("— **{}**\n\n", author));
+    out.push_str("## 📝 Reflection\n\n");
+    out.push_str("- How does this apply to your current situation?\n");
+    out.push_str("- What's one thing you can do today based on this?\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #quote #daily #memogram-rs", tg_footer("zenquotes.io", "quote"), now));
+    Ok(out)
+}
+
+async fn fetch_read_url(url: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = url.trim();
+    if url.is_empty() { return Ok("usage: `/read <url>` — fetch clean article text".into()); }
+    let reader_url = format!("https://r.jina.ai/{}", url);
+    let body = HTTP.get(&reader_url).header("Accept", "text/markdown").header("X-Return-Format", "markdown").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(15)).send().await?.text().await?;
+
+    if body.len() < 50 {
+        return Ok(format!("{}\n\n_Failed to read article._\n\n{}\n\n`{}` · #read #daily #memogram-rs",
+            tg_header("📖", "Read", url), tg_footer("jina.ai", "read"), now));
+    }
+
+    let word_count = body.split_whitespace().count();
+    let read_time = (word_count as f64 / 250.0).ceil() as u32;
+    let truncated = if body.len() > 3500 { format!("{}...\n\n原文共约 {} 字", &body[..3500], body.len()) } else { body };
+
+    let mut out = format!("{}\n\n", tg_header("📖", "Article", url));
+    out.push_str(&format!("**URL:** `{}`\n**Words:** `{}` · **Read time:** `~{} min`\n\n", url, word_count, read_time));
+    out.push_str(&format!("---\n\n{}\n\n---\n\n", truncated));
+    out.push_str(&format!("🔗 [Original]({})\n\n", url));
+    out.push_str(&format!("{}\n\n`{}` · #read #daily #memogram-rs", tg_footer("jina.ai", "read"), now));
+    Ok(out)
+}
+
+async fn fetch_fact_wellness() -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get("https://uselessfacts.jsph.pl/api/v2/facts/random?language=en").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let fact = v["text"].as_str().unwrap_or("The human brain has about 86 billion neurons.");
+    let source = v["source"].as_str().unwrap_or("unknown");
+    let mut out = format!("{}\n\n", tg_header("🧠", "Random Fact", ""));
+    out.push_str(&format!("## 🧠 Did You Know?\n\n> {}\n\n", fact));
+    out.push_str(&format!("**Source:** `{}`\n\n", source));
+    out.push_str("## 📝 Learn More\n\n");
+    out.push_str("- How is this useful in your field?\n");
+    out.push_str("- Can you connect this to something you're studying?\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #fact #daily #memogram-rs", tg_footer("uselessfacts.jsph.pl", "fact"), now));
+    Ok(out)
+}
+
+async fn fetch_queue(memos_url: &str, token: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=50"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    // Find memos that look like bookmarks (contain URLs)
+    let url_regex = regex::Regex::new(r"https?://[^\s\)]+").unwrap();
+    let bookmarks: Vec<_> = memos.iter().filter(|m| {
+        let content = m["content"].as_str().unwrap_or("");
+        content.contains("#clip") || content.contains("#bookmark") || content.contains("#read")
+    }).collect();
+    let mut out = format!("{}\n\n", tg_header("📚", "Reading Queue", ""));
+    if bookmarks.is_empty() {
+        out.push_str("_No saved articles yet. Use `/clip <url>` to save one._\n\n");
+    } else {
+        out.push_str(&format!("**{} items** in your reading queue\n\n", bookmarks.len()));
+        out.push_str("| # | Title | Date |\n|---|---|---|\n");
+        for (i, m) in bookmarks.iter().enumerate() {
+            let content = m["content"].as_str().unwrap_or("?");
+            let title = content.lines().next().unwrap_or("?").chars().take(60).collect::<String>();
+            let date = m["createTime"].as_str().unwrap_or("?");
+            let day = if date.len() >= 10 { &date[..10] } else { "?" };
+            out.push_str(&format!("| {} | {} | {} |\n", i + 1, title, day));
+        }
+    }
+    out.push_str(&format!("\n{}\n\n`{}` · #queue #daily #memogram-rs", tg_footer("memogram-rs", "queue"), now));
+    Ok(out)
+}
+
+async fn fetch_review(memos_url: &str, token: &str) -> Result<String> {
+    let now = Local::now();
+    let week_ago = (now - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+    let today = now.format("%Y-%m-%d").to_string();
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=100"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+    let week_memos: Vec<_> = memos.iter().filter(|m| {
+        m["createTime"].as_str().map(|t| t >= week_ago.as_str() && t <= format!("{}T23:59", today).as_str()).unwrap_or(false)
+    }).collect();
+    let count = week_memos.len();
+    let total_chars: usize = week_memos.iter().filter_map(|m| m["content"].as_str()).map(|c| c.len()).sum();
+    let mut tag_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for m in &week_memos {
+        if let Some(tags) = m["tags"].as_array() {
+            for t in tags { if let Some(s) = t.as_str() { *tag_counts.entry(s.to_string()).or_insert(0) += 1; } }
+        }
+    }
+    let mut out = format!("{}\n\n", tg_header("📖", "Weekly Review", &format!("{} → {}", week_ago, today)));
+    out.push_str(&format!("**{} memos** · **~{} words** written\n\n", count, total_chars / 5));
+    out.push_str("## 📋 This Week's Highlights\n\n");
+    for m in week_memos.iter().take(10) {
+        let content = m["content"].as_str().unwrap_or("?");
+        let preview = content.chars().take(80).collect::<String>().replace('\n', " ");
+        let date = m["createTime"].as_str().unwrap_or("");
+        let hour = if date.len() >= 16 { &date[11..16] } else { "?" };
+        out.push_str(&format!("- **{}** — {}\n", hour, preview));
+    }
+    if !tag_counts.is_empty() {
+        out.push_str("\n## 🏷️ Top Tags\n\n");
+        let mut sorted: Vec<_> = tag_counts.into_iter().collect();
+        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        for (tag, cnt) in sorted.iter().take(5) {
+            out.push_str(&format!("- `#{}` — {} memos\n", tag, cnt));
+        }
+    }
+    out.push_str("\n## 💡 Reflection\n\n");
+    out.push_str("- What was my biggest win this week?\n");
+    out.push_str("- What should I stop doing?\n");
+    out.push_str("- What should I start doing next week?\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #review #daily #memogram-rs", tg_footer("memogram-rs", "review"), now.format("%Y-%m-%d %H:%M")));
+    Ok(out)
+}
+
+async fn fetch_clip(url: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = url.trim();
+    if url.is_empty() { return Ok("usage: `/clip <url>` — save a bookmark".into()); }
+    // Extract Open Graph metadata
+    let og_url = format!("https://r.jina.ai/{}", url);
+    let body = HTTP.get(&og_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(10)).send().await?.text().await.unwrap_or_default();
+    // Parse title from markdown (first heading)
+    let title = body.lines().find(|l| l.starts_with("# ")).map(|l| l.trim_start_matches("# ").trim()).unwrap_or(url);
+    let description = body.lines().skip_while(|l| !l.starts_with("# ")).skip(1).find(|l| !l.trim().is_empty() && !l.starts_with("#")).map(|l| l.chars().take(200).collect::<String>()).unwrap_or_default();
+    let word_count = body.split_whitespace().count();
+    let read_time = (word_count as f64 / 250.0).ceil() as u32;
+    let domain = url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or("?");
+    let mut out = format!("{}\n\n", tg_header("🔖", "Bookmarked", title));
+    out.push_str(&format!("**URL:** [{}]({})\n**Domain:** `{}`\n**Read time:** `~{} min`\n\n", title, url, domain, read_time));
+    if !description.is_empty() {
+        out.push_str(&format!("> {}\n\n", description));
+    }
+    out.push_str("## 📋 Memo Content\n\n");
+    out.push_str(&format!("{}\n\n🔗 [Read Article]({})\n\n", body.chars().take(2000).collect::<String>(), url));
+    out.push_str(&format!("{}\n\n`{}` · #clip #inbox #memogram-rs", tg_footer("memogram-rs", "clip"), now));
+    Ok(out)
+}
+
+fn create_code_snippet(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let lang = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("text");
+    let code = parts.get(1).unwrap_or(&"");
+    let line_count = code.lines().count();
+    let mut out = format!("{}\n\n", tg_header("💻", "Code Snippet", lang));
+    out.push_str(&format!("**Language:** `{}` · **Lines:** `{}`\n\n", lang, line_count));
+    out.push_str(&format!("```{}\n{}\n```\n\n", lang, code));
+    out.push_str(&format!("{}\n\n`{}` · #snippet #inbox #memogram-rs", tg_footer("memogram-rs", "snippet"), now));
+    out
+}
+
+fn create_note_smart(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    if args.trim().is_empty() { return "usage: `/note <text>` — quick capture".into(); }
+    let url_regex = regex::Regex::new(r"https?://[^\s]+").unwrap();
+    let has_url = url_regex.is_match(args);
+    let email_regex = regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
+    let has_email = email_regex.is_match(args);
+    let word_count = args.split_whitespace().count();
+    let mut out = format!("{}\n\n", tg_header("📝", "Note", &date));
+    out.push_str(&format!("**Date:** `{}`\n**Words:** `{}`\n\n", now, word_count));
+    out.push_str(&format!("{}\n\n", args));
+    // Auto-detect and tag
+    out.push_str("## 🏷️ Auto-detected\n\n");
+    out.push_str(&format!("- 📅 Date: `{}`\n", date));
+    if has_url { out.push_str("- 🔗 Contains URL\n"); }
+    if has_email { out.push_str("- 📧 Contains email\n"); }
+    if word_count < 10 { out.push_str("- 💡 Quick thought\n"); }
+    else if word_count > 50 { out.push_str("- 📖 Longer note\n"); }
+    out.push_str(&format!("\n{}\n\n`{}` · #note #inbox #memogram-rs", tg_footer("memogram-rs", "note"), now));
+    out
+}
+
+async fn fetch_habit(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let parts: Vec<&str> = args.splitn(3, ' ').collect();
+    let action = parts.first().unwrap_or(&"");
+    let habit = parts.get(1).unwrap_or(&"");
+
+    match *action {
+        "add" | "done" => {
+            if habit.is_empty() { return "usage: `/habit done <habit>` or `/habit add <habit>`".into(); }
+            let token = app.store.read().await.values().next().cloned().unwrap_or_default();
+            if !token.is_empty() {
+                let content = format!("✅ Habit completed: `{}`", habit);
+                let _ = create_memo(&app.memos_url, &token, &content).await;
+            }
+            format!("{}\n\n✅ **{}** — done!\n\n📅 `{}`\n\n{}\n\n`{}` · #habit #planning #memogram-rs",
+                tg_header("✅", "Habit Done", habit), habit, date, tg_footer("memogram-rs", "habit"), now)
+        }
+        "miss" => {
+            if habit.is_empty() { return "usage: `/habit miss <habit>`".into(); }
+            format!("{}\n\n❌ **{}** — missed today\n\n📅 `{}` · _That's okay. Tomorrow is a new day._\n\n{}\n\n`{}` · #habit #planning #memogram-rs",
+                tg_header("❌", "Habit Missed", habit), habit, date, tg_footer("memogram-rs", "habit"), now)
+        }
+        _ => {
+            format!("{}\n\n**Usage:**\n- `/habit done <habit>` — mark habit complete\n- `/habit miss <habit>` — mark habit missed\n\n**Examples:**\n- `/habit done 30 min reading`\n- `/habit done morning meditation`\n- `/habit miss gym`\n\n{}\n\n`{}` · #habit #planning #memogram-rs",
+                tg_header("📋", "Habit Tracker", ""), tg_footer("memogram-rs", "habit"), now)
+        }
+    }
+}
+
+async fn fetch_plan(topic: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let topic = topic.trim().to_string();
+    if topic.is_empty() { return "usage: `/plan <topic>` — create a structured learning/research plan".into(); }
+
+    // Pull from learn (Wikipedia + arXiv) to seed the plan
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&topic));
+    let wiki: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let extract = wiki["extract"].as_str().unwrap_or("");
+
+    let arxiv_url = format!("http://export.arxiv.org/api/query?search_query=all:{}&max_results=3", urlencoding::encode(&topic));
+    let arxiv_xml = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&arxiv_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.text().await.unwrap_or_default(),
+        _ => String::new(),
+    };
+    let paper_count = arxiv_xml.matches("<entry>").count();
+
+    let mut out = format!("{}\n\n", tg_header("🗺️", "Research Plan", &topic));
+    out.push_str(&format!("**Topic:** `{}` · **Date:** `{}`\n\n", topic, now));
+
+    if !extract.is_empty() {
+        out.push_str("## 📖 Starting Point\n\n");
+        out.push_str(&format!("> {}\n\n", extract.chars().take(300).collect::<String>()));
+    }
+
+    out.push_str(&format!("**Found:** {} related papers on arXiv\n\n", paper_count));
+
+    out.push_str("## 📅 4-Week Plan\n\n");
+    out.push_str("| Week | Focus | Deliverable |\n|---|---|---|\n");
+    out.push_str(&format!("| 1 | Read overview + related topics | Notes on `/search {}` |\n", topic));
+    out.push_str(&format!("| 2 | Watch tutorials + read 2 papers | Summary memo |\n"));
+    out.push_str(&format!("| 3 | Build project / take course | Working prototype |\n"));
+    out.push_str(&format!("| 4 | Deep dive + present findings | Final memo + review |\n\n"));
+
+    out.push_str("## 📚 Resources\n\n");
+    out.push_str(&format!("- `/learn {}` — pull Wikipedia + arXiv + YouTube\n", topic));
+    out.push_str(&format!("- `/arxiv {}` — latest papers\n", topic));
+    out.push_str(&format!("- `/search {}` — your existing notes\n", topic));
+    out.push_str(&format!("- `/scholar {}` — citations and related work\n\n", topic));
+
+    out.push_str("## ✅ Progress Tracker\n\n");
+    out.push_str("| Step | Status |\n|---|---|\n");
+    out.push_str("| Overview read | ⬜ |\n");
+    out.push_str("| Tutorials watched | ⬜ |\n");
+    out.push_str("| Papers read | ⬜ |\n");
+    out.push_str("| Project built | ⬜ |\n");
+    out.push_str("| Presented / reviewed | ⬜ |\n\n");
+
+    out.push_str(&format!("{}\n\n`{}` · #plan #planning #memogram-rs", tg_footer("memogram-rs", "plan"), now));
+    out
 }
 
 // === VIKUNJA-POWERED PLANNING ===
