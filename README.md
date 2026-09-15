@@ -55,7 +55,7 @@ Every command pulls real data from a live API or returns evidence-based structur
 | `/book <text>` | Open Library (40M books) | Cover, author, pages, subjects |
 | `/paper <query>` | arXiv API | Title, authors, abstract, PDF |
 | `/youtube <url>` | Invidious API (800M videos) | Title, channel, length, description |
-| `/learn <topic>` | Wikipedia + arXiv + YouTube | Overview + related topics + papers + videos + learning roadmap + progress tracker |
+| `/learn <topic>` | Stack Exchange + OpenAlex + Internet Archive | Tag overview + top Q&A + most-cited papers + free courses/texts + roadmap + progress tracker |
 
 ## wellness (7)
 | Command | Source | Data |
@@ -129,7 +129,7 @@ Every command pulls real data from a live API or returns evidence-based structur
 | `bio` | 7 | PubMed, trials, molecules, pathways, amino acids, genomes, proteins |
 | `dev` | 7 | GitHub, HTTP inspector, man pages, CSS/HTML/Astro docs, grep patterns |
 | `news` | 7 | HN, arXiv, Lobsters, Product Hunt, Scholar, Reddit, general news |
-| `learn` | 7 | Definitions, Wikipedia, translations, books, papers, YouTube, learning overviews |
+| `learn` | 7 | Definitions, Wikipedia, translations, books, papers, YouTube, Q&A + OpenAlex + Archive.org overviews |
 | `wellness` | 7 | Food, workout, recipe, therapy (CBT+stoic), posture, calories, stretching |
 | `money` | 7 | FX, stocks, crypto, markets, investing guide, side hustles, salary data |
 | `tasks` | 7 | Vikunja CRUD (todo/goal/project/deadline) + weekly review + overdue + standup |

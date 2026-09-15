@@ -3260,7 +3260,9 @@ async fn fetch_learn(topic: &str) -> Result<String> {
                 let id = d["identifier"].as_str().unwrap_or("");
                 if id.is_empty() { continue; }
                 let title = d["title"].as_str().unwrap_or("?");
-                let creator = d["creator"].as_str().unwrap_or("?");
+                let creator = d["creator"].as_str().map(|s| s.to_string()).unwrap_or_else(|| {
+                    d["creator"].as_array().and_then(|a| a.first()).and_then(|v| v.as_str()).unwrap_or("?").to_string()
+                });
                 let mt = d["mediatype"].as_str().unwrap_or("?");
                 let icon = match mt { "movies" => "🎬", "audio" => "🎧", _ => "📚" };
                 out.push_str(&format!("- {} [{}](https://archive.org/details/{}) — {} (`{}`)\n", icon, title, id, creator, mt));
