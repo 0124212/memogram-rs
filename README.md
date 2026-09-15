@@ -1,6 +1,6 @@
 # memogram-rs
 
-Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â€” Telegram â†’ Memos bridge, single binary + Docker. **77 polished markdown commands, 11 buckets, ~10MB RSS.** â€” detailed document memos with tables/graphs, not text-message snippets.
+Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â€” Telegram â†’ Memos bridge, single binary + Docker. **60+ polished markdown commands, 11 buckets, ~10MB RSS.** â€” detailed document memos with tables/graphs, not text-message snippets.
 
 ## Cheatsheet
 
@@ -9,7 +9,7 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /help               Show commands          /recent           Last 20 memos
 /inbox              Untagged memos         /tags             List all tags
 /count <tag>        Count by tag           /undo             Delete last
-/pin                Pin/unpin last         /note <text>      Quick note
+/pin                Pin/unpin last         /save <text>      Save anything
 /streak             Writing streak         /daily            Daily template
 ```
 
@@ -47,6 +47,7 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /genome <gene>       Gene search            /protein <id>     Protein info
 /trial <q>           Clinical trials        /food <query>     Nutrition facts
 /mood <note>         Log mood               /habit <task>     Track habit
+ /mood gratitude ...  Log gratitude           /mood journal ... Journal entry
 ```
 
 ### Dev
@@ -58,9 +59,9 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 
 ### Weather
 ```
-/weather <city>      Current + 3-day        /forecast <city>  7-day forecast
+/weather <city>      Current + 3-day forecast
  /sunrise <loc>       Sunrise/sunset
-/airquality <loc>    AQI                  
+/airquality <loc>    AQI
 ```
 
 ### Utilities
@@ -94,7 +95,6 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 ```
 /meditation <n>      Log meditation         /affirmation <n>  Affirmation
 /reflection <n>      Reflection             /wisdom           Stoic quote
-/journal <note>      Journal entry
 ```
 
 ### Planning
@@ -134,8 +134,8 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 | `dev` | GitHub, npm, PyPI, crates |
 | `learn` | Wiki, definitions, research |
 | `bio` | PubMed, drugs, genomes, trials, nutrition |
-| `money` | FX, stocks, crypto, finance explainers, compound |
-| `life` | Mood, gratitude, habits |
+| `money` | FX, stocks, crypto, finance, hustle, compound |
+| `life` | Mood, gratitude, habits, journal |
 | `planning` | Goals, deadlines, reviews |
 | `daily` | Check-ins, logs, summaries |
 | `stoic` | Philosophy, meditation |

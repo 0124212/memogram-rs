@@ -1895,16 +1895,6 @@ async fn pin_last_memo(memos_url: &str, token: &str) -> String {
     }
 }
 
-// --- today: note ---
-
-async fn create_note(memos_url: &str, token: &str, content: &str) -> String {
-    if content.trim().is_empty() { return "usage: `/note #tag my quick thought`".into(); }
-    match create_memo(memos_url, token, content).await {
-        Ok(name) => format!("✅ **Saved**\n\n`{name}`\n\n_{}_", content.chars().take(60).collect::<String>()),
-        Err(e) => format!("❌ save err: {e}"),
-    }
-}
-
 // --- markdown document generators ---
 
 fn create_meeting(args: &str) -> String {
@@ -3207,101 +3197,6 @@ async fn fetch_snow(loc: &str) -> Result<String> {
 // === WELLNESS COMMANDS ===
 
 async fn fetch_hustle(skill: &str) -> Result<String> {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let skill_lower = skill.trim().to_lowercase();
-
-    // Curated side hustle database indexed by skill/keyword
-    let hustles: Vec<(&str, &str, &str, &str, &str, &str)> = vec![
-        // Tech
-        ("python", "Freelance Python Automation", "Build scripts, web scrapers, data pipelines for clients", "$30-100/hr", "Medium", "upwork.com, fiverr.com"),
-        ("javascript", "Contract Web Development", "Landing pages, Shopify tweaks, WordPress sites", "$25-80/hr", "Medium", "upwork.com, toptal.com"),
-        ("rust", "Systems Contracting", "CLI tools, embedded firmware, performance-critical services", "$60-150/hr", "Hard", "github.com/jobs, LinkedIn"),
-        ("go", "Backend/API Freelance", "Microservices, DevOps tooling, cloud functions", "$40-120/hr", "Medium", "upwork.com, arc.dev"),
-        ("react", "Frontend Freelance", "Dashboards, SPAs, component libraries", "$30-90/hr", "Medium", "upwork.com, gun.io"),
-        ("swift", "iOS App Development", "MVPs, SwiftUI prototypes, App Store releases", "$50-150/hr", "Hard", "toptal.com, upwork.com"),
-        ("flutter", "Cross-platform Mobile", "Ship iOS + Android from one codebase", "$35-100/hr", "Medium", "upwork.com, flutterjobs.com"),
-        ("devops", "DevOps Consulting", "CI/CD, Docker, K8s, cloud migrations", "$50-200/hr", "Hard", "toptal.com, arc.dev"),
-        ("machine learning", "ML Consulting", "Model training, data pipelines, MLOps", "$60-200/hr", "Hard", "kaggle.com, upwork.com"),
-        ("data", "Data Analytics Freelance", "Dashboards, ETL, Excel automation", "$25-75/hr", "Medium", "upwork.com, toptal.com"),
-        // Creative
-        ("design", "UI/UX Design Freelance", "Figma prototypes, brand kits, design systems", "$30-100/hr", "Medium", "dribbble.com, upwork.com"),
-        ("video", "Video Editing Services", "YouTube edits, reels, ad creatives", "$20-75/hr", "Easy", "fiverr.com, upwork.com"),
-        ("photo", "Photography Side Gig", "Events, product shots, real estate", "$50-500/event", "Easy", "thumbtack.com, yelp"),
-        ("writing", "Technical Writing", "Docs, blog posts, API guides", "$0.10-0.50/word", "Easy", "upwork.com, technicalwritinghq.com"),
-        ("copywriting", "Copywriting Services", "Landing pages, email sequences, ad copy", "$25-100/hr", "Medium", "copyblogger.com, upwork.com"),
-        // Business
-        ("marketing", "Digital Marketing Consulting", "SEO, paid ads, social media strategy", "$30-100/hr", "Medium", "upwork.com, LinkedIn"),
-        ("seo", "SEO Freelancing", "Audits, keyword research, link building", "$25-80/hr", "Easy", "upwork.com, semrush.com"),
-        ("finance", "Financial Modeling / Consulting", "Excel models, pitch decks, CFO-as-a-service", "$50-200/hr", "Hard", "toptal.com, cruwix.com"),
-        ("account", "Bookkeeping Side Gig", "QuickBooks, Xero, tax prep for small biz", "$20-50/hr", "Easy", "bookkeeper.com, upwork.com"),
-        ("legal", "Contract Review Freelance", "NDAs, SOWs, employment agreements", "$50-150/hr", "Hard", "lawtradr.com, upwork.com"),
-        // General
-        ("tutor", "Online Tutoring", "Math, science, language tutoring", "$15-60/hr", "Easy", "wyzant.com, tutor.com"),
-        ("translate", "Translation Services", "Document, website, video translation", "$0.05-0.20/word", "Easy", "upwork.com, proz.com"),
-        ("music", "Music Lessons / Production", "Instrument tutoring, beat making, mixing", "$20-80/hr", "Easy", "takelessons.com, fiverr.com"),
-        ("fitness", "Online Coaching", "Personalized workout + meal plans", "$50-200/mo per client", "Medium", "trainerize.com, Instagram"),
-        ("cook", "Private Chef / Meal Prep", "Weekly meal prep, event catering", "$200-500/event", "Medium", "thumbtack.com, yelp"),
-    ];
-
-    // Find matching hustles by skill keyword
-    let matched: Vec<_> = if skill_lower.is_empty() {
-        // Random general picks when no skill given
-        hustles.iter().choose_multiple(&mut rand::rng(), 5).into_iter().cloned().collect()
-    } else {
-        let mut matches: Vec<_> = hustles.iter()
-            .filter(|(k, _, _, _, _, _)| skill_lower.contains(k) || k.contains(&skill_lower))
-            .cloned()
-            .collect();
-        if matches.is_empty() {
-            // Fallback: fuzzy match on description
-            matches = hustles.iter()
-                .filter(|(_, title, desc, _, _, _)| {
-                    let combined = format!("{} {}", title.to_lowercase(), desc.to_lowercase());
-                    skill_lower.split_whitespace().any(|w| combined.contains(w))
-                })
-                .cloned()
-                .collect();
-        }
-        if matches.is_empty() {
-            // Still nothing — give general advice
-            let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
-            out.push_str(&format!("No specific matches for **{}**, but here are universal high-ROI hustles:\n\n", skill));
-            out.push_str("| Hustle | Why | Effort |\n|---|---|---|\n");
-            out.push_str("| Freelance consulting | Package what you already know | Low |\n");
-            out.push_str("| Digital products | Templates, courses, presets | Medium |\n");
-            out.push_str("| Open source + sponsorship | Build in public, get sponsors | High |\n\n");
-            out.push_str("💡 **Tip:** Tell me your specific skill (e.g. `/hustle python` or `/hustle design`) for tailored ideas.\n\n");
-            out.push_str(&format!("{}\n\n`{}` · #hustle #money", tg_footer("memogram-rs", "hustle"), now));
-            return Ok(out);
-        }
-        matches
-    };
-
-    let mut out = format!("{}\n\n", tg_header("💰", "Side Hustle Ideas", skill));
-    out.push_str(&format!("**{} matches** for _{}_\n\n", matched.len(), if skill.is_empty() { "general picks" } else { skill }));
-
-    for (i, (_, title, desc, pay, difficulty, platforms)) in matched.iter().enumerate() {
-        let diff_emoji = match *difficulty {
-            "Easy" => "🟢",
-            "Medium" => "🟡",
-            "Hard" => "🔴",
-            _ => "⚪",
-        };
-        out.push_str(&format!("**{}. {}**\n", i + 1, title));
-        out.push_str(&format!("{}\n", desc));
-        out.push_str(&format!("   💵 {} · {} {} · 📍 {}\n\n", pay, diff_emoji, difficulty, platforms));
-    }
-
-    out.push_str("## 🚀 Next Steps\n\n");
-    out.push_str("1. Pick one that matches your current skills\n");
-    out.push_str("2. Create a profile on the listed platform\n");
-    out.push_str("3. Start with a small gig to build reviews\n");
-    out.push_str("4. Use `/brief <platform>` to learn how to succeed there\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #hustle #money", tg_footer("memogram-rs", "hustle"), now));
-    Ok(out)
-}
-
-fn create_meditation(note: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let skill_lower = skill.trim().to_lowercase();
 
