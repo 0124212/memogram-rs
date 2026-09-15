@@ -300,11 +300,11 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Hn => { let txt = fetch_hn().await.unwrap_or_else(|e| format!("hn err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Chord(name) => { let txt = fetch_chord(&name); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Scale(name) => { let txt = fetch_scale(&name); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
-        Command::Progress(key) => { let txt = fetch_progress(&key); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Progress(key) => { let txt = fetch_progress(&key).await.unwrap_or_else(|e| format!("progress err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Circle => { let txt = fetch_circle(); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Song(title) => { let txt = fetch_song(&title).await.unwrap_or_else(|e| format!("song err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Artist(name) => { let txt = fetch_artist(&name).await.unwrap_or_else(|e| format!("artist err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
-        Command::Tempo(args) => { let txt = fetch_tempo(&args); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
+        Command::Tempo(args) => { let txt = fetch_tempo(&args).await.unwrap_or_else(|e| format!("tempo err: {e}")); create_as_bot(&bot, &msg, &app, "music", &txt, tid).await?; }
         Command::Define(w) => { let txt = fetch_define(&w).await.unwrap_or_else(|e| format!("define err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Wiki(q) => { let txt = fetch_wiki(&q).await.unwrap_or_else(|e| format!("wiki err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Gh(q) => { let txt = fetch_gh(&q).await.unwrap_or_else(|e| format!("gh err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
@@ -3184,89 +3184,86 @@ async fn fetch_learn(topic: &str) -> Result<String> {
     let mut out = format!("{}\n\n", tg_header("🎓", "Learn", &topic));
     out.push_str(&format!("**Topic:** `{}` · **Started:** `{}`\n\n", topic, now));
 
-    // 1. Wikipedia summary
-    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&topic));
-    let wiki: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+    // 1. Overview — Stack Exchange tag wiki (community-written, distinct from Wikipedia)
+    let tag = topic.to_lowercase().replace(' ', "-");
+    let tag_url = format!("https://api.stackexchange.com/2.3/tags/{}/wikis?site=stackoverflow", urlencoding::encode(&tag));
+    let tag_v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&tag_url).header("User-Agent", "memogram-rs").send()).await {
         Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
         _ => serde_json::Value::Null,
     };
-    let extract = wiki["extract"].as_str().unwrap_or("");
-    if !extract.is_empty() {
-        out.push_str("## 📖 Overview\n\n");
-        let summary = extract.chars().take(500).collect::<String>();
-        out.push_str(&format!("> {}\n\n", summary));
-        if let Some(url) = wiki["content_urls"]["desktop"]["page"].as_str() {
-            out.push_str(&format!("🔗 [Wikipedia]({})\n\n", url));
+    if let Some(excerpt) = tag_v["items"].as_array().and_then(|a| a.first()).and_then(|i| i["excerpt"].as_str()) {
+        if !excerpt.is_empty() {
+            out.push_str("## 📖 Overview\n\n");
+            out.push_str(&format!("> {}\n\n", tg_truncate(excerpt, 500)));
+            out.push_str(&format!("🔗 [Stack Overflow tag: {}](https://stackoverflow.com/questions/tagged/{})\n\n", tag, urlencoding::encode(&tag)));
         }
     }
 
-    // 2. Prerequisites — search Wikipedia for related concepts
-    let search_url = format!("https://en.wikipedia.org/api/rest_v1/page/related/{}", urlencoding::encode(&topic));
-    let related: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&search_url).header("User-Agent", "memogram-rs").send()).await {
+    // 2. Top answered questions — learn from real Q&A
+    let se_url = format!("https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=votes&q={}&site=stackoverflow&pagesize=5", urlencoding::encode(&topic));
+    let se: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(6), HTTP.get(&se_url).header("User-Agent", "memogram-rs").send()).await {
         Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
         _ => serde_json::Value::Null,
     };
-    if let Some(pages) = related["pages"].as_array() {
-        if !pages.is_empty() {
-            out.push_str("## 🔗 Related Topics\n\n");
-            for p in pages.iter().take(5) {
-                let title = p["title"].as_str().unwrap_or("?");
-                let desc = p["description"].as_str().unwrap_or("");
-                let page_url = p["content_urls"]["desktop"]["page"].as_str().unwrap_or("#");
-                out.push_str(&format!("- [**{}**]({}) — {}\n", title, page_url, desc));
+    if let Some(items) = se["items"].as_array() {
+        if !items.is_empty() {
+            out.push_str("## ❓ Top Questions (highest voted)\n\n");
+            for (i, q) in items.iter().take(5).enumerate() {
+                let title = q["title"].as_str().unwrap_or("?");
+                let link = q["link"].as_str().unwrap_or("#");
+                let score = q["score"].as_i64().unwrap_or(0);
+                let answers = q["answer_count"].as_u64().unwrap_or(0);
+                let solved = if q["is_answered"].as_bool().unwrap_or(false) { "✅" } else { "⬜" };
+                out.push_str(&format!("{}. {} [{}]({}) — `▲{}` · `{} answers`\n", i + 1, solved, title, link, score, answers));
             }
             out.push('\n');
         }
     }
 
-    // 3. arXiv papers
-    let arxiv_url = format!("http://export.arxiv.org/api/query?search_query=all:{}&max_results=3&sortBy=relevance", urlencoding::encode(&topic));
-    let arxiv_xml = HTTP.get(&arxiv_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
-    // Simple XML parsing for title and link
-    let mut arxiv_entries = Vec::new();
-    let mut remaining = arxiv_xml.as_str();
-    while let Some(entry_start) = remaining.find("<entry>") {
-        remaining = &remaining[entry_start + 7..];
-        if let Some(entry_end) = remaining.find("</entry>") {
-            let entry = &remaining[..entry_end];
-            let title = entry.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).map(|s| s.trim().replace('\n', " ")).unwrap_or_default();
-            let id = entry.split("<id>").nth(1).and_then(|s| s.split("</id>").next()).map(|s| s.trim()).unwrap_or("");
-            let summary = entry.split("<summary>").nth(1).and_then(|s| s.split("</summary>").next()).map(|s| s.trim().chars().take(120).collect::<String>()).unwrap_or_default();
-            if !title.is_empty() {
-                arxiv_entries.push((title, id.to_string(), summary));
-            }
-            remaining = &remaining[entry_end..];
-        } else { break; }
-    }
-    if !arxiv_entries.is_empty() {
-        out.push_str("## 📄 Related Papers (arXiv)\n\n");
-        for (i, (title, id, summary)) in arxiv_entries.iter().enumerate() {
-            let arxiv_id = id.split("/abs/").last().unwrap_or(id);
-            out.push_str(&format!("{}. [{}]({})\n", i + 1, title, id));
-            if !summary.is_empty() {
-                out.push_str(&format!("   _{}_\n\n", summary));
-            }
-        }
-    }
-
-    // 4. YouTube tutorials
-    let yt_search = format!("{} {} tutorial", topic, topic);
-    let yt_url = format!("https://vid.puffyan.us/api/v1/search?q={}&type=video&sort_by=relevance&page=1", urlencoding::encode(&yt_search));
-    let yt: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&yt_url).header("User-Agent", "memogram-rs").send()).await {
+    // 3. Research across ALL fields — OpenAlex (broader than arXiv's STEM preprints)
+    let oa_url = format!("https://api.openalex.org/works?search={}&per-page=3&select=id,display_name,publication_year,cited_by_count,doi,primary_location,authorships", urlencoding::encode(&topic));
+    let oa: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&oa_url).header("User-Agent", "memogram-rs (telegram bot)").send()).await {
         Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
         _ => serde_json::Value::Null,
     };
-    if let Some(videos) = yt.as_array() {
-        if !videos.is_empty() {
-            out.push_str("## 🎬 Video Tutorials\n\n");
-            for v in videos.iter().take(3) {
-                let title = v["title"].as_str().unwrap_or("?");
-                let author = v["author"].as_str().unwrap_or("?");
-                let vid_id = v["videoId"].as_str().unwrap_or("");
-                let length = v["lengthSeconds"].as_u64().unwrap_or(0);
-                let mins = length / 60;
-                let secs = length % 60;
-                out.push_str(&format!("- [**{}**](https://youtube.com/watch?v={}) by {} · {}:{:02}\n", title, vid_id, author, mins, secs));
+    if let Some(works) = oa["results"].as_array() {
+        if !works.is_empty() {
+            out.push_str("## 📄 Most-Cited Papers (all disciplines)\n\n");
+            for (i, w) in works.iter().enumerate() {
+                let title = w["display_name"].as_str().unwrap_or("?");
+                let year = w["publication_year"].as_u64().map(|y| y.to_string()).unwrap_or("?".into());
+                let cited = w["cited_by_count"].as_u64().unwrap_or(0);
+                let venue = w["primary_location"]["source"]["display_name"].as_str().unwrap_or("");
+                let link = w["doi"].as_str().map(|d| format!("https://doi.org/{}", d.trim_start_matches("https://doi.org/")))
+                    .or_else(|| w["primary_location"]["landing_page_url"].as_str().map(|s| s.to_string()))
+                    .unwrap_or_else(|| w["id"].as_str().unwrap_or("#").to_string());
+                let author = w["authorships"].as_array().and_then(|a| a.first()).and_then(|a| a["author"]["display_name"].as_str()).unwrap_or("?");
+                out.push_str(&format!("{}. [{}]({}) — {} (`{}`", i + 1, title, link, author, year));
+                if !venue.is_empty() { out.push_str(&format!(", _{}_", venue)); }
+                out.push_str(&format!(" · `{} cites`)\n", cited));
+            }
+            out.push('\n');
+        }
+    }
+
+    // 4. Free courses & texts — Internet Archive (full courses, audio lectures, ebooks)
+    let ia_q = format!("{} AND mediatype:(movies OR texts OR audio)", topic);
+    let ia_url = format!("https://archive.org/advancedsearch.php?q={}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=mediatype&rows=5&output=json", urlencoding::encode(&ia_q));
+    let ia: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&ia_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    if let Some(docs) = ia["response"]["docs"].as_array() {
+        if !docs.is_empty() {
+            out.push_str("## 🎓 Free Courses & Texts\n\n");
+            for d in docs.iter().take(5) {
+                let id = d["identifier"].as_str().unwrap_or("");
+                if id.is_empty() { continue; }
+                let title = d["title"].as_str().unwrap_or("?");
+                let creator = d["creator"].as_str().unwrap_or("?");
+                let mt = d["mediatype"].as_str().unwrap_or("?");
+                let icon = match mt { "movies" => "🎬", "audio" => "🎧", _ => "📚" };
+                out.push_str(&format!("- {} [{}](https://archive.org/details/{}) — {} (`{}`)\n", icon, title, id, creator, mt));
             }
             out.push('\n');
         }
@@ -3275,9 +3272,9 @@ async fn fetch_learn(topic: &str) -> Result<String> {
     // 5. Suggested learning path
     out.push_str("## 🗺️ Suggested Path\n\n");
     out.push_str("| Phase | Focus | Time |\n|---|---|---|\n");
-    out.push_str(&format!("| 1 | Read the overview & related topics | 30 min |\n"));
-    out.push_str(&format!("| 2 | Watch top video tutorial | 20 min |\n"));
-    out.push_str(&format!("| 3 | Read 1-2 papers for depth | 1 hr |\n"));
+    out.push_str(&format!("| 1 | Read the tag overview & top questions | 30 min |\n"));
+    out.push_str(&format!("| 2 | Work a free course or text end-to-end | 1 hr |\n"));
+    out.push_str(&format!("| 3 | Skim 1-2 most-cited papers for depth | 1 hr |\n"));
     out.push_str(&format!("| 4 | Build something / take notes | 2 hr |\n"));
     out.push_str(&format!("| 5 | Review with `/search {}` (your own notes) | 15 min |\n\n", topic));
 
@@ -3285,12 +3282,13 @@ async fn fetch_learn(topic: &str) -> Result<String> {
     out.push_str("## 📊 Progress\n\n");
     out.push_str("| Step | Status | Notes |\n|---|---|---|\n");
     out.push_str("| Overview read | ⬜ | |\n");
-    out.push_str("| Videos watched | ⬜ | |\n");
+    out.push_str("| Questions studied | ⬜ | |\n");
+    out.push_str("| Course/text done | ⬜ | |\n");
     out.push_str("| Papers read | ⬜ | |\n");
     out.push_str("| Practice done | ⬜ | |\n");
     out.push_str("| Reviewed | ⬜ | |\n\n");
 
-    out.push_str(&format!("{}\n\n`{}` · #learn #memogram-rs", tg_footer("wikipedia + arxiv + invidious", "learn"), now));
+    out.push_str(&format!("{}\n\n`{}` · #learn #memogram-rs", tg_footer("stackexchange + openalex + archive.org", "learn"), now));
     Ok(out)
 }
 
@@ -4004,14 +4002,14 @@ fn fetch_scale(name: &str) -> String {
     out
 }
 
-fn fetch_progress(key: &str) -> String {
+async fn fetch_progress(key: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let key = key.trim();
     if key.is_empty() {
         let mut out = format!("{}\n\n", tg_header("🎶", "Chord Progressions", ""));
         out.push_str("usage: `/progress <key>` — e.g. `/progress C`, `/progress Am`, `/progress G`\n\n");
         out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory", "progress"), now));
-        return out;
+        return Ok(out);
     }
     // Parse key: root + optional minor
     let lower = key.to_lowercase();
@@ -4023,7 +4021,7 @@ fn fetch_progress(key: &str) -> String {
     };
     let root_idx = match note_index(root_str) {
         Some(i) => i,
-        None => return format!("⚠️ Unknown key `{}`. Try C, G, D, A, E, Am, Em.", key),
+        None => return Ok(format!("⚠️ Unknown key `{}`. Try C, G, D, A, E, Am, Em.", key)),
     };
     let root = NOTE_NAMES[root_idx];
     // Diatonic triads of the parallel major for reference
@@ -4050,12 +4048,25 @@ fn fetch_progress(key: &str) -> String {
     out.push_str(&format!("| Jazz (ii–V–I) | `{} - {} - {}` | Jazz standard turnaround |\n", c(1, "m7"), c(4, "7"), c(0, "maj7")));
     out.push_str(&format!("| Andalusian (vi–V–IV–III) | `{} - {} - {} - {}` | Flamenco, metal |\n", c(5, "m"), c(4, ""), c(3, ""), c(2, "")));
     out.push_str(&format!("| Doo-wop (I–vi–IV–V) | `{} - {} - {} - {}` | 50s pop |\n\n", c(0, ""), c(5, "m"), c(3, ""), c(4, "")));
+    // Wikipedia lookup: famous songs in this key
+    let key_label = format!("{}{} music", root, if is_minor { " minor" } else { " major" });
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&key_label));
+    if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+        if let Ok(v) = r.json::<serde_json::Value>().await {
+            if let Some(extract) = v["extract"].as_str() {
+                if !extract.is_empty() && extract.len() > 30 {
+                    out.push_str("## 🎧 Key Context\n\n");
+                    out.push_str(&format!("{}\n\n", tg_truncate(extract, 500)));
+                }
+            }
+        }
+    }
     out.push_str("## 🎹 Practice\n\n");
     out.push_str("- Loop the pop progression with a metronome (`/tempo 90`)\n");
     out.push_str("- Learn each chord shape with `/chord <name>`\n");
     out.push_str("- Transpose: pick a new key and rebuild the same numerals\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory", "progress"), now));
-    out
+    out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory + wikipedia", "progress"), now));
+    Ok(out)
 }
 
 fn fetch_circle() -> String {
@@ -4181,7 +4192,7 @@ async fn fetch_artist(name: &str) -> Result<String> {
     Ok(out)
 }
 
-fn fetch_tempo(args: &str) -> String {
+async fn fetch_tempo(args: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let bpm: f64 = args.trim().split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0.0);
     if bpm <= 0.0 || bpm > 300.0 {
@@ -4190,7 +4201,7 @@ fn fetch_tempo(args: &str) -> String {
         out.push_str("**Common tempos:**\n\n| Style | BPM |\n|---|---|\n");
         out.push_str("| Ballad | 60–80 |\n| Hip-hop | 80–100 |\n| Pop | 100–120 |\n| House | 120–128 |\n| Techno | 128–140 |\n| Drum & bass | 170–180 |\n\n");
         out.push_str(&format!("{}\n\n`{}` · #tempo #music #memogram-rs", tg_footer("music theory", "tempo"), now));
-        return out;
+        return Ok(out);
     }
     let beat_ms = 60000.0 / bpm;
     let mut out = format!("{}\n\n", tg_header("⏱️", "Tempo", &format!("{} BPM", bpm as u32)));
@@ -4208,24 +4219,44 @@ fn fetch_tempo(args: &str) -> String {
     out.push_str(&format!("- **Dotted-8th delay (U2 style):** `{:.0}` ms\n", beat_ms * 0.75));
     out.push_str(&format!("- **Ping-pong:** `{:.0}` ms L / `{:.0}` ms R\n\n", beat_ms * 0.75, beat_ms * 0.5));
     out.push_str("## 🎸 Genre & Style\n\n");
-    let (genre, kick, snare, hihat) = if bpm >= 170.0 {
-        ("Speed Metal / Hardcore", "X.X.X.X.", "....X...", "XXXXXXXX")
+    let (genre, genre_tag, kick, snare, hihat) = if bpm >= 170.0 {
+        ("Speed Metal / Hardcore", "metal", "X.X.X.X.", "....X...", "XXXXXXXX")
     } else if bpm >= 150.0 {
-        ("Drum & Bass / Jungle", "X..X.X..", "....X...", "X.X.X.X.")
+        ("Drum & Bass / Jungle", "drum and bass", "X..X.X..", "....X...", "X.X.X.X.")
     } else if bpm >= 130.0 {
-        ("Rock / Punk / Indie", "X.X.X.X.", "....X...", "X.X.X.X.")
+        ("Rock / Punk / Indie", "rock", "X.X.X.X.", "....X...", "X.X.X.X.")
     } else if bpm >= 110.0 {
-        ("House / Techno / Dance", "X...X...X...X...", "....X.......X...", "X.X.X.X.X.X.X.X.")
+        ("House / Techno / Dance", "electronic", "X...X...X...X...", "....X.......X...", "X.X.X.X.X.X.X.X.")
     } else if bpm >= 90.0 {
-        ("Funk / Disco / Pop", "X.X.X.X.", "....X...", "X.X.X.X.")
+        ("Funk / Disco / Pop", "funk", "X.X.X.X.", "....X...", "X.X.X.X.")
     } else if bpm >= 70.0 {
-        ("Hip-hop / R&B / Reggae", "X..X..X.", "...X..X.", "X.X.X.X.")
+        ("Hip-hop / R&B / Reggae", "hip hop", "X..X..X.", "...X..X.", "X.X.X.X.")
     } else {
-        ("Ballad / Doom / Slow Blues", "X.......", "....X...", "X...X...")
+        ("Ballad / Doom / Slow Blues", "blues", "X.......", "....X...", "X...X...")
     };
     out.push_str(&format!("**{}** (`{}–` BPM)\n\n", genre,
         if bpm >= 170.0 { "170" } else if bpm >= 150.0 { "150" } else if bpm >= 130.0 { "130" } else if bpm >= 110.0 { "110" } else if bpm >= 90.0 { "90" } else if bpm >= 70.0 { "70" } else { "40" }));
     out.push_str(&format!("```\nKick:   {}\nSnare:  {}\nHi-hat: {}\n```\n\n", kick, snare, hihat));
+    // MusicBrainz lookup: find real recordings in this genre
+    let mb_url = format!("https://musicbrainz.org/ws/2/recording/?query=tag:{}&fmt=json&limit=5", urlencoding::encode(genre_tag));
+    if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(&mb_url).header("User-Agent", "memogram-rs/1.0 (telegram bot)").send()).await {
+        if let Ok(v) = r.json::<serde_json::Value>().await {
+            if let Some(recs) = v["recordings"].as_array() {
+                if !recs.is_empty() {
+                    out.push_str("## 🎧 Real Tracks in this Range\n\n");
+                    for (i, rec) in recs.iter().take(5).enumerate() {
+                        let title = rec["title"].as_str().unwrap_or("?");
+                        let artist = rec["artist-credit"].as_array().and_then(|a| a.first()).and_then(|a| a["name"].as_str()).unwrap_or("?");
+                        let length = rec["length"].as_u64().unwrap_or(0);
+                        let mins = length / 60000;
+                        let secs = (length % 60000) / 1000;
+                        out.push_str(&format!("{}. **{}** — {} (`{}:{:02}`)\n", i + 1, title, artist, mins, secs));
+                    }
+                    out.push('\n');
+                }
+            }
+        }
+    }
     out.push_str("## 🏋️ Practice Routine\n\n");
     let (timing, subd, groove, game) = if bpm >= 170.0 {
         ("Blast beats for 30s bursts, rest 10s",
@@ -4285,8 +4316,8 @@ fn fetch_tempo(args: &str) -> String {
         "Extreme — beyond sprint, heartbeat at limit"
     };
     out.push_str(&format!("_{}_\n\n", context));
-    out.push_str(&format!("{}\n\n`{}` · #tempo #music #memogram-rs", tg_footer("music theory", "tempo"), now));
-    out
+    out.push_str(&format!("{}\n\n`{}` · #tempo #music #memogram-rs", tg_footer("musictheory + musicbrainz", "tempo"), now));
+    Ok(out)
 }
 
 // === NEWS: LOBSTERS + PRODUCT HUNT ===
