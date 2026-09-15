@@ -77,6 +77,7 @@ enum Command {
     Ph,
     Weekly,
     Habit(String),
+    Focus(String),
     Quote,
     Read(String),
     Queue,
@@ -84,6 +85,8 @@ enum Command {
     Clip(String),
     Snippet(String),
     Note(String),
+    Flashcard(String),
+    Concept(String),
     Species(String),
     Prereqs(String),
     Mcat(String),
@@ -211,6 +214,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "clip".into(), description: "bookmark URL with metadata".into() },
         teloxide::types::BotCommand { command: "snippet".into(), description: "save code snippet".into() },
         teloxide::types::BotCommand { command: "note".into(), description: "quick note with tags".into() },
+        teloxide::types::BotCommand { command: "focus".into(), description: "pomodoro timer <min>".into() },
+        teloxide::types::BotCommand { command: "flashcard".into(), description: "create flashcard <q> | <a>".into() },
+        teloxide::types::BotCommand { command: "concept".into(), description: "connect memos about a topic".into() },
         teloxide::types::BotCommand { command: "save".into(), description: "save anything".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
@@ -414,6 +420,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Clip(url) => { let txt = fetch_clip(&url).await.unwrap_or_else(|e| format!("clip err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Snippet(args) => { let txt = create_code_snippet(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Note(args) => { let txt = create_note_smart(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Focus(args) => { let txt = set_focus(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Concept(topic) => { let txt = fetch_concept(&topic, &app).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -5670,6 +5679,206 @@ fn create_note_smart(args: &str) -> String {
     else if word_count >= 200 { out.push_str("- 📚 Long-form note\n"); }
 
     out.push_str(&format!("\n{}\n\n`{}` · #note #inbox #memogram-rs", tg_footer("memogram-rs", "note"), now));
+    out
+}
+
+async fn set_focus(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let mins: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(25).min(120);
+    let task = parts.get(1).unwrap_or(&"Focus session");
+
+    // Create memo
+    let token = app.store.read().await.values().next().cloned().unwrap_or_default();
+    if !token.is_empty() {
+        let content = format!("🎯 Focus session: `{}` ({})", task, mins);
+        let _ = create_memo(&app.memos_url, &token, &content).await;
+    }
+
+    // Push notification when done
+    let bark_url = app.bark_url.clone();
+    let ntfy_url = app.ntfy_url.clone();
+    let task_clone = task.to_string();
+    let title = format!("⏱️ Focus session done — {}", task);
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(mins * 60)).await;
+        if !bark_url.is_empty() {
+            let _ = HTTP.post(&bark_url).json(&serde_json::json!({ "title": &title, "body": format!("{} min focus session complete!", mins), "group": "focus" })).send().await;
+        }
+        if !ntfy_url.is_empty() {
+            let _ = HTTP.post(&ntfy_url).header("Title", &title).header("Priority", "high").body(format!("{} min focus session complete!", mins)).send().await;
+        }
+    });
+
+    let end_time = Local::now() + chrono::Duration::minutes(mins as i64);
+
+    let mut out = format!("{}\n\n", tg_header("🎯", "Focus Session", task));
+    out.push_str(&format!("**Task:** `{}`\n**Duration:** `{} min`\n**Ends at:** `{}`\n\n", task, mins, end_time.format("%H:%M")));
+
+    out.push_str("## ⏱️ Pomodoro Protocol\n\n");
+    out.push_str("| Phase | Duration | Action |\n|---|---|---|\n");
+    out.push_str(&format!("| 🎯 Focus | `{} min` | Deep work on `{}` |\n", mins, task));
+    out.push_str("| ☕ Break | `5 min` | Stand, stretch, hydrate |\n");
+    out.push_str("| 🔄 Repeat | — | 4 rounds → 15-30 min long break |\n\n");
+
+    out.push_str("## 📊 Pomodoro Science\n\n");
+    out.push_str("| Metric | Finding |\n|---|---|\n");
+    out.push_str("| Optimal focus | 25 min (Cirillo, 1992) |\n");
+    out.push_str("| Max deep work | 4 hrs/day (Newport, Deep Work) |\n");
+    out.push_str("| Break benefit | Restores attention (Kaplan, 1995) |\n");
+    out.push_str("| Distraction recovery | ~23 min to refocus (UC Irvine, 2005) |\n\n");
+
+    out.push_str("## 💡 Focus Tips\n\n");
+    out.push_str("- 📱 Put phone in another room\n");
+    out.push_str("- 🎧 Use white noise or lo-fi music\n");
+    out.push_str("- 🚫 Close all unrelated tabs\n");
+    out.push_str("- 💧 Have water nearby\n");
+    out.push_str("- 📝 Write down any distracting thoughts for later\n\n");
+
+    out.push_str(&format!("> ⏰ You'll get a push notification when time is up!\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #focus #planning #memogram-rs", tg_footer("memogram-rs", "focus"), now));
+    out
+}
+
+fn create_flashcard(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let parts: Vec<&str> = args.splitn(2, '|').collect();
+    let question = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("").trim();
+    let answer = parts.get(1).unwrap_or(&"").trim();
+
+    if question.is_empty() {
+        let mut out = format!("{}\n\n", tg_header("🃏", "Flashcard", ""));
+        out.push_str("## 📋 Usage\n\n");
+        out.push_str("```\n/flashcard What is CRISPR? | A gene-editing tool using guide RNA and Cas9\n```\n\n");
+        out.push_str("## 🧠 Spaced Repetition Tips\n\n");
+        out.push_str("| Interval | When to Review |\n|---|---|\n");
+        out.push_str("| 1 | Same day |\n");
+        out.push_str("| 2 | Next day |\n");
+        out.push_str("| 4 | 3 days later |\n");
+        out.push_str("| 7 | 1 week later |\n");
+        out.push_str("| 14 | 2 weeks later |\n");
+        out.push_str("| 30 | 1 month later |\n\n");
+        out.push_str("> Based on Ebbinghaus forgetting curve. Review before you forget!\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #flashcard #inbox #memogram-rs", tg_footer("memogram-rs", "flashcard"), now));
+        return out;
+    }
+
+    let mut out = format!("{}\n\n", tg_header("🃏", "Flashcard", question));
+    out.push_str(&format!("**Date:** `{}`\n\n", date));
+
+    out.push_str("## ❓ Question\n\n");
+    out.push_str(&format!("> **{}**\n\n", question));
+    out.push_str("## ✅ Answer\n\n");
+    out.push_str(&format!("> {}\n\n", if answer.is_empty() { "_Add your answer with `/flashcard Q | A`_" } else { answer }));
+    out.push_str("## 📊 Study Schedule\n\n");
+    out.push_str("| Review | Date | Status |\n|---|---|---|\n");
+    out.push_str(&format!("| 1st | `{}` | ✅ Created |\n", date));
+    out.push_str("| 2nd | +1 day | ⬜ |\n");
+    out.push_str("| 3rd | +3 days | ⬜ |\n");
+    out.push_str("| 4th | +1 week | ⬜ |\n");
+    out.push_str("| 5th | +2 weeks | ⬜ |\n");
+    out.push_str("| 6th | +1 month | ⬜ |\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #flashcard #inbox #memogram-rs", tg_footer("memogram-rs", "flashcard"), now));
+    out
+}
+
+async fn fetch_concept(topic: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let topic = topic.trim().to_string();
+    if topic.is_empty() { return "usage: `/concept <topic>` — connect your memos about a topic".into(); }
+
+    // Search memos
+    let token = app.store.read().await.values().next().cloned().unwrap_or_default();
+    if token.is_empty() { return "⚠️ Run `/start <token>` first.".into(); }
+
+    let search_url = format!("{}/api/v1/memos?search={}&pageSize=20", app.memos_url, urlencoding::encode(&topic));
+    let v: serde_json::Value = match HTTP.get(&search_url).header("Authorization", format!("Bearer {token}")).send().await {
+        Ok(r) => r.json().await.unwrap_or(serde_json::Value::Null),
+        Err(_) => serde_json::Value::Null,
+    };
+    let memos = v["memos"].as_array().cloned().unwrap_or_default();
+    let count = memos.len();
+
+    // Also pull from wiki for context
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&topic));
+    let wiki: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let summary = wiki["extract"].as_str().unwrap_or("");
+
+    let mut out = format!("{}\n\n", tg_header("🔗", "Concept Map", &topic));
+    out.push_str(&format!("**Topic:** `{}` · **Your memos:** `{}`\n\n", topic, count));
+
+    if !summary.is_empty() {
+        out.push_str("## 📖 What It Is\n\n");
+        out.push_str(&format!("> {}\n\n", summary.chars().take(300).collect::<String>()));
+    }
+
+    if memos.is_empty() {
+        out.push_str("## 📝 Your Notes\n\n");
+        out.push_str("_No memos found for this topic yet._\n\n");
+        out.push_str("**Start capturing:**\n");
+        out.push_str(&format!("- `/learn {}` — pull Wikipedia + arXiv + YouTube\n", topic));
+        out.push_str(&format!("- `/note {} [your thoughts]`\n", topic));
+        out.push_str(&format!("- `/flashcard {} | [definition]`\n\n", topic));
+    } else {
+        out.push_str(&format!("## 📝 Your Notes ({})\n\n", count));
+        out.push_str("| Date | Preview | Tags |\n|---|---|---|\n");
+        for m in memos.iter().take(10) {
+            let content = m["content"].as_str().unwrap_or("?");
+            let preview = content.chars().take(60).collect::<String>().replace('\n', " ");
+            let date = m["createTime"].as_str().unwrap_or("?");
+            let day = if date.len() >= 10 { &date[..10] } else { "?" };
+            let tags: Vec<String> = m["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str()).map(|s| format!("`#{}`", s)).collect()).unwrap_or_default();
+            out.push_str(&format!("| {} | {} | {} |\n", day, preview, tags.join(" ")));
+        }
+        out.push('\n');
+
+        // Extract connected concepts
+        let mut all_words: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for m in &memos {
+            if let Some(content) = m["content"].as_str() {
+                for word in content.split_whitespace() {
+                    let w = word.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>();
+                    if w.len() > 4 && !w.starts_with('#') && w != topic.to_lowercase() {
+                        all_words.insert(w);
+                    }
+                }
+            }
+        }
+        if !all_words.is_empty() {
+            let mut word_counts: Vec<(String, u32)> = all_words.into_iter().map(|w| {
+                let count = memos.iter().filter(|m| m["content"].as_str().unwrap_or("").to_lowercase().contains(&w)).count() as u32;
+                (w, count)
+            }).collect();
+            word_counts.sort_by(|a, b| b.1.cmp(&a.1));
+            if !word_counts.is_empty() {
+                out.push_str("## 🔗 Connected Concepts\n\n");
+                out.push_str("| Term | Frequency | Action |\n|---|---|---|\n");
+                for (word, cnt) in word_counts.iter().take(8) {
+                    out.push_str(&format!("| `{}` | {} memos | `/concept {}` |\n", word, cnt, word));
+                }
+                out.push('\n');
+            }
+        }
+    }
+
+    out.push_str("## 🗺️ Knowledge Graph\n\n");
+    out.push_str(&format!("```mermaid\ngraph LR\n    {}[\"{}\"]\n", topic.replace(' ', "_"), topic));
+    for m in memos.iter().take(5) {
+        if let Some(tags) = m["tags"].as_array() {
+            for t in tags.iter().take(2) {
+                if let Some(tag) = t.as_str() {
+                    out.push_str(&format!("    {} --> {}[\"{}\"]\n", topic.replace(' ', "_"), tag.replace(' ', "_"), tag));
+                }
+            }
+        }
+    }
+    out.push_str("```\n\n");
+
+    out.push_str(&format!("{}\n\n`{}` · #concept #inbox #memogram-rs", tg_footer("memogram-rs", "concept"), now));
     out
 }
 
