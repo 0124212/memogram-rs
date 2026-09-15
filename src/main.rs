@@ -60,8 +60,7 @@ enum Command {
     Learn(String),
     Workout(String),
     Recipe(String),
-    Stoic,
-    Mind(String),
+    Therapy(String),
     Posture(String),
     Calories(String),
     Http(String),
@@ -77,15 +76,15 @@ enum Command {
     Lobsters,
     Ph,
     Weekly,
-    Habit(String),
-    Focus(String),
-    Quote,
+    Overdue,
+    Standup,
+    Insight,
     Read(String),
     Queue,
     Review,
     Clip(String),
     Note(String),
-    Flashcard(String),
+    Research(String),
     Concept(String),
     Pathway(String),
     Molecule(String),
@@ -110,6 +109,7 @@ struct App {
     vikunja_url: String,
     vikunja_token: String,
     api_ninjas_key: String,
+    firecrawl_key: String,
 }
 
 impl App {
@@ -169,8 +169,9 @@ async fn main() -> Result<()> {
     let vikunja_url = env::var("VIKUNJA_URL").ok().unwrap_or_default();
     let vikunja_token = env::var("VIKUNJA_TOKEN").ok().unwrap_or_default();
     let api_ninjas_key = env::var("API_NINJAS_KEY").ok().unwrap_or_default();
+    let firecrawl_key = env::var("FIRECRAWL_KEY").ok().unwrap_or_default();
     let store = Arc::new(RwLock::new(load_store(&store_path).await));
-    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token, api_ninjas_key };
+    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token, api_ninjas_key, firecrawl_key };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
 
@@ -206,16 +207,16 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "goal".into(), description: "set a goal (Vikunja)".into() },
         teloxide::types::BotCommand { command: "deadline".into(), description: "deadline (Vikunja)".into() },
         teloxide::types::BotCommand { command: "weekly".into(), description: "weekly review (Vikunja)".into() },
-        teloxide::types::BotCommand { command: "habit".into(), description: "track habit streak".into() },
-        teloxide::types::BotCommand { command: "quote".into(), description: "daily quote".into() },
+        teloxide::types::BotCommand { command: "overdue".into(), description: "overdue tasks from Vikunja".into() },
+        teloxide::types::BotCommand { command: "insight".into(), description: "your best passages from memos".into() },
         teloxide::types::BotCommand { command: "read".into(), description: "read article from URL".into() },
         teloxide::types::BotCommand { command: "fact".into(), description: "random fun fact".into() },
         teloxide::types::BotCommand { command: "queue".into(), description: "reading queue".into() },
         teloxide::types::BotCommand { command: "review".into(), description: "review this week's memos".into() },
         teloxide::types::BotCommand { command: "clip".into(), description: "bookmark URL with metadata".into() },
         teloxide::types::BotCommand { command: "note".into(), description: "quick note with tags".into() },
-        teloxide::types::BotCommand { command: "focus".into(), description: "pomodoro timer <min>".into() },
-        teloxide::types::BotCommand { command: "flashcard".into(), description: "create flashcard <q> | <a>".into() },
+        teloxide::types::BotCommand { command: "standup".into(), description: "auto-generate today's standup".into() },
+        teloxide::types::BotCommand { command: "research".into(), description: "deep article analysis via URL".into() },
         teloxide::types::BotCommand { command: "concept".into(), description: "connect memos about a topic".into() },
         teloxide::types::BotCommand { command: "save".into(), description: "save anything".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
@@ -228,8 +229,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
         teloxide::types::BotCommand { command: "recipe".into(), description: "healthy recipe <diet>".into() },
-        teloxide::types::BotCommand { command: "stoic".into(), description: "stoic wisdom + reflection".into() },
-        teloxide::types::BotCommand { command: "mind".into(), description: "CBT thought record".into() },
+        teloxide::types::BotCommand { command: "therapy".into(), description: "CBT + stoic reflection".into() },
         teloxide::types::BotCommand { command: "posture".into(), description: "posture correction <issue>".into() },
         teloxide::types::BotCommand { command: "calories".into(), description: "calories burned <activity> <min>".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "PubMed papers".into() },
@@ -366,8 +366,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Workout(q) => { let txt = fetch_workout(&q).await.unwrap_or_else(|e| format!("workout err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Stoic => { let txt = fetch_stoic().await.unwrap_or_else(|e| format!("stoic err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Mind(topic) => { let txt = fetch_mind(&topic); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Therapy(args) => { let txt = fetch_therapy(&args, &app).await.unwrap_or_else(|e| format!("therapy err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Posture(args) => { let txt = fetch_posture(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Calories(args) => { let txt = fetch_calories(&args, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("calories err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
@@ -400,8 +399,8 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
-        Command::Habit(args) => { let txt = fetch_habit(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
-        Command::Quote => { let txt = fetch_quote_wellness().await.unwrap_or_else(|e| format!("quote err: {e}")); create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?; }
+        Command::Overdue => { let txt = fetch_overdue(&app).await.unwrap_or_else(|e| format!("overdue err: {e}")); create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
+        Command::Insight => { let txt = fetch_insight(&app).await.unwrap_or_else(|e| format!("insight err: {e}")); create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?; }
         Command::Read(url) => { let txt = fetch_read_url(&url).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "memos", &txt, tid).await?; }
         Command::Queue => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -417,8 +416,8 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Clip(url) => { let txt = fetch_clip(&url).await.unwrap_or_else(|e| format!("clip err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Note(args) => { let txt = create_note_smart(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Focus(args) => { let txt = set_focus(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
-        Command::Flashcard(args) => { let txt = create_flashcard(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Standup => { let txt = fetch_standup(&app).await.unwrap_or_else(|e| format!("standup err: {e}")); create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
+        Command::Research(url) => { let txt = fetch_research(&url).await.unwrap_or_else(|e| format!("research err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Concept(topic) => { let txt = fetch_concept(&topic, &app).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Flashback(topic) => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -6557,6 +6556,287 @@ async fn fetch_news(topic: &str) -> Result<String> {
     }
 
     out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("hn.algolia.com", "news"), now));
+    Ok(out)
+}
+
+// === NEW COMMANDS: OVERDUE, STANDUP, THERAPY, RESEARCH, INSIGHT ===
+
+async fn fetch_overdue(app: &App) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return Ok("⚠️ Vikunja not configured. Set `VIKUNJA_URL` and `VIKUNJA_TOKEN`.".into());
+    }
+    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
+    let mut overdue_tasks: Vec<(String, String, u64, String)> = Vec::new(); // (title, due_date, days_late, project)
+    let mut upcoming: Vec<(String, String, u64, String)> = Vec::new();
+    for p in &projects {
+        let pid = p["id"].as_u64().unwrap_or(0);
+        let pname = p["title"].as_str().unwrap_or("?");
+        let tasks = vikunja_list_tasks(&app.vikunja_url, &app.vikunja_token, pid, Some(false)).await.unwrap_or_default();
+        for t in &tasks {
+            if t["done"].as_bool().unwrap_or(true) { continue; }
+            if let Some(due) = t["due_date"].as_str() {
+                if due.len() >= 10 {
+                    let due_date = &due[..10];
+                    if let Ok(due_dt) = chrono::NaiveDate::parse_from_str(due_date, "%Y-%m-%d") {
+                        let today_dt = chrono::NaiveDate::parse_from_str(&today, "%Y-%m-%d").unwrap_or_default();
+                        let diff = (today_dt - due_dt).num_days();
+                        let title = t["title"].as_str().unwrap_or("?").to_string();
+                        if diff > 0 {
+                            overdue_tasks.push((title, due_date.to_string(), diff as u64, pname.to_string()));
+                        } else if diff >= -3 && diff < 0 {
+                            upcoming.push((title, due_date.to_string(), diff.unsigned_abs(), pname.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    overdue_tasks.sort_by(|a, b| b.2.cmp(&a.2));
+    upcoming.sort_by(|a, b| a.2.cmp(&b.2));
+
+    let mut out = format!("{}\n\n", tg_header("🚨", "Overdue Tasks", &format!("{} overdue", overdue_tasks.len())));
+    if overdue_tasks.is_empty() && upcoming.is_empty() {
+        out.push_str("✅ **Nothing overdue.** All on track.\n\n");
+    } else {
+        if !overdue_tasks.is_empty() {
+            out.push_str("## 🚨 Overdue\n\n");
+            out.push_str("| Task | Due | Days Late | Project |\n|---|---|---|---|\n");
+            for (title, due, days, proj) in overdue_tasks.iter().take(10) {
+                let urgency = if *days > 14 { "🔴" } else if *days > 7 { "🟠" } else { "🟡" };
+                out.push_str(&format!("| {} `{}` | {} | {} **{} days** | {} |\n", urgency, title, due, days, days, proj));
+            }
+            out.push('\n');
+        }
+        if !upcoming.is_empty() {
+            out.push_str("## ⏰ Due Soon\n\n");
+            out.push_str("| Task | Due | In | Project |\n|---|---|---|---|\n");
+            for (title, due, days, proj) in upcoming.iter().take(5) {
+                out.push_str(&format!("| `{}` | {} | {} days | {} |\n", title, due, days, proj));
+            }
+            out.push('\n');
+        }
+    }
+    out.push_str("## 💡 Tips\n\n");
+    out.push_str("- 🔴 **>14 days late:** Reprioritize or drop — it's not happening\n");
+    out.push_str("- 🟠 **7-14 days:** Break it into smaller steps today\n");
+    out.push_str("- 🟡 **<7 days:** Still doable — block time now\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #overdue #tasks #memogram-rs", tg_footer("vikunja", "overdue"), now));
+    Ok(out)
+}
+
+async fn fetch_standup(app: &App) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return Ok("⚠️ Vikunja not configured. Set `VIKUNJA_URL` and `VIKUNJA_TOKEN`.".into());
+    }
+    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
+    let mut done_today: Vec<(String, String)> = Vec::new();
+    let mut in_progress: Vec<(String, String, String)> = Vec::new();
+    for p in &projects {
+        let pid = p["id"].as_u64().unwrap_or(0);
+        let pname = p["title"].as_str().unwrap_or("?");
+        // Done today
+        let done = vikunja_list_tasks(&app.vikunja_url, &app.vikunja_token, pid, Some(true)).await.unwrap_or_default();
+        for t in &done {
+            if let Some(done_at) = t["done_at"].as_str() {
+                if done_at.starts_with(&today) {
+                    done_today.push((t["title"].as_str().unwrap_or("?").to_string(), pname.to_string()));
+                }
+            }
+        }
+        // In progress (not done, no due or due today/future)
+        let open = vikunja_list_tasks(&app.vikunja_url, &app.vikunja_token, pid, Some(false)).await.unwrap_or_default();
+        for t in open.iter().take(3) {
+            let due = t["due_date"].as_str().map(|d| if d.len() >= 10 { d[..10].to_string() } else { "—".to_string() }).unwrap_or_else(|| "—".to_string());
+            in_progress.push((t["title"].as_str().unwrap_or("?").to_string(), due, pname.to_string()));
+        }
+    }
+
+    let weekday = Local::now().format("%A").to_string();
+    let mut out = format!("{}\n\n", tg_header("📋", "Standup", &format!("{} {}", weekday, today)));
+    out.push_str("## ✅ Done Today\n\n");
+    if done_today.is_empty() {
+        out.push_str("_Nothing completed yet today._\n\n");
+    } else {
+        for (title, proj) in &done_today {
+            out.push_str(&format!("- ✅ **{}** ({})\n", title, proj));
+        }
+        out.push('\n');
+    }
+    out.push_str("## 🔄 In Progress\n\n");
+    if in_progress.is_empty() {
+        out.push_str("_No active tasks._\n\n");
+    } else {
+        out.push_str("| Task | Due | Project |\n|---|---|---|\n");
+        for (title, due, proj) in &in_progress {
+            out.push_str(&format!("| {} | {} | {} |\n", title, due, proj));
+        }
+        out.push('\n');
+    }
+    out.push_str("## 🚧 Blockers\n\n");
+    out.push_str("- _(Are any tasks blocked? Add them here.)_\n\n");
+    out.push_str("## 💡 Reflection\n\n");
+    out.push_str("- What's the most important thing to finish today?\n");
+    out.push_str("- What's one thing you learned yesterday?\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #standup #tasks #memogram-rs", tg_footer("vikunja", "standup"), now));
+    Ok(out)
+}
+
+async fn fetch_therapy(args: &str, app: &App) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    let topic = args.trim();
+    // Pull a live stoic quote
+    let mut quote = ("The impediment to action advances action. What stands in the way becomes the way.".to_string(), "Marcus Aurelius".to_string());
+    if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").send()).await {
+        if let Ok(arr) = r.json::<serde_json::Value>().await {
+            if let Some(q) = arr.as_array().and_then(|a| a.first()) {
+                quote = (q["q"].as_str().unwrap_or("").to_string(), q["a"].as_str().unwrap_or("Unknown").to_string());
+            }
+        }
+    }
+    let mut out = format!("{}\n\n", tg_header("🧠", "Therapy Session", &date));
+    out.push_str("**Evidence base:** CBT (Beck, 1979) + Stoic philosophy (Aurelius, Seneca, Epictetus)\n\n");
+    // Stoic opening
+    out.push_str("## 🏛️ Stoic Grounding\n\n");
+    out.push_str(&format!("> _\"{}\"_\n> — **{}**\n\n", quote.0, quote.1));
+    out.push_str("| What's in your control | What's not |\n|---|---|\n");
+    out.push_str("| Your judgments | Other people |\n");
+    out.push_str("| Your responses | Outcomes |\n");
+    out.push_str("| Your effort | The past |\n\n");
+    // CBT section
+    if !topic.is_empty() {
+        out.push_str(&format!("## 1️⃣ Situation\n\n> {}\n\n", topic));
+    } else {
+        out.push_str("## 1️⃣ Situation\n\n_(What happened? Run `/therapy <situation>` to pre-fill.)_\n\n");
+    }
+    out.push_str("## 2️⃣ Automatic Thought\n\n");
+    out.push_str("_What went through your mind? Write it raw._\n\n");
+    out.push_str("## 3️⃣ Emotion\n\n");
+    out.push_str("| Emotion | Intensity 0–100 |\n|---|---|\n");
+    out.push_str("| Anxious |  |\n| Sad |  |\n| Angry |  |\n| Ashamed |  |\n| Hopeless |  |\n\n");
+    out.push_str("## 4️⃣ Evidence For / Against\n\n");
+    out.push_str("| For the thought | Against the thought |\n|---|---|\n|  |  |\n|  |  |\n|  |  |\n\n");
+    out.push_str("## 5️⃣ Distortions\n\n");
+    out.push_str("- [ ] Catastrophizing — worst-case only\n");
+    out.push_str("- [ ] Mind reading — assuming others' thoughts\n");
+    out.push_str("- [ ] All-or-nothing — no middle ground\n");
+    out.push_str("- [ ] Should statements — rigid rules\n");
+    out.push_str("- [ ] Discounting positives — good doesn't count\n");
+    out.push_str("- [ ] Emotional reasoning — I feel it, so it's true\n\n");
+    out.push_str("## 6️⃣ Stoic Reframe\n\n");
+    out.push_str("_Apply the dichotomy: which part of this is in my control?_\n\n");
+    out.push_str("## 7️⃣ Balanced Thought\n\n");
+    out.push_str("_Rewrite more fairly. What would a good friend say?_\n\n");
+    out.push_str("## 8️⃣ Re-rate\n\n");
+    out.push_str("| Emotion | Before | After |\n|---|---|---|\n|  | /100 | /100 |\n\n");
+    out.push_str("> Complete both sections, then `/review` tomorrow to see patterns.\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #therapy #wellness #memogram-rs", tg_footer("CBT + Stoic", "therapy"), now));
+    Ok(out)
+}
+
+async fn fetch_research(url: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let url = url.trim();
+    if url.is_empty() { return Ok("usage: `/research <url>` — deep article analysis".into()); }
+
+    let body = match tokio::time::timeout(std::time::Duration::from_secs(15), HTTP.get(url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.text().await.unwrap_or_default(),
+        Ok(Err(e)) => return Ok(format!("❌ Request failed: {}", e)),
+        Err(_) => return Ok("⏰ Timeout (15s)".into()),
+    };
+
+    let title = body.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).unwrap_or("Article").trim().to_string();
+    let word_count = body.split_whitespace().count();
+    let read_time = (word_count as f64 / 200.0).ceil() as u32;
+    let domain = url.split("://").nth(1).unwrap_or(url).split('/').next().unwrap_or("?");
+    let paragraphs: Vec<&str> = body.split('\n').filter(|l| l.trim().len() > 50).map(|l| l.trim()).collect();
+    let key_points: Vec<&str> = paragraphs.iter().filter(|p| p.len() > 80 && p.len() < 500).take(5).copied().collect();
+
+    let mut out = format!("{}\n\n", tg_header("🔬", "Research Analysis", &title));
+    out.push_str(&format!("**URL:** [{}]({})\n**Domain:** `{}`\n**Words:** `{}` · **Read time:** `~{} min`\n\n", title, url, domain, word_count, read_time));
+    if !key_points.is_empty() {
+        out.push_str("## 📌 Key Points\n\n");
+        for (i, point) in key_points.iter().enumerate() {
+            let clean: String = point.chars().take(300).collect();
+            out.push_str(&format!("{}. > {}\n\n", i + 1, clean));
+        }
+    }
+    out.push_str("## ✅ Action Items\n\n");
+    out.push_str("- [ ] _What will you do with this information?_\n");
+    out.push_str("- [ ] _Who should know about this?_\n");
+    out.push_str("- [ ] _What to follow up on in 7 days?_\n\n");
+    out.push_str("## 🔄 Next Steps\n\n");
+    out.push_str(&format!("- Save it with `/save {}`\n", url));
+    let learn_hint = title.split_whitespace().take(2).collect::<Vec<_>>().join(" ");
+    out.push_str(&format!("- Expand it with `/learn {}`\n", learn_hint));
+    out.push_str("- Connect it with `/concept <topic>`\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #research #inbox #memogram-rs", tg_footer("web analysis", "research"), now));
+    Ok(out)
+}
+
+async fn fetch_insight(app: &App) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let token = app.store.read().await.values().next().cloned().unwrap_or_default();
+    if token.is_empty() { return Ok("⚠️ Run `/start <token>` first.".into()); }
+    let v: serde_json::Value = HTTP.get(format!("{}/api/v1/memos?pageSize=100", app.memos_url))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().cloned().unwrap_or_default();
+    if memos.is_empty() { return Ok("📝 _No memos yet. Start with `/note` or `/save`._".into()); }
+    // Extract meaningful words (>5 chars, not tags/urls)
+    let mut word_freq: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for m in &memos {
+        if let Some(content) = m["content"].as_str() {
+            for word in content.split_whitespace() {
+                let w: String = word.chars().filter(|c| c.is_alphanumeric()).collect();
+                if w.len() > 5 && !w.starts_with('#') && !w.starts_with("http") && !w.contains("@") {
+                    *word_freq.entry(w.to_lowercase()).or_insert(0) += 1;
+                }
+            }
+        }
+    }
+    let mut top_topics: Vec<(String, u32)> = word_freq.into_iter().collect();
+    top_topics.sort_by(|a, b| b.1.cmp(&a.1));
+    let topics: Vec<(String, u32)> = top_topics.into_iter().take(8).collect();
+    // Find memos with most content (deepest thinking)
+    let mut longest: Vec<(String, usize, String)> = memos.iter().map(|m| {
+        let content = m["content"].as_str().unwrap_or("");
+        let date = m["createTime"].as_str().unwrap_or("");
+        let day = if date.len() >= 10 { date[..10].to_string() } else { "?".to_string() };
+        (content.split_whitespace().take(30).collect::<Vec<_>>().join(" "), content.len(), day)
+    }).collect();
+    longest.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let mut out = format!("{}\n\n", tg_header("💎", "Your Insights", &format!("{} memos", memos.len())));
+    out.push_str("## 🧠 Your Most-Used Topics\n\n");
+    out.push_str("| Topic | Frequency |\n|---|---|\n");
+    for (word, count) in &topics {
+        out.push_str(&format!("| `{}` | {} mentions |\n", word, count));
+    }
+    out.push_str("\n");
+    if topics.len() >= 2 {
+        out.push_str("## 🔗 Suggested Connections\n\n");
+        let (a, _) = &topics[0];
+        let (b, _) = &topics[1];
+        out.push_str(&format!("- How does **{}** relate to **{}**? Run `/concept {}`\n", a, b, a));
+        out.push_str(&format!("- What's the gap between your **{}** knowledge and **{}**? Run `/learn {}`\n", a, b, b));
+    }
+    out.push_str("## 📚 Your Deepest Writing\n\n");
+    for (i, (preview, chars, day)) in longest.iter().take(5).enumerate() {
+        out.push_str(&format!("{}. **{}** — `{} chars` — {}\n", i + 1, preview, chars, day));
+    }
+    out.push_str("\n## 💡 Today's Suggestion\n\n");
+    let random_idx = (Local::now().timestamp() as usize) % memos.len();
+    let random_memo = &memos[random_idx];
+    let random_content = random_memo["content"].as_str().unwrap_or("");
+    let random_preview: String = random_content.split_whitespace().take(40).collect::<Vec<_>>().join(" ");
+    let random_day = random_memo["createTime"].as_str().unwrap_or("?");
+    let day_short = if random_day.len() >= 10 { &random_day[..10] } else { "?" };
+    out.push_str(&format!("_Re-read this from {}: {}_\n\n", day_short, random_preview.chars().take(150).collect::<String>()));
+    out.push_str(&format!("{}\n\n`{}` · #insight #memos #memogram-rs", tg_footer("your memos", "insight"), now));
     Ok(out)
 }
 
