@@ -1,6 +1,8 @@
 # memogram-rs
 
-Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â€” Telegram â†’ Memos bridge, single binary + Docker. **45 polished markdown commands, 11 buckets, ~10MB RSS.**
+Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â€” Telegram â†’ Memos bridge, single binary + Docker. **~70 commands, 11 buckets, ~16MB binary.**
+
+Personal memo maker that outputs rich markdown documents for making money, learning, health, habits, and staying in your field.
 
 ## Cheatsheet
 
@@ -14,9 +16,14 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /digest             Today's memo summary
 ```
 
-### News & Research
+### News & Updates
 ```
 /hn                  HackerNews top 5       /arxiv <q>        arXiv papers
+/lobsters            Lobsters hot stories   /ph               Product Hunt
+```
+
+### Learn & Research
+```
 /define <word>       Dictionary             /wiki <q>         Wikipedia
 /brief <topic>       Research brief         /compare <a> vs <b> Comparison
 /paper <query>       Paper deep-dive        /tutorial <topic> Guided how-to
@@ -27,7 +34,14 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 ### Dev
 ```
 /gh <q>              GitHub search/repo     /ip <addr>        IP lookup
-/containers          Service health
+/containers          Service health         /ports            Port reference
+/dns <domain>        DNS lookup             /timestamp        Epoch â†” time
+```
+
+### Weather
+```
+/weather <city>      Current + 3-day        /wind <city>      Wind forecast
+/uv <loc>            UV index               /moon             Moon phase
 ```
 
 ### Finance & Money
@@ -39,56 +53,62 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /portfolio           Track holdings         /alerts           Price alerts
 ```
 
-### Bio & Health
+### Bioengineering & Pre-Health
 ```
 /pubmed <q>          PubMed papers          /trial <q>        Clinical trials
-/food <query>        Nutrition facts        /exercise <a> <d> Log exercise
-/energy <1-10>       Log energy             /water <amt>      Log water
-/read <title> <a>    Log reading
+/patent <query>      Patent search          /species <name>   Taxonomy lookup
+/lab <protocol>      Lab protocol template  /food <query>     Nutrition facts
+/prereqs <track>     Health prof prereqs    /mcat <topic>     MCAT study guide
+/clinical <a> <h>    Log clinical hours     /shadow <dr> <h>  Log shadowing
+/ethics <scenario>   Medical ethics case
 ```
 
-### Wellness
+### Health & Habits
 ```
 /mood <text>         Log mood               /habit <task>     Track habit
 /mood gratitude ...  Log gratitude          /mood journal ... Journal entry
 /mood reflection ... Log reflection         /stress <n>       Log stress
-/meditation <n>      Log meditation
+/meditation <n>      Log meditation         /sleep <hrs> <q>  Log sleep
+/energy <1-10>       Log energy             /exercise <a> <d> Log exercise
+/water <amt>         Log water              /read <title> <a> Log reading
 ```
 
-### Planning
+### Planning & Goals
 ```
-/goal <goal>         Set a goal             /deadline <d> <t> Track deadline
-/priority <l> <t>    Set priority
+/goal <goal>         Set a goal (SMART)     /deadline <d> <t> Track deadline
+/priority <l> <t>    Set priority           /project <text>   Project doc
+/todo <text>         Checklist              /weekly           Weekly review
+/retro <sprint>      Sprint retrospective
+```
+
+### Daily
+```
+/morning <text>      Morning check-in       /evening <text>   Evening reflection
+/checkin <m> <e>     Quick check-in         /log <text>       Daily log
+/summary <text>      Day summary
 ```
 
 ### Inbox
 ```
 /idea <text>         Capture idea           /braindump <t>    Thought dump
 /summarize <url>     Summarize URL          /transcribe <t>   Voice-to-text
-```
-
-### Daily
-```
-/daily               Daily template          /digest            Today's memo summary
-/streak              Writing streak          /morning <text>    Morning check-in
-/evening <text>      Evening reflection      /checkin <m> <e>   Quick check-in
-/log <text>          Daily log               /summary <text>    Day summary
+/list <text>         Bulleted list
 ```
 
 ## Buckets
 
-| Bucket | Purpose |
-|--------|---------|
-| `inbox` | Default capture, ideas, links, snippets |
-| `news` | HN, arXiv |
-| `dev` | GitHub, containers, IP |
-| `learn` | Wiki, definitions, research, books, YouTube |
-| `bio` | PubMed, trials, nutrition, exercise |
-| `money` | FX, stocks, crypto, finance, hustle, income |
-| `wellness` | Mood, gratitude, journal, reflection, habits, stress |
-| `planning` | Goals, deadlines, priorities |
-| `daily` | Check-ins, logs, summaries, digest, streak |
-| `weather` | Forecasts, air quality |
+| Bucket | Commands | Purpose |
+|--------|----------|---------|
+| `bio` | 10 | PubMed, trials, patents, species, lab, prereqs, MCAT, clinical, shadowing, ethics |
+| `learn` | 9 | Wiki, definitions, research, books, YouTube, papers |
+| `daily` | 11 | Check-ins, logs, summaries, digest, streak |
+| `money` | 8 | FX, stocks, crypto, finance, hustle, income |
+| `planning` | 7 | Goals, deadlines, priorities, projects, todos, weekly, retro |
+| `inbox` | 6 | Ideas, links, snippets, save, transcribe, list |
+| `wellness` | 5 | Mood, habits, stress, meditation, gratitude |
+| `weather` | 4 | Forecast, wind, UV, moon |
+| `news` | 4 | HN, arXiv, Lobsters, Product Hunt |
+| `dev` | 6 | GitHub, containers, IP, ports, DNS, timestamp |
 
 ## Setup
 
