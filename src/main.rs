@@ -63,6 +63,7 @@ enum Command {
     Therapy(String),
     Posture(String),
     Calories(String),
+    Stretch(String),
     Http(String),
     Chord(String),
     Scale(String),
@@ -232,6 +233,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "therapy".into(), description: "CBT + stoic reflection".into() },
         teloxide::types::BotCommand { command: "posture".into(), description: "posture correction <issue>".into() },
         teloxide::types::BotCommand { command: "calories".into(), description: "calories burned <activity> <min>".into() },
+        teloxide::types::BotCommand { command: "stretch".into(), description: "stretch routine <muscle>".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "PubMed papers".into() },
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
@@ -369,6 +371,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Therapy(args) => { let txt = fetch_therapy(&args, &app).await.unwrap_or_else(|e| format!("therapy err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Posture(args) => { let txt = fetch_posture(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Calories(args) => { let txt = fetch_calories(&args, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("calories err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Stretch(muscle) => { let txt = fetch_stretch(&muscle).await.unwrap_or_else(|e| format!("stretch err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "tasks", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -6556,6 +6559,65 @@ async fn fetch_news(topic: &str) -> Result<String> {
     }
 
     out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("hn.algolia.com", "news"), now));
+    Ok(out)
+}
+
+async fn fetch_stretch(muscle: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let muscle = muscle.trim().to_lowercase();
+    if muscle.is_empty() { return Ok("usage: `/stretch <muscle>` — e.g. `/stretch back`, `/stretch hamstrings`, `/stretch shoulders`".into()); }
+    let url = "https://v2.exercisedb.dev/exercises?limit=50&offset=0";
+    let v: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let all = v.as_array().cloned().unwrap_or_default();
+    let matched: Vec<&serde_json::Value> = all.iter().filter(|e| {
+        let name = e["name"].as_str().unwrap_or("").to_lowercase();
+        let body = e["bodyParts"].as_array().map(|a| a.iter().any(|b| b.as_str().unwrap_or("").to_lowercase().contains(&muscle))).unwrap_or(false);
+        let target = e["targetMuscles"].as_array().map(|a| a.iter().any(|m| m.as_str().unwrap_or("").to_lowercase().contains(&muscle))).unwrap_or(false);
+        (name.contains("stretch") || e["exerciseType"].as_str().unwrap_or("").to_lowercase() == "stretching") && (body || target || name.contains(&muscle))
+    }).collect();
+    let mut out = format!("{}\n\n", tg_header("🤸", "Stretch Routine", &muscle));
+    if matched.is_empty() {
+        out.push_str("_No stretches found. Try: back, hamstrings, shoulders, neck, hip, quad, calf, chest, wrist_\n\n");
+        out.push_str("## 🧘 Quick Stretch Guide\n\n");
+        out.push_str("| Muscle | Stretch | Duration |\n|---|---|---|\n");
+        out.push_str("| Back | Cat-cow, child's pose | 30s each |\n");
+        out.push_str("| Hamstrings | Standing toe touch | 30s each |\n");
+        out.push_str("| Shoulders | Cross-body arm pull | 30s each |\n");
+        out.push_str("| Neck | Ear-to-shoulder tilt | 30s each |\n");
+        out.push_str("| Hips | Pigeon pose | 60s each |\n");
+        out.push_str("| Quad | Standing quad stretch | 30s each |\n");
+        out.push_str("| Calf | Wall calf stretch | 30s each |\n");
+        out.push_str("| Chest | Doorway stretch | 30s |\n\n");
+    } else {
+        out.push_str(&format!("**{} stretches** found for _{}_\n\n", matched.len(), muscle));
+        for (i, ex) in matched.iter().take(5).enumerate() {
+            let name = ex["name"].as_str().unwrap_or("?");
+            let muscles: Vec<String> = ex["targetMuscles"].as_array().map(|a| a.iter().filter_map(|m| m.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+            let instructions: Vec<String> = ex["instructions"].as_array().map(|a| a.iter().filter_map(|s| s.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+            let tips: Vec<String> = ex["exerciseTips"].as_array().map(|a| a.iter().filter_map(|s| s.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+            out.push_str(&format!("### {}. {}\n\n", i + 1, name));
+            out.push_str(&format!("**Target:** {}\n\n", muscles.join(", ")));
+            if !instructions.is_empty() {
+                out.push_str("**Steps:**\n");
+                for (j, step) in instructions.iter().enumerate().take(5) {
+                    out.push_str(&format!("{}. {}\n", j + 1, step));
+                }
+                out.push('\n');
+            }
+            if !tips.is_empty() {
+                out.push_str(&format!("💡 **Tips:** {}\n\n", tips[0]));
+            }
+        }
+    }
+    out.push_str("## 🧘 Stretching Guidelines\n\n");
+    out.push_str("- ⏱️ **Hold each stretch:** 20–30 seconds\n");
+    out.push_str("- 🔄 **Breathe:** Deep breaths, don't hold\n");
+    out.push_str("- 🚫 **No bouncing:** Static stretches only\n");
+    out.push_str("- 📅 **Best times:** After workout, morning, or before bed\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #stretch #wellness #memogram-rs", tg_footer("exercisedb.dev", "stretch"), now));
     Ok(out)
 }
 
