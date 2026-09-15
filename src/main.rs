@@ -42,18 +42,10 @@ enum Command {
     Book(String),
     Goal(String),
     Deadline(String),
-    Idea(String),
-    Braindump(String),
     Summarize(String),
     Save(String),
-    Energy(String),
-    Exercise(String),
-    Water(String),
-    Read(String),
     Pubmed(String),
     Ip(String),
-    Mood(String),
-    Habit(String),
     Finance(String),
     Compound(String),
     Trial(String),
@@ -62,12 +54,7 @@ enum Command {
     Hustle(String),
     Digest,
     Youtube(String),
-    Transcribe(String),
     Learn(String),
-    Morning(String),
-    Evening(String),
-    Log(String),
-    Summary(String),
     Dns(String),
     Json(String),
     Regex(String),
@@ -80,17 +67,12 @@ enum Command {
     Tide(String),
     Project(String),
     Todo(String),
-    List(String),
-    Sleep(String),
     Lobsters,
     Ph,
     Weekly,
-    Retro(String),
     Species(String),
-    Lab(String),
     Prereqs(String),
     Mcat(String),
-    Ethics(String),
     Scholar(String),
     Reddit(String),
     News(String),
@@ -176,7 +158,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "search".into(), description: "search memos".into() },
         teloxide::types::BotCommand { command: "hn".into(), description: "HackerNews top 5".into() },
         teloxide::types::BotCommand { command: "arxiv".into(), description: "arXiv latest papers".into() },
-        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city> (3-day)".into() },
+        teloxide::types::BotCommand { command: "weather".into(), description: "weather <city>".into() },
         teloxide::types::BotCommand { command: "define".into(), description: "define <word>".into() },
         teloxide::types::BotCommand { command: "wiki".into(), description: "wiki <query>".into() },
         teloxide::types::BotCommand { command: "gh".into(), description: "GitHub search/repo".into() },
@@ -191,58 +173,43 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "json".into(), description: "pretty-print JSON".into() },
         teloxide::types::BotCommand { command: "regex".into(), description: "regex tester".into() },
         teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
-        teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup <domain>".into() },
+        teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup".into() },
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
-        teloxide::types::BotCommand { command: "morning".into(), description: "morning check-in".into() },
-        teloxide::types::BotCommand { command: "evening".into(), description: "evening reflection".into() },
-        teloxide::types::BotCommand { command: "log".into(), description: "daily log".into() },
-        teloxide::types::BotCommand { command: "summary".into(), description: "day summary".into() },
         teloxide::types::BotCommand { command: "inbox".into(), description: "untagged memos".into() },
         teloxide::types::BotCommand { command: "undo".into(), description: "delete last memo".into() },
         teloxide::types::BotCommand { command: "pin".into(), description: "pin/unpin last memo".into() },
-        teloxide::types::BotCommand { command: "book".into(), description: "book card".into() },
+        teloxide::types::BotCommand { command: "book".into(), description: "book from Open Library".into() },
         teloxide::types::BotCommand { command: "goal".into(), description: "set a goal (Vikunja)".into() },
-        teloxide::types::BotCommand { command: "deadline".into(), description: "track deadline (Vikunja)".into() },
-        teloxide::types::BotCommand { command: "idea".into(), description: "capture idea".into() },
-        teloxide::types::BotCommand { command: "braindump".into(), description: "quick thought dump".into() },
+        teloxide::types::BotCommand { command: "deadline".into(), description: "deadline (Vikunja)".into() },
+        teloxide::types::BotCommand { command: "weekly".into(), description: "weekly review (Vikunja)".into() },
         teloxide::types::BotCommand { command: "save".into(), description: "save anything".into() },
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
-        teloxide::types::BotCommand { command: "mood".into(), description: "mood/gratitude/journal/reflection".into() },
-        teloxide::types::BotCommand { command: "habit".into(), description: "track habit".into() },
         teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
         teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
-        teloxide::types::BotCommand { command: "pubmed".into(), description: "search PubMed papers".into() },
+        teloxide::types::BotCommand { command: "pubmed".into(), description: "PubMed papers".into() },
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
-        teloxide::types::BotCommand { command: "youtube".into(), description: "summarize youtube video".into() },
-        teloxide::types::BotCommand { command: "learn".into(), description: "learning overview for any topic".into() },
-        teloxide::types::BotCommand { command: "transcribe".into(), description: "voice-to-text memo".into() },
+        teloxide::types::BotCommand { command: "youtube".into(), description: "summarize video".into() },
+        teloxide::types::BotCommand { command: "learn".into(), description: "learning overview".into() },
         teloxide::types::BotCommand { command: "wind".into(), description: "wind forecast".into() },
         teloxide::types::BotCommand { command: "uv".into(), description: "UV index".into() },
         teloxide::types::BotCommand { command: "moon".into(), description: "moon phase".into() },
         teloxide::types::BotCommand { command: "pollen".into(), description: "pollen forecast".into() },
         teloxide::types::BotCommand { command: "snow".into(), description: "snow report".into() },
         teloxide::types::BotCommand { command: "tide".into(), description: "tide schedule".into() },
-        teloxide::types::BotCommand { command: "sleep".into(), description: "log sleep <hrs> <quality>".into() },
-        teloxide::types::BotCommand { command: "project".into(), description: "create Vikunja project".into() },
-        teloxide::types::BotCommand { command: "todo".into(), description: "create Vikunja task".into() },
-        teloxide::types::BotCommand { command: "list".into(), description: "bulleted list".into() },
+        teloxide::types::BotCommand { command: "project".into(), description: "Vikunja project".into() },
+        teloxide::types::BotCommand { command: "todo".into(), description: "Vikunja task".into() },
         teloxide::types::BotCommand { command: "lobsters".into(), description: "lobste.rs top stories".into() },
-        teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt top products".into() },
-        teloxide::types::BotCommand { command: "weekly".into(), description: "weekly review template".into() },
-        teloxide::types::BotCommand { command: "retro".into(), description: "sprint retrospective".into() },
-        teloxide::types::BotCommand { command: "patent".into(), description: "search patents".into() },
-        teloxide::types::BotCommand { command: "species".into(), description: "taxonomy/species lookup".into() },
-        teloxide::types::BotCommand { command: "lab".into(), description: "lab protocol template".into() },
-        teloxide::types::BotCommand { command: "prereqs".into(), description: "health prof prerequisites".into() },
-        teloxide::types::BotCommand { command: "mcat".into(), description: "MCAT study resources".into() },
-        teloxide::types::BotCommand { command: "ethics".into(), description: "medical ethics scenario".into() },
-        teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar search".into() },
+        teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt today".into() },
+        teloxide::types::BotCommand { command: "species".into(), description: "taxonomy lookup".into() },
+        teloxide::types::BotCommand { command: "prereqs".into(), description: "health prof prereqs".into() },
+        teloxide::types::BotCommand { command: "mcat".into(), description: "MCAT study guide".into() },
+        teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "subreddit top posts".into() },
         teloxide::types::BotCommand { command: "news".into(), description: "news on any topic".into() },
     ]).await;
@@ -346,22 +313,14 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Book(args) => { let txt = fetch_book(&args).await.unwrap_or_else(|e| format!("book err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Ip(ip) => { let txt = fetch_ip(&ip).await.unwrap_or_else(|e| format!("ip err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Mood(note) => { let txt = create_mood_entry(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Habit(args) => { let txt = create_habit_entry(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Finance(term) => { let txt = fetch_finance(&term).await.unwrap_or_else(|e| format!("finance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Idea(args) => { let txt = create_idea(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Save(args) => { let txt = fetch_save(&args).await.unwrap_or_else(|e| format!("save err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Read(args) => { let txt = fetch_read(&args).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         
         Command::Paper(q) => { let txt = fetch_paper(&q).await.unwrap_or_else(|e| format!("paper err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Hustle(q) => { let txt = fetch_hustle(&q).await.unwrap_or_else(|e| format!("hustle err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
@@ -373,11 +332,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Youtube(url) => { let txt = fetch_youtube(&url).await.unwrap_or_else(|e| format!("youtube err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Learn(topic) => { let txt = fetch_learn(&topic).await.unwrap_or_else(|e| format!("learn err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Transcribe(text) => { let txt = create_transcribe(&text); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Morning(args) => { let txt = create_morning(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Dns(domain) => { let txt = fetch_dns(&domain).await.unwrap_or_else(|e| format!("dns err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Json(text) => { let txt = create_json(&text); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Regex(args) => { let txt = create_regex(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
@@ -388,19 +342,14 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Pollen(loc) => { let txt = fetch_pollen(&loc).await.unwrap_or_else(|e| format!("pollen err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Snow(loc) => { let txt = fetch_snow(&loc).await.unwrap_or_else(|e| format!("snow err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Tide(loc) => { let txt = fetch_tide(&loc).await.unwrap_or_else(|e| format!("tide err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Project(args) => { let txt = vikunja_project(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Todo(args) => { let txt = vikunja_todo(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Lobsters => { let txt = fetch_lobsters().await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Retro(args) => { let txt = create_retro(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Species(q) => { let txt = fetch_species(&q).await.unwrap_or_else(|e| format!("species err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Lab(args) => { let txt = create_lab(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Prereqs(track) => { let txt = create_prereqs(&track); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Mcat(topic) => { let txt = fetch_mcat(&topic).await.unwrap_or_else(|e| format!("mcat err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Ethics(args) => { let txt = create_ethics(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
