@@ -98,6 +98,8 @@ struct App {
     store: Arc<RwLock<HashMap<i64, String>>>,
     store_path: String,
     bot_tokens: HashMap<String, String>,
+    bark_url: String,
+    ntfy_url: String,
 }
 
 impl App {
@@ -152,8 +154,10 @@ async fn main() -> Result<()> {
     let allowed = env::var("ALLOWED_USERNAMES").ok().map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
     let store_path = env::var("DATA").unwrap_or_else(|_| "./data.txt".into());
     let bot_tokens: HashMap<String, String> = env::var("BOT_TOKENS_JSON").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let bark_url = env::var("BARK_URL").ok().unwrap_or_default();
+    let ntfy_url = env::var("NTFY_URL").ok().unwrap_or_default();
     let store = Arc::new(RwLock::new(load_store(&store_path).await));
-    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens };
+    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
 
@@ -993,7 +997,6 @@ async fn fetch_containers(memos_url: &str) -> Result<String> {
         ("Memos", format!("{memos_url}/api/v1/status")),
         ("Vikunja", "http://vikunja:3456/health".to_string()),
         ("Radicale", "http://radicale:5232".to_string()),
-        ("Gotify", "http://gotify:8080/health".to_string()),
     ];
     let mut out = String::from("*🐳 Service Health*\n\n");
     let mut table = String::from("```\nService     Status      Latency\n");
@@ -1467,21 +1470,37 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
 
 // --- utility functions ---
 
-async fn set_reminder(args: &str, _app: &App) -> String {
+async fn set_reminder(args: &str, app: &App) -> String {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let mins: u64 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(5).min(1440);
     let msg_text = parts.get(1).unwrap_or(&"Reminder!");
-    let gotify_url = "http://gotify:8080";
+    let bark_url = app.bark_url.clone();
+    let ntfy_url = app.ntfy_url.clone();
     let msg_clone = msg_text.to_string();
     let title = format!("⏰ Reminder in {mins}min");
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(mins * 60)).await;
-        let _ = HTTP.post(format!("{gotify_url}/message"))
-            .form(&[("title", title.as_str()), ("message", &msg_clone), ("priority", &"5")])
-            .send().await;
+        // Bark
+        if !bark_url.is_empty() {
+            let bark_body = serde_json::json!({ "title": &title, "body": &msg_clone, "group": "memogram" });
+            let _ = HTTP.post(&bark_url).json(&bark_body).send().await;
+        }
+        // ntfy
+        if !ntfy_url.is_empty() {
+            let _ = HTTP.post(&ntfy_url)
+                .header("Title", &title)
+                .header("Priority", "high")
+                .body(msg_clone.clone())
+                .send().await;
+        }
     });
     let fire_at = Local::now() + chrono::Duration::minutes(mins as i64);
-    format!("⏰ **Reminder set**\n\n`{mins} min` — {msg_text}\n\n> fires at {} · #reminder", fire_at.format("%H:%M"))
+    let channels = [
+        if !app.bark_url.is_empty() { Some("bark") } else { None },
+        if !app.ntfy_url.is_empty() { Some("ntfy") } else { None },
+    ].iter().filter_map(|x| *x).collect::<Vec<_>>().join(" + ");
+    let channel_str = if channels.is_empty() { "no push configured".to_string() } else { channels };
+    format!("⏰ **Reminder set**\n\n`{mins} min` — {msg_text}\n\n> fires at {} · via {} · #reminder", fire_at.format("%H:%M"), channel_str)
 }
 
 // --- money: portfolio ---
