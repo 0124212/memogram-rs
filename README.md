@@ -1,134 +1,167 @@
 # memogram-rs
 
-Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker. **~70 commands, 11 buckets, ~16MB binary.**
+Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker. **79 commands (70 routed across 10 buckets × 7 + 9 core), 16MB binary.**
 
-Personal memo maker that outputs rich markdown documents for making money, learning, health, habits, and staying in your field.
+Every command pulls real data from a live API or returns evidence-based structured content. Every memo tagged `#memogram-rs`. Two-way sync with Vikunja for tasks.
 
-## Cheatsheet
-
+## Core (9)
 ```
-/start <pat>        Link account           /search <q>       Search memos
-/help               Show commands          /recent           Last 20 memos
-/inbox              Untagged memos         /tags             List all tags
-/count <tag>        Count by tag           /undo             Delete last
-/pin                Pin/unpin last         /save <text>      Save anything
-/streak             Writing streak         /daily            Daily template
-/digest             Today's memo summary
+/start <pat>    Link Telegram → Memos    /search <q>    Full-text search memos
+/help           List all commands        /undo          Delete last memo
+/pin            Pin/unpin last memo      /remind <m> <msg>  Bark + ntfy push timer
+/inbox          Untagged memos           /portfolio     Track holdings
+/alerts         Price alerts
 ```
 
-### News & Updates
-```
-/hn                  HackerNews top 5       /arxiv <q>        arXiv papers
-/lobsters            Lobsters hot stories   /ph               Product Hunt
-```
+## bio (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/pubmed <q>` | PubMed (35M papers) | Paper titles, authors, dates |
+| `/trial <q>` | ClinicalTrials.gov (400K+) | Trial titles, status, phases |
+| `/molecule <name>` | PubChem (110M compounds) | Formula, weight, SMILES, Lipinski, safety |
+| `/pathway <query>` | NCBI + Reactome + UniProt | Gene info, pathways, GO terms, protein |
+| `/amino <code>` | Biochemistry reference | 20 amino acids: properties, codons, role |
+| `/genome <gene>` | NCBI Gene (40M) | Gene info, type, chromosome, summary |
+| `/protein <id>` | UniProt (250M entries) | Protein data |
 
-### Learn & Research
-```
-/define <word>       Dictionary             /wiki <q>         Wikipedia
-/brief <topic>       Research brief         /compare <a> vs <b> Comparison
-/paper <query>       Paper deep-dive        /tutorial <topic> Guided how-to
-/translate <text>    Translate              /book <text>      Book note card
-/youtube <url>       Summarize video
-```
+## dev (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/gh <q>` | GitHub (200M repos) | Repo info, languages, issues |
+| `/http <url>` | Any URL | Status, timing, headers, security audit, body preview |
+| `/man <cmd>` | cheat.sh + tldr (150+ tools) | Quick reference + detailed examples |
+| `/css <prop>` | MDN Web Docs | CSS property docs |
+| `/html <elem>` | MDN Web Docs | HTML element docs |
+| `/astro <topic>` | Astro docs | Framework reference |
+| `/grep <pat>` | cheat.sh | ripgrep/awk/sed patterns |
 
-### Dev
-```
-/gh <q>              GitHub search/repo     /ip <addr>        IP lookup
-/containers          Service health         /ports            Port reference
-/dns <domain>        DNS lookup             /timestamp        Epoch ↔ time
-```
+## news (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/hn` | HackerNews API | Top 5 stories: title, score, comments |
+| `/arxiv <q>` | arXiv (2M+ papers) | Paper titles, authors, abstracts |
+| `/lobsters` | Lobsters (100K+ stories) | Top 15: title, score, comments, tags |
+| `/ph` | Product Hunt GraphQL | Today's products: votes, tags |
+| `/scholar <q>` | Google Scholar (200M papers) | Titles, snippets, authors |
+| `/reddit <sub>` | Reddit JSON (100M+ posts) | Top 15: score, comments, flair |
+| `/news <topic>` | HN Algolia (200K+ stories) | Search results with dates |
 
-### Weather
-```
-/weather <city>      Current + 3-day        /wind <city>      Wind forecast
-/uv <loc>            UV index               /moon             Moon phase
-```
+## learn (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/define <word>` | Wiktionary (700K words) | Definition, pronunciation, etymology |
+| `/wiki <q>` | Wikipedia (6M articles) | Summary, image, URL |
+| `/translate <text>` | LibreTranslate (100+ languages) | Translation + back-verification |
+| `/book <text>` | Open Library (40M books) | Cover, author, pages, subjects |
+| `/paper <query>` | arXiv API | Title, authors, abstract, PDF |
+| `/youtube <url>` | Invidious API (800M videos) | Title, channel, length, description |
+| `/learn <topic>` | Wikipedia + arXiv + YouTube | Overview + related topics + papers + videos + learning roadmap + progress tracker |
 
-### Finance & Money
-```
-/fx <pair>           Exchange rate          /stock <ticker>   Stock price
-/crypto <coin>       Crypto price           /markets          Market indices
-/finance <term>      Explain term           /compound <p> <r> <y>  Interest calc
-/hustle <skill>      Side hustle ideas      /income <src> <amt> Track income
-/portfolio           Track holdings         /alerts           Price alerts
-```
+## wellness (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/food <query>` | OpenFoodFacts (1M+ foods) | Macros, Nutri-Score, ingredients, allergens |
+| `/workout <muscle>` | ExerciseDB (11K exercises) | Steps, form tips, muscles, equipment |
+| `/recipe <cuisine>` | TheMealDB (300+ recipes) | Ingredients table + instructions + video |
+| `/therapy <situation>` | CBT + ZenQuotes | CBT thought record + stoic grounding + evidence-based steps |
+| `/posture <issue>` | Physiotherapy research | 8 issues: evidence-cited exercises, clinical sources |
+| `/calories <act> <min>` | API Ninjas (3K activities) | Calories, MET, zones, weekly projection |
+| `/stretch <muscle>` | ExerciseDB (11K exercises) | Stretch routines, hold times, tips |
 
-### Bioengineering & Pre-Health
-```
-/pubmed <q>          PubMed papers          /trial <q>        Clinical trials
-/patent <query>      Patent search          /species <name>   Taxonomy lookup
-/lab <protocol>      Lab protocol template  /food <query>     Nutrition facts
-/prereqs <track>     Health prof prereqs    /mcat <topic>     MCAT study guide
-/clinical <a> <h>    Log clinical hours     /shadow <dr> <h>  Log shadowing
-/ethics <scenario>   Medical ethics case
-```
+## money (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/fx <pair>` | Live exchange rates | Real-time conversions |
+| `/stock <ticker>` | Yahoo Finance | Live price, 5-day history, volume |
+| `/crypto <coin>` | CoinGecko | Price, market cap, ATH/ATL |
+| `/markets` | Yahoo Finance | S&P, NASDAQ, DOW, BTC, ETH |
+| `/invest <amt> <yrs>` | S&P 500 historical averages | Year-by-year projection, Rule of 72, inflation-adjusted |
+| `/hustle <skill>` | BLS + Upwork/Toptal data | Occupation growth + freelance rates + platforms |
+| `/salary <title>` | BLS OEWS (800+ occupations) | Median, top 10%, bottom 25%, growth, education |
 
-### Health & Habits
-```
-/mood <text>         Log mood               /habit <task>     Track habit
-/mood gratitude ...  Log gratitude          /mood journal ... Journal entry
-/mood reflection ... Log reflection         /stress <n>       Log stress
-/meditation <n>      Log meditation         /sleep <hrs> <q>  Log sleep
-/energy <1-10>       Log energy             /exercise <a> <d> Log exercise
-/water <amt>         Log water              /read <title> <a> Log reading
-```
+## tasks (7) — Vikunja-powered
+| Command | Source | Data |
+|---------|--------|------|
+| `/todo <text>` | Vikunja API | Creates task + memo with link |
+| `/deadline <date> <task>` | Vikunja API | Task with due date + days remaining |
+| `/goal <goal>` | Vikunja API | Project + 3 starter tasks + link |
+| `/project <name>` | Vikunja API | Creates Vikunja project |
+| `/weekly` | Vikunja API | Completed/open tasks across all projects |
+| `/overdue` | Vikunja API | Overdue tasks with days late + urgency |
+| `/standup` | Vikunja API | Today's completed + in-progress + blockers |
 
-### Planning & Goals
-```
-/goal <goal>         Set a goal (SMART)     /deadline <d> <t> Track deadline
-/priority <l> <t>    Set priority           /project <text>   Project doc
-/todo <text>         Checklist              /weekly           Weekly review
-/retro <sprint>      Sprint retrospective
-```
+## memos (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/memos` | wttr.in + Memos API | Weather + memo count + auto-creates entry |
+| `/streak` | Memos API (200 memos) | Current/longest streak, heatmap, consistency |
+| `/digest` | Memos API (50 memos) | Today's memos: timestamps, previews, word count |
+| `/insight` | Memos API (100 memos) | Your most-used topics, deepest writing, re-read suggestion |
+| `/read <url>` | Jina.ai Reader | Full article text + word count + read time |
+| `/queue` | Memos API | Saved bookmarks reading list |
+| `/review` | Memos API (100 memos) | Week highlights + tag breakdown + reflection |
 
-### Daily
-```
-/morning <text>      Morning check-in       /evening <text>   Evening reflection
-/checkin <m> <e>     Quick check-in         /log <text>       Daily log
-/summary <text>      Day summary
-```
+## inbox (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/save <text>` | Memos API + Jina.ai | URL auto-detect → metadata, word count, review date |
+| `/summarize <url>` | Web scraping | URL summary in markdown |
+| `/clip <url>` | Jina.ai Reader | Title, description, read time, domain, excerpt |
+| `/note <text>` | Memos API + Wikipedia | Word count, auto-detect URLs/emails, Wikipedia topic tags, revisit date |
+| `/research <url>` | Firecrawl/web scrape | Full article analysis: key points, action items, next steps |
+| `/concept <topic>` | Memos API + Wikipedia + mermaid | Your notes + wiki summary + connected concepts + graph |
+| `/flashback <topic>` | Memos API | Oldest vs newest memo, evolution timeline |
 
-### Inbox
-```
-/idea <text>         Capture idea           /braindump <t>    Thought dump
-/summarize <url>     Summarize URL          /transcribe <t>   Voice-to-text
-/list <text>         Bulleted list
-```
+## music (7)
+| Command | Source | Data |
+|---------|--------|------|
+| `/chord <name>` | Theory engine | Notes, intervals, guitar fingering, inversions |
+| `/scale <root> <type>` | Theory engine | Notes, diatonic triads, relative key, practice |
+| `/progress <key>` | Theory engine | Pop, blues, jazz, Andalusian progressions |
+| `/circle` | Theory engine | Full circle of fifths + key of the day |
+| `/song <title>` | MusicBrainz (30M+ recordings) | Artist, length, releases, links |
+| `/artist <name>` | MusicBrainz (2M+ artists) | Type, country, years, tags, top releases |
+| `/tempo <bpm>` | Math | ms per beat, delay times for pedals + DAW |
 
 ## Buckets
-
 | Bucket | Commands | Purpose |
 |--------|----------|---------|
-| `bio` | 10 | PubMed, trials, patents, species, lab, prereqs, MCAT, clinical, shadowing, ethics |
-| `learn` | 9 | Wiki, definitions, research, books, YouTube, papers |
-| `daily` | 11 | Check-ins, logs, summaries, digest, streak |
-| `money` | 8 | FX, stocks, crypto, finance, hustle, income |
-| `planning` | 7 | Goals, deadlines, priorities, projects, todos, weekly, retro |
-| `inbox` | 6 | Ideas, links, snippets, save, transcribe, list |
-| `wellness` | 5 | Mood, habits, stress, meditation, gratitude |
-| `weather` | 4 | Forecast, wind, UV, moon |
-| `news` | 4 | HN, arXiv, Lobsters, Product Hunt |
-| `dev` | 6 | GitHub, containers, IP, ports, DNS, timestamp |
+| `bio` | 7 | PubMed, trials, molecules, pathways, amino acids, genomes, proteins |
+| `dev` | 7 | GitHub, HTTP inspector, man pages, CSS/HTML/Astro docs, grep patterns |
+| `news` | 7 | HN, arXiv, Lobsters, Product Hunt, Scholar, Reddit, general news |
+| `learn` | 7 | Definitions, Wikipedia, translations, books, papers, YouTube, learning overviews |
+| `wellness` | 7 | Food, workout, recipe, therapy (CBT+stoic), posture, calories, stretching |
+| `money` | 7 | FX, stocks, crypto, markets, investing guide, side hustles, salary data |
+| `tasks` | 7 | Vikunja CRUD (todo/goal/project/deadline) + weekly review + overdue + standup |
+| `memos` | 7 | Daily note, streak, digest, insights, article reader, reading queue, weekly review |
+| `inbox` | 7 | Save, summarize, clip, note, research, concept map, flashback |
+| `music` | 7 | Chords, scales, progressions, circle of fifths, song/artist lookup, tempo |
 
 ## Setup
-
-1. Create a [Memos](https://usememos.com) PAT with `meal:memo` scope
-2. Create 10 more PATs for the 10 non-inbox buckets (optional — per-bot routing)
-3. Get a Telegram bot token from @BotFather
-4. Run:
 ```bash
-docker run -e BOT_TOKEN=... -e MEMOS_URL=... -e BARK_URL=... -e NTFY_URL=... ghcr.io/0124212/memogram-rs:latest
+docker run \
+  -e BOT_TOKEN=... \
+  -e MEMOS_URL=... \
+  -e BARK_URL=... \
+  -e NTFY_URL=... \
+  -e VIKUNJA_URL=... \
+  -e VIKUNJA_TOKEN=... \
+  -e API_NINJAS_KEY=... \
+  ghcr.io/0124212/memogram-rs:latest
 ```
 
 ## Env
-
-```
-BOT_TOKEN            Telegram bot token (required)
-MEMOS_URL            Memos instance URL (required)
-ADMIN_USERNAME       Your Memos username (default: admin)
-ALLOWED_USERNAMES    Comma-separated allowed Telegram users
-DATA                 Path to token store (default: ./data.txt)
-BOT_TOKENS_JSON      JSON map of bucket → Memos PAT
-BARK_URL             Bark push notification URL (optional)
-NTFY_URL             ntfy push notification URL (optional)
-```
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `BOT_TOKEN` | ✅ | Telegram bot token |
+| `MEMOS_URL` | ✅ | Memos instance URL |
+| `ADMIN_USERNAME` | | Your Memos username (default: admin) |
+| `ALLOWED_USERNAMES` | | Comma-separated Telegram users |
+| `DATA` | | Path to token store (default: ./data.txt) |
+| `BOT_TOKENS_JSON` | | JSON map of bucket → Memos PAT |
+| `BARK_URL` | | Bark push notification URL |
+| `NTFY_URL` | | ntfy push notification URL |
+| `VIKUNJA_URL` | | Vikunja instance URL |
+| `VIKUNJA_TOKEN` | | Vikunja API token |
+| `API_NINJAS_KEY` | | api.ninjas.com key (nutrition, calories) |
+| `FIRECRAWL_KEY` | | Firecrawl key (research deep analysis) |
