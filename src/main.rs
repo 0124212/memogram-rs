@@ -46,7 +46,6 @@ enum Command {
     Save(String),
     Pubmed(String),
     Ip(String),
-    Invest(String),
     Freelance(String),
     Flashback(String),
     Compound(String),
@@ -85,7 +84,6 @@ enum Command {
     Queue,
     Review,
     Clip(String),
-    Snippet(String),
     Note(String),
     Flashcard(String),
     Concept(String),
@@ -214,7 +212,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "queue".into(), description: "reading queue".into() },
         teloxide::types::BotCommand { command: "review".into(), description: "review this week's memos".into() },
         teloxide::types::BotCommand { command: "clip".into(), description: "bookmark URL with metadata".into() },
-        teloxide::types::BotCommand { command: "snippet".into(), description: "save code snippet".into() },
         teloxide::types::BotCommand { command: "note".into(), description: "quick note with tags".into() },
         teloxide::types::BotCommand { command: "focus".into(), description: "pomodoro timer <min>".into() },
         teloxide::types::BotCommand { command: "flashcard".into(), description: "create flashcard <q> | <a>".into() },
@@ -226,7 +223,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
         teloxide::types::BotCommand { command: "freelance".into(), description: "freelance market rates".into() },
-        teloxide::types::BotCommand { command: "invest".into(), description: "investment calculator".into() },
         teloxide::types::BotCommand { command: "flashback".into(), description: "how your thinking evolved".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
@@ -359,7 +355,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Book(args) => { let txt = fetch_book(&args).await.unwrap_or_else(|e| format!("book err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Ip(ip) => { let txt = fetch_ip(&ip).await.unwrap_or_else(|e| format!("ip err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Invest(args) => { let txt = fetch_invest(&args).await.unwrap_or_else(|e| format!("invest err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
@@ -424,8 +419,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
         Command::Clip(url) => { let txt = fetch_clip(&url).await.unwrap_or_else(|e| format!("clip err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Snippet(args) => { let txt = create_code_snippet(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Note(args) => { let txt = create_note_smart(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Note(args) => { let txt = create_note_smart(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Focus(args) => { let txt = set_focus(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Flashcard(args) => { let txt = create_flashcard(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Concept(topic) => { let txt = fetch_concept(&topic, &app).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -2904,12 +2898,78 @@ fn create_breathe(args: &str) -> String {
              "Even one cycle activates calm. 2-3 cycles for full effect.",
          ],
          "Stanford research (2023): double inhale + extended exhale is the fastest known way to voluntarily reduce stress. Works in a single breath cycle."),
+        ("wimhof", "Wim Hof Method", "Wim Hof", "Energy, cold tolerance, immunity",
+         vec![
+             "Take 30-40 deep breaths (in through nose, out through mouth).",
+             "On the last exhale, hold breath as long as comfortable (empty).",
+             "INHALE deeply and hold for 15 seconds.",
+             "Release. This is one round.",
+             "Complete 3 rounds. Always practice seated or lying down.",
+         ],
+         "Combines breathing, cold exposure, and commitment. Research shows reduced inflammation and improved immune response. Never practice in water."),
+        ("coherent", "Coherent Breathing (5.5 breaths/min)", "Dr. Stephen Elliott", "Heart rate variability, calm",
+         vec![
+             "INHALE for 5.5 seconds through nose.",
+             "EXHALE for 5.5 seconds through nose.",
+             "Continue for 5-20 minutes.",
+             "Use a pacer app or music at 5.5 breaths/min.",
+         ],
+         "Optimizes heart rate variability (HRV). Research shows improved autonomic balance, reduced anxiety, and better sleep quality. 5.5 breaths/min is the resonant frequency for most adults."),
+        ("alternate", "Alternate Nostril (Nadi Shodhana)", "Yoga tradition", "Balance, focus, calm",
+         vec![
+             "Close right nostril with thumb. INHALE through left (4 sec).",
+             "Close both nostrils. HOLD (4 sec).",
+             "Release right nostril. EXHALE through right (4 sec).",
+             "INHALE through right (4 sec). Close both. HOLD (4 sec).",
+             "Release left. EXHALE through left (4 sec).",
+             "This is one cycle. Complete 5-10 cycles.",
+         ],
+         "Ancient yogic practice. Research shows balanced activity between brain hemispheres. Reduces blood pressure and improves respiratory function."),
+        ("resonance", "Resonance Frequency Breathing", "HRV Biofeedback", "HRV optimization, stress resilience",
+         vec![
+             "Find your personal resonant frequency (typically 4.5-6.5 breaths/min).",
+             "INHALE for a count of 5.5 (or your frequency).",
+             "EXHALE for a count of 5.5.",
+             "Continue for 10-20 minutes with HRV biofeedback if available.",
+         ],
+         "Personalized breathing rate that maximizes heart rate variability. Used in clinical biofeedback for anxiety, PTSD, and chronic stress. Optimal for each individual."),
+        ("21", "2-1 Breathing", "Various clinical sources", "Quick relaxation, panic attack relief",
+         vec![
+             "INHALE for 2 counts.",
+             "EXHALE for 1 count (twice as long).",
+             "Continue for 2-5 minutes.",
+         ],
+         "Simple extended-exhale technique. The longer exhale activates parasympathetic nervous system. Good for beginners and quick calming."),
+        ("extended", "Extended Exhale Breathing", "Clinical psychology", "Anxiety reduction, sleep onset",
+         vec![
+             "INHALE for 4 counts.",
+             "EXHALE for 6-8 counts.",
+             "Keep ratio 1:1.5 or 1:2 (inhale:exhale).",
+             "Continue for 5-10 minutes.",
+         ],
+         "Research shows extended exhale breathing reduces cortisol and activates the vagus nerve. Effective for generalized anxiety and insomnia."),
+        ("ujjayi", "Ujjayi (Ocean Breath)", "Yoga tradition", "Focus, calm, respiratory strength",
+         vec![
+             "Slightly constrict the back of your throat (like fogging a mirror).",
+             "INHALE through nose with this constriction (creates ocean sound).",
+             "EXHALE through nose with the same constriction.",
+             "Maintain steady, even sound throughout.",
+             "Continue for 5-15 minutes.",
+         ],
+         "Used in yoga practice for millennia. The constriction creates gentle back-pressure that strengthens respiratory muscles and activates the vagus nerve."),
+        ("711", "7-11 Breathing", "UK NHS / clinical", "Anxiety, sleep, blood pressure",
+         vec![
+             "INHALE for 7 counts.",
+             "EXHALE for 11 counts.",
+             "Continue for 5-10 minutes.",
+         ],
+         "Recommended by UK NHS for anxiety management. The extended exhale ratio (7:11) is more calming than 4-7-8 for some people. Good for lowering blood pressure."),
     ];
 
     let mut out = format!("{}\n\n", tg_header("🫁", "Breathing Exercise", if technique.is_empty() { "pick a technique" } else { &technique }));
 
     if technique.is_empty() {
-        out.push_str("**Techniques:** `box`, `478`, `3min`, `physiological`\n\n");
+        out.push_str("**Techniques:** `box`, `478`, `3min`, `physiological`, `wimhof`, `coherent`, `alternate`, `resonance`, `21`, `extended`, `ujjayi`, `711`\n\n");
         for (id, name, source, use_case, _, _) in &techniques {
             out.push_str(&format!("- **/breathe {}** — {} ({})\n  📍 For: {}\n\n", id, name, source, use_case));
         }
@@ -2931,7 +2991,7 @@ fn create_breathe(args: &str) -> String {
         }
     }
 
-    out.push_str("_Unknown technique. Available: `box`, `478`, `3min`, `physiological`_\n");
+    out.push_str("_Unknown technique. Available: `box`, `478`, `3min`, `physiological`, `wimhof`, `coherent`, `alternate`, `resonance`, `21`, `extended`, `ujjayi`, `711`_\n");
     out.push_str(&format!("\n{}\n\n`{}` · #breathe #wellness #memogram-rs", tg_footer("evidence-based", "breathe"), now));
     out
 }
@@ -4333,7 +4393,90 @@ fn create_transcribe(text: &str) -> String {
     out.push_str("## 📊 Stats\n\n");
     let words = text.split_whitespace().count();
     let chars = text.len();
-    out.push_str(&format!("| Metric | Value |\n|---|---|\n| Words | {} |\n| Characters | {} |\n| Reading time | ~{} min |\n\n", words, chars, (words / 200).max(1)));
+    let sentences = text.split([ '.', '!', '?' ]).filter(|s| !s.trim().is_empty()).count().max(1);
+
+    // Count syllables (rough: count vowel groups)
+    fn count_syllables(word: &str) -> usize {
+        let vowels = "aeiouy";
+        let word_lower = word.to_lowercase();
+        let chars: Vec<char> = word_lower.chars().collect();
+        if chars.is_empty() { return 0; }
+        let mut count: usize = 0;
+        let mut prev_vowel = false;
+        for &c in &chars {
+            let is_vowel = vowels.contains(c);
+            if is_vowel && !prev_vowel { count += 1; }
+            prev_vowel = is_vowel;
+        }
+        // Adjust: silent e at end
+        if chars.len() > 2 && chars[chars.len()-1] == 'e' && !vowels.contains(chars[chars.len()-2]) {
+            if count > 1 { count -= 1; }
+        }
+        count.max(1)
+    }
+
+    let total_syllables: usize = text.split_whitespace().map(|w| count_syllables(w)).sum();
+    let complex_words: usize = text.split_whitespace().filter(|w| count_syllables(w) >= 3).count();
+
+    // Flesch-Kincaid Reading Level
+    let fk_grade = if words > 0 && sentences > 0 {
+        0.39 * (words as f64 / sentences as f64) + 11.8 * (total_syllables as f64 / words as f64) - 15.59
+    } else {
+        0.0
+    };
+
+    // Flesch Reading Ease
+    let flesch_ease = if words > 0 && sentences > 0 {
+        206.835 - 1.015 * (words as f64 / sentences as f64) - 84.6 * (total_syllables as f64 / words as f64)
+    } else {
+        0.0
+    };
+
+    let reading_level = if fk_grade < 5.0 { "Elementary (Easy)" }
+        else if fk_grade < 8.0 { "Middle School" }
+        else if fk_grade < 12.0 { "High School" }
+        else if fk_grade < 16.0 { "College" }
+        else { "Graduate/Professional" };
+
+    let complexity = if flesch_ease > 80.0 { "Easy" }
+        else if flesch_ease > 60.0 { "Standard" }
+        else if flesch_ease > 40.0 { "Difficult" }
+        else { "Very Difficult" };
+
+    let vocab_pct = if words > 0 { (complex_words as f64 / words as f64 * 100.0) } else { 0.0 };
+
+    out.push_str(&format!("| Metric | Value |\n|---|---|\n"));
+    out.push_str(&format!("| Words | `{}` |\n", words));
+    out.push_str(&format!("| Characters | `{}` |\n", chars));
+    out.push_str(&format!("| Sentences | `{}` |\n", sentences));
+    out.push_str(&format!("| Syllables | `{}` |\n", total_syllables));
+    out.push_str(&format!("| Complex words (3+ syllables) | `{}` |\n", complex_words));
+    out.push_str(&format!("| Reading time | `~{} min` |\n", (words as f64 / 200.0).ceil() as u32));
+    out.push_str(&format!("| Flesch-Kincaid Grade | **`{:.1}`** |\n", fk_grade));
+    out.push_str(&format!("| Flesch Reading Ease | **`{:.1}`** |\n", flesch_ease));
+    out.push_str(&format!("| Reading level | {} |\n", reading_level));
+    out.push_str(&format!("| Vocabulary complexity | {} ({:.1}%) |\n\n", complexity, vocab_pct));
+
+    // Suggest simpler alternatives for complex words
+    let complex_examples: Vec<&str> = text.split_whitespace().filter(|w| count_syllables(w) >= 3).take(5).collect();
+    if !complex_examples.is_empty() {
+        out.push_str("## 🔧 Complex Words Found\n\n");
+        out.push_str("| Word | Syllables | Suggestion |\n|---|---|---|\n");
+        for word in complex_examples {
+            let syllables = count_syllables(word);
+            // Simple suggestions
+            let suggestion = match word.to_lowercase().as_str() {
+                w if w.starts_with("un") && w.len() > 8 => format!("remove 'un-' prefix if redundant"),
+                w if w.ends_with("tion") && w.len() > 8 => format!("try 'ment' or rephrase"),
+                w if w.ends_with("ness") && w.len() > 8 => format!("try 'state' or rephrase"),
+                w if w.ends_with("ment") && w.len() > 8 => format!("simplify"),
+                _ => format!("keep if essential"),
+            };
+            out.push_str(&format!("| `{}` | {} | {} |\n", word, syllables, suggestion));
+        }
+        out.push('\n');
+    }
+
     out.push_str("> _Edit this memo in Memos to clean up the transcription._\n\n");
     out.push_str(&format!("{}\n\n`{}` · #transcribe #inbox #memogram-rs", tg_header("🎤", "Transcription", &date), now));
     out
@@ -5239,6 +5382,55 @@ fn create_lab(args: &str) -> String {
 fn create_prereqs(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let track = args.trim().to_lowercase();
+
+    // GPA calculation sub-command
+    if track.starts_with("gpa ") {
+        let grades_str = track.strip_prefix("gpa ").unwrap_or("");
+        let grade_points: Vec<f64> = grades_str.split_whitespace()
+            .filter_map(|g| g.parse::<f64>().ok())
+            .collect();
+
+        if grade_points.is_empty() {
+            return format!("{}\n\n_Usage:_ `/prereqs gpa 3.5 3.8 4.0 3.2 3.7`\n\nEnter your GPA for each course (4.0 scale).\n\n`{}` · #prereqs #bio #memogram-rs",
+                tg_header("🎓", "GPA Calculator", "help"), now);
+        }
+
+        let total: f64 = grade_points.iter().sum();
+        let gpa = total / grade_points.len() as f64;
+        let gpa_letter = if gpa >= 3.9 { "A" } else if gpa >= 3.7 { "A-" } else if gpa >= 3.3 { "B+" } else if gpa >= 3.0 { "B" } else if gpa >= 2.7 { "B-" } else if gpa >= 2.3 { "C+" } else if gpa >= 2.0 { "C" } else { "C-" };
+        let gpa_emoji = if gpa >= 3.7 { "🟢" } else if gpa >= 3.5 { "🟡" } else if gpa >= 3.0 { "🟠" } else { "🔴" };
+
+        let mut out = format!("{}\n\n", tg_header("🎓", "GPA Calculator", &format!("{:.2}", gpa)));
+        out.push_str(&format!("**Your GPA:** {} `{:.2}` ({})\n**Courses:** `{}` · **Total points:** `{:.1}`\n\n", gpa_emoji, gpa, gpa_letter, grade_points.len(), total));
+
+        out.push_str("## 📊 Grade Breakdown\n\n");
+        out.push_str("| # | Grade | Points |\n|---|---|---|\n");
+        for (i, gp) in grade_points.iter().enumerate() {
+            let letter = if *gp >= 3.9 { "A" } else if *gp >= 3.7 { "A-" } else if *gp >= 3.3 { "B+" } else if *gp >= 3.0 { "B" } else if *gp >= 2.7 { "B-" } else if *gp >= 2.3 { "C+" } else { "C" };
+            out.push_str(&format!("| {} | {} | `{:.1}` |\n", i + 1, letter, gp));
+        }
+        out.push_str(&format!("| **Total** | | **{:.1}** |\n\n", total));
+
+        out.push_str("## 🎯 How You Compare\n\n");
+        out.push_str("| Program | Avg GPA | Your GPA | Status |\n|---|---|---|---|\n");
+        out.push_str(&format!("| MD (Allopathic) | 3.75 | `{:.2}` | {} |\n", gpa, if gpa >= 3.75 { "✅ Above avg" } else { "⚠️ Below avg" }));
+        out.push_str(&format!("| DO (Osteopathic) | 3.54 | `{:.2}` | {} |\n", gpa, if gpa >= 3.54 { "✅ Above avg" } else { "⚠️ Below avg" }));
+        out.push_str(&format!("| Dental (DDS/DMD) | 3.56 | `{:.2}` | {} |\n", gpa, if gpa >= 3.56 { "✅ Above avg" } else { "⚠️ Below avg" }));
+        out.push_str(&format!("| PA School | 3.60 | `{:.2}` | {} |\n", gpa, if gpa >= 3.60 { "✅ Above avg" } else { "⚠️ Below avg" }));
+        out.push_str(&format!("| Vet School (DVM) | 3.54 | `{:.2}` | {} |\n\n", gpa, if gpa >= 3.54 { "✅ Above avg" } else { "⚠️ Below avg" }));
+
+        if gpa >= 3.75 {
+            out.push_str("🟢 **Strong GPA!** You're competitive for most programs. Focus on MCAT/experience.\n\n");
+        } else if gpa >= 3.5 {
+            out.push_str("🟡 **Good GPA.** Consider post-bacc or strong MCAT to boost your profile.\n\n");
+        } else {
+            out.push_str("🟠 **Needs improvement.** Consider post-bacc courses, grade replacement, or DO programs.\n\n");
+        }
+
+        out.push_str(&format!("{}\n\n`{}` · #prereqs #gpa #bio #memogram-rs", tg_footer("AAMC/public data", "prereqs"), now));
+        return out;
+    }
+
     let mut out = format!("{}\n\n", tg_header("🎓", "Prerequisites", if track.is_empty() { "all tracks" } else { &track }));
     out.push_str("**Tracks:** med, dental, vet, pharmacy, pa, optometry\n\n");
 
@@ -5333,6 +5525,32 @@ fn create_prereqs(args: &str) -> String {
     out.push_str("- Check specific schools — requirements vary\n");
     out.push_str("- AP/IB credit may satisfy some prerequisites\n");
     out.push_str("- Shadowing + clinical hours are separate from coursework\n\n");
+
+    // GPA Calculator section
+    out.push_str("## 📊 GPA Calculator\n\n");
+    out.push_str("_Enter your grades to calculate GPA:_\n\n");
+    out.push_str("```\n/prereqs gpa 3.5 3.8 4.0 3.2 3.7\n```\n\n");
+
+    // Acceptance stats
+    out.push_str("## 📈 Average Acceptance Stats (AAMC/Public Data)\n\n");
+    out.push_str("| Program | Avg GPA | Avg MCAT | Acceptance Rate |\n|---|---|---|---|\n");
+    out.push_str("| MD (Allopathic) | 3.75 | 511.9 | 41% |\n");
+    out.push_str("| DO (Osteopathic) | 3.54 | 504.1 | 37% |\n");
+    out.push_str("| Dental (DDS/DMD) | 3.56 | 20.0 (DAT) | 56% |\n");
+    out.push_str("| Pharmacy (PharmD) | 3.30 | — | 83% |\n");
+    out.push_str("| PA School | 3.60 | — | 20% |\n");
+    out.push_str("| Vet School (DVM) | 3.54 | — | 50% |\n");
+    out.push_str("| Optometry (OD) | 3.35 | 340 (OAT) | 70% |\n\n");
+
+    out.push_str("## 🎯 How You Compare\n\n");
+    out.push_str("| Metric | You | Average Admit | Target |\n|---|---|---|---|\n");
+    out.push_str("| GPA | _enter below_ | 3.75 (MD) | ≥3.7 |\n");
+    out.push_str("| MCAT | — | 511.9 (MD) | ≥510 |\n");
+    out.push_str("| Clinical hrs | — | 200+ (MD) | 300+ |\n");
+    out.push_str("| Research | — | 1+ years | 2+ years |\n");
+    out.push_str("| Shadowing | — | 40+ hrs | 100+ hrs |\n\n");
+
+    out.push_str("> _Tip: Use `/prereqs gpa <grades>` to calculate your GPA. Compare against averages above._\n\n");
     out.push_str(&format!("{}\n\n`{}` · #prereqs #bio #memogram-rs", tg_footer("memogram-rs", "prereqs"), now));
     out
 }
@@ -5830,20 +6048,47 @@ async fn fetch_clip(url: &str) -> Result<String> {
     Ok(out)
 }
 
-fn create_code_snippet(args: &str) -> String {
+async fn create_code_snippet(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     let lang = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("text");
     let code = parts.get(1).unwrap_or(&"");
     let line_count = code.lines().count();
+    let first_line = code.lines().next().unwrap_or("").trim();
     let mut out = format!("{}\n\n", tg_header("💻", "Code Snippet", lang));
     out.push_str(&format!("**Language:** `{}` · **Lines:** `{}`\n\n", lang, line_count));
     out.push_str(&format!("```{}\n{}\n```\n\n", lang, code));
+
+    // Search GitHub for similar code patterns
+    if !first_line.is_empty() && first_line.len() > 5 {
+        let search_query = format!("\"{}\"", first_line.replace('"', ""));
+        let github_url = format!("https://api.github.com/search/code?q={}&per_page=3", urlencoding::encode(&search_query));
+        if let Ok(Ok(v)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&github_url).header("Accept", "application/vnd.github.v3+json").header("User-Agent", "memogram-rs").send()).await {
+            if let Ok(search_result) = v.json::<serde_json::Value>().await {
+                if let Some(items) = search_result["items"].as_array() {
+                    if !items.is_empty() {
+                        out.push_str("## 🔍 Similar Code on GitHub\n\n");
+                        for (i, item) in items.iter().take(3).enumerate() {
+                            let name = item["repository"]["full_name"].as_str().unwrap_or("?");
+                            let path = item["path"].as_str().unwrap_or("?");
+                            let html_url = item["html_url"].as_str().unwrap_or("");
+                            let score = item["score"].as_f64().unwrap_or(0.0);
+                            out.push_str(&format!("**{}.** [{} / {}]({})\n   📊 Relevance: {:.1}\n\n", i + 1, name, path, html_url, score));
+                        }
+                    } else {
+                        out.push_str("## 🔍 Similar Code on GitHub\n\n");
+                        out.push_str("_No similar patterns found in public repositories._\n\n");
+                    }
+                }
+            }
+        }
+    }
+
     out.push_str(&format!("{}\n\n`{}` · #snippet #inbox #memogram-rs", tg_footer("memogram-rs", "snippet"), now));
     out
 }
 
-fn create_note_smart(args: &str) -> String {
+async fn create_note_smart(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let date = Local::now().format("%Y-%m-%d").to_string();
     let time = Local::now().format("%H:%M").to_string();
@@ -5886,6 +6131,41 @@ fn create_note_smart(args: &str) -> String {
     if word_count < 10 { out.push_str("- 💡 Quick thought\n"); }
     else if word_count > 50 && word_count < 200 { out.push_str("- 📖 Short note\n"); }
     else if word_count >= 200 { out.push_str("- 📚 Long-form note\n"); }
+
+    // Search Wikipedia for top keywords
+    let keywords: Vec<String> = args.split_whitespace()
+        .filter(|w| w.len() > 4 && !w.starts_with('#') && !w.starts_with('@') && !w.starts_with("http"))
+        .map(|w| w.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect::<String>())
+        .filter(|w| w.len() > 4)
+        .take(5)
+        .collect();
+
+    if !keywords.is_empty() {
+        out.push_str("## 📚 Related Wikipedia Articles\n\n");
+        let mut found_any = false;
+        for kw in keywords.iter().take(3) {
+            let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(kw));
+            if let Ok(Ok(v)) = tokio::time::timeout(std::time::Duration::from_secs(3), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+                if let Ok(wiki) = v.json::<serde_json::Value>().await {
+                    let title = wiki["title"].as_str().unwrap_or(kw);
+                    let url = wiki["content_urls"]["desktop"]["page"].as_str().unwrap_or("");
+                    if !url.is_empty() {
+                        out.push_str(&format!("- [{}]({})\n", title, url));
+                        found_any = true;
+                    }
+                }
+            }
+        }
+        if !found_any {
+            out.push_str("_No Wikipedia matches found for keywords._\n");
+        }
+        out.push('\n');
+
+        // Suggested tags
+        out.push_str("## 🏷️ Suggested Tags\n\n");
+        out.push_str(&keywords.iter().map(|kw| format!("`#{}`", kw)).collect::<Vec<_>>().join(" · "));
+        out.push_str("\n\n");
+    }
 
     out.push_str(&format!("\n{}\n\n`{}` · #note #inbox #memogram-rs", tg_footer("memogram-rs", "note"), now));
     out
@@ -5943,6 +6223,34 @@ async fn set_focus(args: &str, app: &App) -> String {
     out.push_str("- 🚫 Close all unrelated tabs\n");
     out.push_str("- 💧 Have water nearby\n");
     out.push_str("- 📝 Write down any distracting thoughts for later\n\n");
+
+    // Fetch a productivity quote from ZenQuotes
+    if let Ok(Ok(v)) = tokio::time::timeout(std::time::Duration::from_secs(3), HTTP.get("https://zenquotes.io/api/random").send()).await {
+        if let Ok(arr) = v.json::<serde_json::Value>().await {
+            if let Some(item) = arr.as_array().and_then(|a| a.first()) {
+                let q = item["q"].as_str().unwrap_or("");
+                let a = item["a"].as_str().unwrap_or("Unknown");
+                if !q.is_empty() {
+                    out.push_str("## 💭 Productivity Quote\n\n");
+                    out.push_str(&format!("> _\"{}\"_\n\n— **{}**\n\n", q, a));
+                }
+            }
+        }
+    }
+
+    out.push_str("## 🔬 Did You Know?\n\n");
+    out.push_str("- 🧠 **Context switching costs 23 minutes** — UC Irvine research found it takes an average of 23 minutes and 15 seconds to refocus after an interruption\n");
+    out.push_str("- 🎯 **Flow state takes 15-25 minutes** — Csikszentmihalyi's research shows deep focus requires uninterrupted blocks of 15-25 minutes to enter flow\n");
+    out.push_str("- 📊 **Multitasking is a myth** — Stanford research shows heavy multitaskers are worse at filtering irrelevant information\n\n");
+
+    out.push_str("## 🍅 Pomodoro Technique Origin\n\n");
+    out.push_str("| Fact | Detail |\n|---|---|\n");
+    out.push_str("| Inventor | Francesco Cirillo |\n");
+    out.push_str("| Year | 1980s (university student) |\n");
+    out.push_str("| Name origin | Tomato-shaped kitchen timer (\"pomodoro\" in Italian) |\n");
+    out.push_str("| First tool | A tomato-shaped kitchen timer |\n");
+    out.push_str("| Philosophy | Work with time, not against it |\n");
+    out.push_str("| Key insight | Short bursts of focus > long unfocused hours |\n\n");
 
     out.push_str(&format!("> ⏰ You'll get a push notification when time is up!\n\n"));
     out.push_str(&format!("{}\n\n`{}` · #focus #planning #memogram-rs", tg_footer("memogram-rs", "focus"), now));
@@ -6604,30 +6912,55 @@ async fn fetch_save(args: &str) -> Result<String> {
     let mut out = format!("{}\n\n", tg_header("💾", "Saved", &content.chars().take(40).collect::<String>()));
     if is_url {
         out.push_str(&format!("**URL:** `{}`\n\n", content));
-        // Try to fetch page title + description
-        if let Ok(resp) = HTTP.get(content).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await {
-            if let Ok(html) = resp.text().await {
-                let title = html.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).unwrap_or("").trim();
-                let desc = html.split("meta").find(|m| m.contains("description")).and_then(|m| {
-                    m.split("content=\"").nth(1)?.split('"').next()
-                }).unwrap_or("").trim();
-                let og_image = html.split("meta").find(|m| m.contains("og:image")).and_then(|m| {
-                    m.split("content=\"").nth(1)?.split('"').next()
-                }).unwrap_or("").trim();
-                if !title.is_empty() {
-                    out.push_str(&format!("**Title:** {}\n", title));
+        // Try Jina reader for rich metadata
+        let jina_url = format!("https://r.jina.ai/{}", content);
+        if let Ok(Ok(resp)) = tokio::time::timeout(std::time::Duration::from_secs(10), HTTP.get(&jina_url).header("User-Agent", "memogram-rs").send()).await {
+            if let Ok(text) = resp.text().await {
+                let lines: Vec<&str> = text.lines().collect();
+                let title = lines.first().unwrap_or(&"").trim();
+                let first_para = lines.iter().skip(1).find(|l| !l.trim().is_empty()).unwrap_or(&"").trim();
+                let word_count = text.split_whitespace().count();
+                let read_time = (word_count as f64 / 200.0).ceil() as u32;
+                let char_count = text.len();
+
+                out.push_str("## 📊 Metadata\n\n");
+                out.push_str("| Stat | Value |\n|---|---|\n");
+                if !title.is_empty() { out.push_str(&format!("| Title | {} |\n", title)); }
+                out.push_str(&format!("| Words | `{}` |\n", word_count));
+                out.push_str(&format!("| Characters | `{}` |\n", char_count));
+                out.push_str(&format!("| Reading time | `~{} min` |\n\n", read_time));
+
+                if !first_para.is_empty() && first_para != title {
+                    out.push_str("## 📝 Content Preview\n\n");
+                    out.push_str(&format!("> {}\n\n", first_para.chars().take(300).collect::<String>()));
                 }
-                if !desc.is_empty() {
-                    out.push_str(&format!("**Description:** {}\n", desc.chars().take(200).collect::<String>()));
+            }
+        } else {
+            // Fallback to basic HTML fetch
+            if let Ok(Ok(resp)) = tokio::time::timeout(std::time::Duration::from_secs(8), HTTP.get(content).header("User-Agent", "memogram-rs").send()).await {
+                if let Ok(html) = resp.text().await {
+                    let title = html.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).unwrap_or("").trim();
+                    let desc = html.split("meta").find(|m| m.contains("description")).and_then(|m| {
+                        m.split("content=\"").nth(1)?.split('"').next()
+                    }).unwrap_or("").trim();
+                    let og_image = html.split("meta").find(|m| m.contains("og:image")).and_then(|m| {
+                        m.split("content=\"").nth(1)?.split('"').next()
+                    }).unwrap_or("").trim();
+                    if !title.is_empty() { out.push_str(&format!("**Title:** {}\n", title)); }
+                    if !desc.is_empty() { out.push_str(&format!("**Description:** {}\n", desc.chars().take(200).collect::<String>())); }
+                    if !og_image.is_empty() && og_image.starts_with("http") { out.push_str(&format!("\n![Preview]({})\n", og_image)); }
+                    out.push('\n');
                 }
-                if !og_image.is_empty() && og_image.starts_with("http") {
-                    out.push_str(&format!("\n![Preview]({})\n", og_image));
-                }
-                out.push('\n');
             }
         }
     } else {
+        let word_count = content.split_whitespace().count();
+        let read_time = (word_count as f64 / 200.0).ceil() as u32;
         out.push_str(&format!("**Content:** {}\n\n", content));
+        out.push_str("## 📊 Stats\n\n");
+        out.push_str("| Stat | Value |\n|---|---|\n");
+        out.push_str(&format!("| Words | `{}` |\n", word_count));
+        out.push_str(&format!("| Reading time | `~{} min` |\n\n", read_time));
     }
     out.push_str("## 🏷️ Tags\n\n- #save #inbox\n\n");
     out.push_str("## ✅ Actions\n\n- [ ] Process\n- [ ] Archive\n\n");
