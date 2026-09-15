@@ -51,7 +51,7 @@ enum Command {
     Pubmed(String),
     Salary(String),
     Flashback(String),
-    Compound(String),
+    Invest(String),
     Trial(String),
     Food(String),
     Paper(String),
@@ -221,7 +221,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "remind".into(), description: "remind <min> <msg>".into() },
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
         teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
-        teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
+        teloxide::types::BotCommand { command: "invest".into(), description: "beginner investing guide".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
         teloxide::types::BotCommand { command: "salary".into(), description: "salary data for a job title".into() },
         teloxide::types::BotCommand { command: "flashback".into(), description: "how your thinking evolved".into() },
@@ -248,7 +248,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "lobsters".into(), description: "lobste.rs top stories".into() },
         teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt today".into() },
         teloxide::types::BotCommand { command: "pathway".into(), description: "KEGG pathway + gene lookup".into() },
-        teloxide::types::BotCommand { command: "compound".into(), description: "PubChem compound lookup".into() },
+        teloxide::types::BotCommand { command: "molecule".into(), description: "PubChem compound lookup".into() },
         teloxide::types::BotCommand { command: "amino".into(), description: "amino acid reference".into() },
         teloxide::types::BotCommand { command: "genome".into(), description: "gene lookup (NCBI)".into() },
         teloxide::types::BotCommand { command: "protein".into(), description: "protein lookup (UniProt)".into() },
@@ -359,7 +359,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Book(args) => { let txt = fetch_book(&args).await.unwrap_or_else(|e| format!("book err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Invest(args) => { let txt = fetch_invest(&args).await.unwrap_or_else(|e| format!("invest err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Workout(q) => { let txt = fetch_workout(&q).await.unwrap_or_else(|e| format!("workout err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
@@ -3561,61 +3561,6 @@ async fn fetch_invest(args: &str) -> Result<String> {
     Ok(out)
 }
 
-fn create_compound(args: &str) -> String {
-    // Parse: "1000 7% 10" or "1000 0.07 10y" -> principal, rate, years
-    let re = Regex::new(r"(?i)([0-9,.]+)\s*([0-9.]+%?)\s*([0-9.]+)").unwrap();
-    let caps = re.captures(args.trim());
-    if caps.is_none() {
-        return format!("{} \n\n_Usage:_ `/compound <principal> <rate%> <years>`\n_Eg:_ `/compound 1000 7% 10` or `/compound 5000 0.05 20`\n\n{}", tg_header("🧮", "Compound Interest", "calc"), tg_footer("compound", "money"));
-    }
-    let cap = caps.unwrap();
-    let p_str = cap.get(1).unwrap().as_str().replace(",", "");
-    let r_str = cap.get(2).unwrap().as_str().replace("%", "").trim().to_string();
-    let y_str = cap.get(3).unwrap().as_str().to_string();
-    let p: f64 = p_str.parse().unwrap_or(1000.0);
-    let r_raw: f64 = r_str.parse().unwrap_or(0.07);
-    let r = if r_raw > 1.0 { r_raw / 100.0 } else { r_raw };
-    let years: usize = y_str.parse::<f64>().unwrap_or(10.0) as usize;
-    let years = years.clamp(1, 50);
-    let final_amt = p * (1.0 + r).powi(years as i32);
-    let interest = final_amt - p;
-    let apr = r * 100.0;
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let mut out = String::new();
-    out.push_str(&format!("# 🧮 Compound Interest — Detailed\n\n"));
-    out.push_str(&format!("**Principal:** `${:.2}` · **Rate:** `{:.2}%` · **Years:** `{}` · **Date:** `{}`\n\n", p, apr, years, now));
-    out.push_str("## 📊 Result\n\n");
-    out.push_str("| Metric | Amount |\n|---|---|\n");
-    out.push_str(&format!("| Principal | `${:.2}` |\n", p));
-    out.push_str(&format!("| Interest | `${:.2}` |\n", interest));
-    out.push_str(&format!("| Final Amount | `${:.2}` |\n", final_amt));
-    out.push_str(&format!("| Multiple | `{:.2}x` |\n", final_amt / p));
-    out.push_str("\n## 📈 Yearly Breakdown\n\n");
-    out.push_str("| Year | Balance | Interest Y | Bar |\n|---:|---:|---:|---|\n");
-    let max = final_amt;
-    for y in 1..=years.min(30) {
-        let bal = p * (1.0 + r).powi(y as i32);
-        let yr_interest = bal - p * (1.0 + r).powi((y-1) as i32);
-        let bar_len = ((bal / max) * 10.0).round() as usize;
-        let bar = "█".repeat(bar_len) + &"░".repeat(10 - bar_len);
-        out.push_str(&format!("| {} | ${:.0} | ${:.0} | {} |\n", y, bal, yr_interest, bar));
-        if y == 30 && years > 30 { out.push_str(&format!("| ... | ... | ... | ... |\n")); break; }
-    }
-    out.push_str("\n```mermaid\n");
-    out.push_str("xychart-beta\n");
-    out.push_str("    title \"Growth\"\n");
-    out.push_str("    x-axis [Year]");
-    let mut vals = Vec::new();
-    for y in (1..=years).step_by((years/5).max(1)) { let v = p * (1.0 + r).powi(y as i32); vals.push(format!("{:.0}", v)); }
-    out.push_str(&format!("    y-axis \"Balance\" {}\n", vals.join(" ")));
-    out.push_str("```\n\n");
-    out.push_str("## 🧠 Formula & Fun\n\n");
-    out.push_str(&format!("_A = P(1+r)^t_ → `{:.0}*(1+{:.4})^{}`\n\n", p, r, years));
-    out.push_str("> _Tip:_ Increase rate 1% or add $100/mo — small changes compound massively. Try again with different inputs._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🧮", "Compound", args), now, "compound"));
-    out.push_str("\n\n> #compound #money #learn");
-    out
-}
 
 // === INBOX: Flashback — How Your Thinking Evolved ===
 async fn fetch_flashback(topic: &str, memos_url: &str, token: &str) -> Result<String> {
@@ -7820,7 +7765,7 @@ async fn run_preview() -> Result<()> {
         ("exercise", create_exercise("run 30m")),
         ("water", create_water("500ml morning")),
         ("read", try_fetch("read", fetch_read("Dune Frank Herbert")).await.1),
-        ("compound", create_compound("1000 7% 10")),
+        ("molecule", try_fetch("molecule", fetch_compound("aspirin")).await.1),
         ("stress", create_stress("6 work deadline")),
         ("flag", create_flag("Follow up on beat collab")),
         ("archive", create_archive("Old meeting notes")),
