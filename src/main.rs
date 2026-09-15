@@ -6857,6 +6857,13 @@ async fn create_note_smart(args: &str) -> String {
         out.push_str("\n\n");
     }
 
+    // Re-read hook: why come back to this?
+    let revisit = (Local::now() + chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+    out.push_str("## 🔄 Revisit\n\n");
+    out.push_str(&format!("- 📅 **Review on:** `{}` (7 days)\n", revisit));
+    out.push_str("- ❓ *What changed since you wrote this?*\n");
+    out.push_str("- 🔗 *Run `/concept` on a keyword above to map what you know now.*\n\n");
+
     out.push_str(&format!("\n{}\n\n`{}` · #note #inbox #memogram-rs", tg_footer("memogram-rs", "note"), now));
     out
 }
@@ -7187,6 +7194,21 @@ async fn fetch_habit(args: &str, app: &App) -> String {
             out.push_str(&format!("- 🔥 **{}** — every rep counts\n", habit));
             out.push_str("- 💪 Consistency > intensity\n");
             out.push_str("- 📈 Track with `/digest` to see your memo count grow\n\n");
+            // 7-day history from own memos — the re-read value
+            let token2 = app.store.read().await.values().next().cloned().unwrap_or_default();
+            if !token2.is_empty() {
+                let search_url = format!("{}/api/v1/memos?search={}&pageSize=30", app.memos_url, urlencoding::encode(habit));
+                if let Ok(Ok(resp)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&search_url).header("Authorization", format!("Bearer {}", token2)).send()).await {
+                    if let Ok(v) = resp.json::<serde_json::Value>().await {
+                        let memos = v["memos"].as_array().cloned().unwrap_or_default();
+                        let week_ago = (Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+                        let recent: Vec<_> = memos.iter().filter(|m| m["createTime"].as_str().map(|t| t >= week_ago.as_str()).unwrap_or(false)).collect();
+                        let done_count = recent.iter().filter(|m| m["content"].as_str().map(|c| c.contains("completed")).unwrap_or(false)).count();
+                        out.push_str("## 📊 Last 7 Days\n\n");
+                        out.push_str(&format!("| Metric | Value |\n|---|---|\n| Completions logged | `{}` |\n| Consistency | `{:.0}%` |\n\n", done_count, (done_count as f64 / 7.0 * 100.0).min(100.0)));
+                    }
+                }
+            }
             out.push_str(&format!("{}\n\n`{}` · #habit #tasks #memogram-rs", tg_footer("memogram-rs", "habit"), now));
             out
         }
@@ -7654,6 +7676,16 @@ async fn fetch_save(args: &str) -> Result<String> {
     }
     out.push_str("## 🏷️ Tags\n\n- #save #inbox\n\n");
     out.push_str("## ✅ Actions\n\n- [ ] Process\n- [ ] Archive\n\n");
+    // Re-read hook: where to go next with this
+    let revisit = (Local::now() + chrono::Duration::days(3)).format("%Y-%m-%d").to_string();
+    out.push_str("## 🔄 Next Steps\n\n");
+    if is_url {
+        out.push_str("- 📖 *Read it fully with `/read`, then summarize with `/summarize`*\n");
+    } else {
+        out.push_str("- 🗺️ *Expand it with `/concept` on the main topic*\n");
+    }
+    out.push_str(&format!("- 📅 **Revisit on:** `{}` — still relevant?\n", revisit));
+    out.push_str("- 🗑️ *If not, delete it. An inbox you trust stays empty.*\n\n");
     out.push_str(&format!("{}\n\n`{}` · #save", tg_footer("memogram", "save"), now));
     Ok(out)
 }
