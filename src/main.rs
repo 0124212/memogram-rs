@@ -939,7 +939,87 @@ async fn fetch_fx(pair: &str) -> Result<String> {
     out.push_str(&format!("| 100 {} | {:.4} {} |\n", base, rate * 100.0, quote));
     out.push_str(&format!("| 1,000 {} | {:.2} {} |\n\n", base, rate * 1000.0, quote));
     out.push_str(&format!("🔗 [More rates](https://open.er-api.com/v6/latest/{})\n\n", base));
-    out.push_str(&format!("{}\n\n`{}` · #fx", tg_footer("open.er-api.com", "fx"), now));
+    let ppp_data: Vec<(&str, &str, f64, &str)> = vec![
+        ("USD", "USA", 100.0, "Big Mac $5.58, coffee $5.00, metro $2.90"),
+        ("EUR", "Eurozone", 85.0, "Big Mac €4.85, coffee €4.20, metro €2.10"),
+        ("GBP", "UK", 78.0, "Big Mac £4.20, coffee £3.80, metro £2.80"),
+        ("JPY", "Japan", 95.0, "Big Mac ¥450, coffee ¥380, metro ¥180"),
+        ("KRW", "South Korea", 90.0, "Big Mac ₩5,300, coffee ₩4,500, metro ₩1,250"),
+        ("INR", "India", 110.0, "Big Mac ₹200, coffee ₹150, metro ₹20"),
+        ("BRL", "Brazil", 95.0, "Big Mac R$25, coffee R$8, metro R$5"),
+        ("MXN", "Mexico", 100.0, "Big Mac MX$75, coffee MX$45, metro MX$5"),
+        ("THB", "Thailand", 105.0, "Big Mac ฿135, coffee ฿95, metro ฿16"),
+        ("AUD", "Australia", 82.0, "Big Mac A$7.50, coffee A$5.50, metro A$4.50"),
+        ("CAD", "Canada", 83.0, "Big Mac C$6.75, coffee C$5.50, metro C$3.30"),
+        ("CHF", "Switzerland", 65.0, "Big Mac CHF 7.00, coffee CHF 5.50, metro CHF 3.20"),
+        ("SEK", "Sweden", 75.0, "Big Mac kr72, coffee kr55, metro kr38"),
+        ("SGD", "Singapore", 80.0, "Big Mac S$7.00, coffee S$5.50, metro S$1.50"),
+        ("CNY", "China", 105.0, "Big Mac ¥24, coffee ¥20, metro ¥3"),
+    ];
+    let ppp_match = ppp_data.iter().find(|(c, _, _, _)| *c == quote);
+    if let Some((_, country, power, examples)) = ppp_match {
+        out.push_str(&format!("## 🛒 Purchasing Power Parity\n\n"));
+        out.push_str(&format!("**What $100 USD buys in {}:**\n\n", country));
+        out.push_str(&format!("| Currency | Country | PPP Index | Examples |\n|---|---|---|---|\n"));
+        for &(cc, cn, pw, ex) in &ppp_data {
+            let marker = if cc == quote { "👉 " } else { "" };
+            out.push_str(&format!("| {}{} | {} | {:.0} | {} |\n", marker, cc, cn, pw, ex));
+        }
+        out.push_str(&format!("\n_Your currency ({}) buys **${:.0}** worth of goods vs $100 in the US._\n\n", quote, power));
+    }
+    let city_data: Vec<(&str, &str, &str, &str, &str, &str)> = vec![
+        ("New York", "USD", "$18", "$5.50", "$2.90", "$80"),
+        ("Los Angeles", "USD", "$16", "$5.00", "$1.75", "$50"),
+        ("London", "GBP", "£14", "£3.80", "£2.80", "£40"),
+        ("Tokyo", "JPY", "¥1,000", "¥380", "¥180", "¥8,000"),
+        ("Seoul", "KRW", "₩10,000", "₩4,500", "₩1,250", "₩50,000"),
+        ("Mumbai", "INR", "₹250", "₹150", "₹20", "₹1,500"),
+        ("Berlin", "EUR", "€12", "€4.20", "€3.50", "€25"),
+        ("Paris", "EUR", "€15", "€4.50", "€2.15", "€30"),
+        ("Bangkok", "THB", "฿120", "฿95", "฿16", "฿800"),
+        ("Sydney", "AUD", "A$18", "A$5.50", "A$4.50", "A$65"),
+        ("Toronto", "CAD", "C$18", "C$5.50", "C$3.30", "C$55"),
+        ("Singapore", "SGD", "S$12", "S$5.50", "S$1.50", "S$80"),
+        ("Shanghai", "CNY", "¥45", "¥20", "¥3", "¥300"),
+        ("Zurich", "CHF", "CHF 25", "CHF 5.50", "CHF 3.20", "CHF 80"),
+    ];
+    let base_cities: Vec<(&str, &str, &str, &str, &str, &str)> = city_data.iter().filter(|c| c.1 == base).cloned().collect();
+    let quote_cities: Vec<(&str, &str, &str, &str, &str, &str)> = city_data.iter().filter(|c| c.1 == quote).cloned().collect();
+    let show_cities = !base_cities.is_empty() || !quote_cities.is_empty();
+    if show_cities {
+        out.push_str("## 🏙️ Daily Living Costs\n\n");
+        out.push_str("| City | Lunch | Coffee | Transit | Gym/mo |\n|---|---|---|---|---|\n");
+        for (city, _, lunch, coffee, transit, gym) in base_cities.iter().chain(quote_cities.iter()) {
+            out.push_str(&format!("| {} | {} | {} | {} | {} |\n", city, lunch, coffee, transit, gym));
+        }
+        out.push('\n');
+    }
+    let salary_data: Vec<(&str, &str, &str, &str)> = vec![
+        ("USD", "$93,000", "$130,160", "$70,000"),
+        ("EUR", "€55,000", "€80,000", "€38,000"),
+        ("GBP", "£45,000", "£70,000", "£32,000"),
+        ("JPY", "¥6,000,000", "¥9,000,000", "¥4,000,000"),
+        ("KRW", "₩55,000,000", "₩80,000,000", "₩38,000,000"),
+        ("INR", "₹1,200,000", "₹2,000,000", "₹700,000"),
+        ("BRL", "R$120,000", "R$200,000", "R$70,000"),
+        ("AUD", "A$95,000", "A$140,000", "A$65,000"),
+        ("CAD", "C$85,000", "C$125,000", "C$60,000"),
+        ("SGD", "S$80,000", "S$120,000", "S$55,000"),
+    ];
+    let base_sal = salary_data.iter().find(|(c, _, _, _)| *c == base);
+    let quote_sal = salary_data.iter().find(|(c, _, _, _)| *c == quote);
+    if base_sal.is_some() || quote_sal.is_some() {
+        out.push_str("## 💼 Salary Comparison (Software Engineer)\n\n");
+        out.push_str("| | Median | Senior | Junior |\n|---|---|---|---|\n");
+        if let Some((_, med, sen, jun)) = base_sal {
+            out.push_str(&format!("| **{}** | {} | {} | {} |\n", base, med, sen, jun));
+        }
+        if let Some((_, med, sen, jun)) = quote_sal {
+            out.push_str(&format!("| **{}** | {} | {} | {} |\n", quote, med, sen, jun));
+        }
+        out.push('\n');
+    }
+    out.push_str(&format!("{}\n\n`{}` · #fx #money #memogram-rs", tg_footer("open.er-api.com", "fx"), now));
     Ok(out)
 }
 
@@ -4127,9 +4207,84 @@ fn fetch_tempo(args: &str) -> String {
     out.push_str(&format!("- **Slapback:** `150–200` ms (use `{:.0}` ms 16th for tight slap)\n", beat_ms * 0.25));
     out.push_str(&format!("- **Dotted-8th delay (U2 style):** `{:.0}` ms\n", beat_ms * 0.75));
     out.push_str(&format!("- **Ping-pong:** `{:.0}` ms L / `{:.0}` ms R\n\n", beat_ms * 0.75, beat_ms * 0.5));
-    out.push_str("## 🎹 Practice\n\n");
-    out.push_str(&format!("- Set metronome to `{}` BPM, play `/scale` notes in quarter notes\n", bpm as u32));
-    out.push_str(&format!("- Loop a `/progress` progression at `{}` BPM\n\n", bpm as u32));
+    out.push_str("## 🎸 Genre & Style\n\n");
+    let (genre, kick, snare, hihat) = if bpm >= 170.0 {
+        ("Speed Metal / Hardcore", "X.X.X.X.", "....X...", "XXXXXXXX")
+    } else if bpm >= 150.0 {
+        ("Drum & Bass / Jungle", "X..X.X..", "....X...", "X.X.X.X.")
+    } else if bpm >= 130.0 {
+        ("Rock / Punk / Indie", "X.X.X.X.", "....X...", "X.X.X.X.")
+    } else if bpm >= 110.0 {
+        ("House / Techno / Dance", "X...X...X...X...", "....X.......X...", "X.X.X.X.X.X.X.X.")
+    } else if bpm >= 90.0 {
+        ("Funk / Disco / Pop", "X.X.X.X.", "....X...", "X.X.X.X.")
+    } else if bpm >= 70.0 {
+        ("Hip-hop / R&B / Reggae", "X..X..X.", "...X..X.", "X.X.X.X.")
+    } else {
+        ("Ballad / Doom / Slow Blues", "X.......", "....X...", "X...X...")
+    };
+    out.push_str(&format!("**{}** (`{}–` BPM)\n\n", genre,
+        if bpm >= 170.0 { "170" } else if bpm >= 150.0 { "150" } else if bpm >= 130.0 { "130" } else if bpm >= 110.0 { "110" } else if bpm >= 90.0 { "90" } else if bpm >= 70.0 { "70" } else { "40" }));
+    out.push_str(&format!("```\nKick:   {}\nSnare:  {}\nHi-hat: {}\n```\n\n", kick, snare, hihat));
+    out.push_str("## 🏋️ Practice Routine\n\n");
+    let (timing, subd, groove, game) = if bpm >= 170.0 {
+        ("Blast beats for 30s bursts, rest 10s",
+         "Alternate 16th and 32nd note bursts",
+         "Play thrash riff with double bass pattern",
+         format!("Start at {} BPM, jump to {} after 20s", bpm as u32 - 10, bpm as u32 + 10))
+    } else if bpm >= 150.0 {
+        ("Play 16th notes with metronome for 2 min",
+         "Alternate 16th and triplet subdivisions",
+         "DnB two-step with ghost notes on snare",
+         format!("Drop metronome for 4 bars, see if you drift"))
+    } else if bpm >= 130.0 {
+        ("Play quarter notes with eyes closed for 2 min",
+         "Alternate 8th and 16th notes each bar",
+         "Play rock groove with open hi-hat on upbeats",
+         format!("Start at {} BPM, increase by 2 every 30s", bpm as u32 - 10))
+    } else if bpm >= 110.0 {
+        ("Four-on-the-floor for 3 min straight",
+         "Practice off-beat hi-hat (and-1, and-2…)",
+         "House groove with clap on 2 and 4",
+         format!("Mute kick for 4 bars, bring it back on beat 1"))
+    } else if bpm >= 90.0 {
+        ("Play ghost notes on snare for 2 min",
+         "Alternate straight and swung 16th notes",
+         "Funk groove with bass drum syncopation",
+         format!("Swing the groove then straighten it, repeat 10x"))
+    } else if bpm >= 70.0 {
+        ("Play quarter notes, focus on feel not speed",
+         "Practice half-time and double-time feels",
+         "Hip-hop boom-bap with intentional swing",
+         format!("Delay metronome by 10ms late, then early, feel the pocket"))
+    } else {
+        ("Hold each chord for 4 bars, count aloud",
+         "Practice arpeggios in whole and half notes",
+         "Slow blues in 12/8 with triplet feel",
+         format!("Play along to a ballad, lock into the singer's phrasing"))
+    };
+    out.push_str(&format!("- **Timing drill:** {}\n- **Subdivision:** {}\n- **Groove:** {}\n- **Metronome game:** {}\n\n", timing, subd, groove, game));
+    out.push_str("## 🫀 BPM in Context\n\n");
+    let context = if bpm <= 45.0 {
+        "Extremely slow — like a resting pulse between breaths"
+    } else if bpm <= 65.0 {
+        "About 1 beat per second — resting heart rate"
+    } else if bpm <= 80.0 {
+        "Relaxed resting heart rate — calm, unhurried"
+    } else if bpm <= 100.0 {
+        "Casual heartbeat — a comfortable stroll"
+    } else if bpm <= 120.0 {
+        "About 2 beats per second — brisk walking pace"
+    } else if bpm <= 140.0 {
+        "Elevated — light jog, energized feel"
+    } else if bpm <= 160.0 {
+        "Fast — running pace, high energy"
+    } else if bpm <= 180.0 {
+        "Sprint zone — running pace, adrenaline pumping"
+    } else {
+        "Extreme — beyond sprint, heartbeat at limit"
+    };
+    out.push_str(&format!("_{}_\n\n", context));
     out.push_str(&format!("{}\n\n`{}` · #tempo #music #memogram-rs", tg_footer("music theory", "tempo"), now));
     out
 }
