@@ -3679,24 +3679,45 @@ async fn fetch_man(cmd: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let cmd = cmd.trim().to_string();
     if cmd.is_empty() { return Ok("usage: `/man <command>` — e.g. `/man grep`, `/man ssh`, `/man docker`".into()); }
-    let cheat_url = format!("https://cheat.sh/{}", urlencoding::encode(&cmd));
-    let cheat_body = HTTP.get(&cheat_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
-    let tldr_url = format!("https://cheat.sh/tldr/{}", urlencoding::encode(&cmd));
-    let tldr_body = HTTP.get(&tldr_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(5)).send().await?.text().await.unwrap_or_default();
     let mut out = format!("{}\n\n", tg_header("📖", "Linux Command", &cmd));
-    if !tldr_body.trim().is_empty() && !tldr_body.contains("Sorry") {
-        out.push_str("## 📋 Quick Reference\n\n");
-        out.push_str(&format!("```\n{}\n```\n\n", tldr_body.chars().take(2000).collect::<String>()));
+    // Primary: man7.org man1 page (distinct backend from /grep's cheat.sh)
+    let man_url = format!("https://man7.org/linux/man-pages/man1/{}.1.html", urlencoding::encode(&cmd));
+    let man_html = match tokio::time::timeout(std::time::Duration::from_secs(6), HTTP.get(&man_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) if r.status().is_success() => r.text().await.unwrap_or_default(),
+        _ => String::new(),
+    };
+    if !man_html.is_empty() {
+        let re_html = Regex::new(r"<[^>]+>").unwrap();
+        let plain = re_html.replace_all(&man_html, " ").to_string();
+        let collapsed: String = plain.split_whitespace().collect::<Vec<_>>().join(" ");
+        // Skip nav boilerplate: start at the NAME section
+        let body_start = collapsed.find("NAME").unwrap_or(0);
+        let body: String = collapsed[body_start..].chars().take(2500).collect();
+        if body.len() > 100 {
+            out.push_str("## 📖 Manual (man7.org)\n\n");
+            out.push_str(&format!("```\n{}\n```\n\n", body));
+        }
     }
-    if !cheat_body.trim().is_empty() && !cheat_body.contains("Sorry") && cheat_body != tldr_body {
-        out.push_str("## 📖 Detailed Examples\n\n");
-        out.push_str(&format!("```\n{}\n```\n\n", cheat_body.chars().take(3000).collect::<String>()));
-    }
-    if cheat_body.is_empty() && tldr_body.is_empty() {
-        out.push_str("_No manual found._\n\n**Popular:** `ls`, `grep`, `find`, `awk`, `sed`, `curl`, `ssh`, `docker`, `git`, `vim`, `tmux`\n\n");
+    // Fallback only: cheat.sh when man7.org has no man1 page for it
+    if out.len() < 200 {
+        let cheat_url = format!("https://cheat.sh/{}", urlencoding::encode(&cmd));
+        let cheat_body = HTTP.get(&cheat_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
+        let tldr_url = format!("https://cheat.sh/tldr/{}", urlencoding::encode(&cmd));
+        let tldr_body = HTTP.get(&tldr_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(5)).send().await?.text().await.unwrap_or_default();
+        if !tldr_body.trim().is_empty() && !tldr_body.contains("Sorry") {
+            out.push_str("## 📋 Quick Reference\n\n");
+            out.push_str(&format!("```\n{}\n```\n\n", tldr_body.chars().take(2000).collect::<String>()));
+        }
+        if !cheat_body.trim().is_empty() && !cheat_body.contains("Sorry") && cheat_body != tldr_body {
+            out.push_str("## 📖 Detailed Examples\n\n");
+            out.push_str(&format!("```\n{}\n```\n\n", cheat_body.chars().take(3000).collect::<String>()));
+        }
+        if cheat_body.is_empty() && tldr_body.is_empty() {
+            out.push_str("_No manual found._\n\n**Popular:** `ls`, `grep`, `find`, `awk`, `sed`, `curl`, `ssh`, `docker`, `git`, `vim`, `tmux`\n\n");
+        }
     }
     out.push_str(&format!("🔗 [man7.org](https://man7.org/linux/man-pages/man1/{}.1.html)\n\n", cmd));
-    out.push_str(&format!("{}\n\n`{}` · #man #dev #memogram-rs", tg_footer("cheat.sh", "man"), now));
+    out.push_str(&format!("{}\n\n`{}` · #man #dev #memogram-rs", tg_footer("man7.org + cheat.sh fallback", "man"), now));
     Ok(out)
 }
 
@@ -3797,7 +3818,17 @@ async fn fetch_grep(pattern: &str) -> Result<String> {
     let url = format!("https://cheat.sh/{}", urlencoding::encode(&pattern));
     let body = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
     let mut out = format!("{}\n\n", tg_header("🔍", "Search Patterns", &pattern));
+    out.push_str("## ⚡ Quick Reference\n\n| Task | Command |\n|---|---|\n");
+    out.push_str("| Recursive search | `rg 'pattern'` |\n");
+    out.push_str("| Ignore case | `rg -i 'pattern'` |\n");
+    out.push_str("| File type filter | `rg -t rs 'pattern'` |\n");
+    out.push_str("| Show line numbers | `rg -n 'pattern'` |\n");
+    out.push_str("| Files with matches only | `rg -l 'pattern'` |\n");
+    out.push_str("| AWK print field | `awk '{print $2}'` |\n");
+    out.push_str("| SED replace | `sed 's/old/new/g'` |\n");
+    out.push_str("| Find files by name | `find . -name '*.rs'` |\n\n");
     if !body.trim().is_empty() && !body.contains("Sorry") {
+        out.push_str("## 📋 Cheat Sheet\n\n");
         out.push_str(&format!("```\n{}\n```\n\n", body.chars().take(3000).collect::<String>()));
     } else {
         out.push_str("_No patterns found._\n\n**Common:** `grep recursive`, `grep ignore case`, `ripgrep exclude`, `awk fields`, `sed replace`, `find files`\n\n");
