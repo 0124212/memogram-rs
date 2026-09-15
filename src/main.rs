@@ -70,6 +70,7 @@ enum Command {
     Income(String),
     Youtube(String),
     Transcribe(String),
+    Learn(String),
     Morning(String),
     Evening(String),
     Log(String),
@@ -112,6 +113,8 @@ struct App {
     bot_tokens: HashMap<String, String>,
     bark_url: String,
     ntfy_url: String,
+    vikunja_url: String,
+    vikunja_token: String,
 }
 
 impl App {
@@ -168,8 +171,10 @@ async fn main() -> Result<()> {
     let bot_tokens: HashMap<String, String> = env::var("BOT_TOKENS_JSON").ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
     let bark_url = env::var("BARK_URL").ok().unwrap_or_default();
     let ntfy_url = env::var("NTFY_URL").ok().unwrap_or_default();
+    let vikunja_url = env::var("VIKUNJA_URL").ok().unwrap_or_default();
+    let vikunja_token = env::var("VIKUNJA_TOKEN").ok().unwrap_or_default();
     let store = Arc::new(RwLock::new(load_store(&store_path).await));
-    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url };
+    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
 
@@ -228,6 +233,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
         teloxide::types::BotCommand { command: "youtube".into(), description: "summarize youtube video".into() },
+        teloxide::types::BotCommand { command: "learn".into(), description: "learning overview for any topic".into() },
         teloxide::types::BotCommand { command: "transcribe".into(), description: "voice-to-text memo".into() },
         teloxide::types::BotCommand { command: "wind".into(), description: "wind forecast".into() },
         teloxide::types::BotCommand { command: "uv".into(), description: "UV index".into() },
@@ -379,9 +385,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Goal(args) => { let txt = create_goal(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Deadline(args) => { let txt = create_deadline(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Priority(args) => { let txt = create_priority(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Priority(args) => { let txt = vikunja_priority(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Idea(args) => { let txt = create_idea(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -401,6 +407,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         }
         Command::Income(args) => { let txt = create_income(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Youtube(url) => { let txt = fetch_youtube(&url).await.unwrap_or_else(|e| format!("youtube err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
+        Command::Learn(topic) => { let txt = fetch_learn(&topic).await.unwrap_or_else(|e| format!("learn err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Transcribe(text) => { let txt = create_transcribe(&text); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Morning(args) => { let txt = create_morning(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
@@ -416,17 +423,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Snow(loc) => { let txt = fetch_snow(&loc).await.unwrap_or_else(|e| format!("snow err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Tide(loc) => { let txt = fetch_tide(&loc).await.unwrap_or_else(|e| format!("tide err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Project(args) => { let txt = vikunja_project(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
+        Command::Todo(args) => { let txt = vikunja_todo(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Lobsters => { let txt = fetch_lobsters().await.unwrap_or_else(|e| format!("lobsters err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
-        Command::Weekly => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_weekly(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("weekly err: {e}"));
-            create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?;
-        }
+        Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Retro(args) => { let txt = create_retro(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Patent(q) => { let txt = fetch_patent(&q).await.unwrap_or_else(|e| format!("patent err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Species(q) => { let txt = fetch_species(&q).await.unwrap_or_else(|e| format!("species err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
@@ -583,6 +585,76 @@ async fn upload_attachment(url: &str, tok: &str, filename: &str, mime: &str, dat
     if !st.is_success() { anyhow::bail!("{st} {txt}") }
     let v: Resp = serde_json::from_str(&txt)?;
     Ok(v.name)
+}
+
+// === VIKUNJA API ===
+
+async fn vikunja_request(url: &str, token: &str, method: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value> {
+    let mut req = match method {
+        "POST" => HTTP.post(url),
+        "PUT" => HTTP.put(url),
+        "GET" => HTTP.get(url),
+        "DELETE" => HTTP.delete(url),
+        _ => HTTP.get(url),
+    };
+    let mut req = req
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Content-Type", "application/json");
+    if let Some(body) = body {
+        req = req.json(&body);
+    }
+    let resp = req.timeout(std::time::Duration::from_secs(8)).send().await?;
+    let v: serde_json::Value = resp.json().await?;
+    Ok(v)
+}
+
+async fn vikunja_create_task(vikunja_url: &str, token: &str, title: &str, description: &str, project_id: u64, priority: u8, due_date: &str) -> Result<serde_json::Value> {
+    let mut task = serde_json::json!({
+        "title": title,
+        "project_id": project_id,
+    });
+    if !description.is_empty() { task["description"] = serde_json::json!(description); }
+    if priority > 0 { task["priority"] = serde_json::json!(priority); }
+    if !due_date.is_empty() { task["due_date"] = serde_json::json!(format!("{}T00:00:00Z", due_date)); }
+    let url = format!("{}/api/v1/tasks", vikunja_url.trim_end_matches('/'));
+    vikunja_request(&url, token, "POST", Some(task)).await
+}
+
+async fn vikunja_create_project(vikunja_url: &str, token: &str, title: &str) -> Result<serde_json::Value> {
+    let body = serde_json::json!({ "title": title });
+    let url = format!("{}/api/v1/projects", vikunja_url.trim_end_matches('/'));
+    vikunja_request(&url, token, "POST", Some(body)).await
+}
+
+async fn vikunja_list_projects(vikunja_url: &str, token: &str) -> Result<Vec<serde_json::Value>> {
+    let url = format!("{}/api/v1/projects", vikunja_url.trim_end_matches('/'));
+    let v = vikunja_request(&url, token, "GET", None).await?;
+    Ok(v.as_array().cloned().unwrap_or_default())
+}
+
+async fn vikunja_list_tasks(vikunja_url: &str, token: &str, project_id: u64, done: Option<bool>) -> Result<Vec<serde_json::Value>> {
+    let mut url = format!("{}/api/v1/projects/{}/tasks?sort_by=due_date&sort_order=asc", vikunja_url.trim_end_matches('/'), project_id);
+    if let Some(d) = done {
+        url.push_str(&format!("&filter.done={}", d));
+    }
+    let v = vikunja_request(&url, token, "GET", None).await?;
+    Ok(v.as_array().cloned().unwrap_or_default())
+}
+
+async fn vikunja_complete_task(vikunja_url: &str, token: &str, task_id: u64) -> Result<serde_json::Value> {
+    let body = serde_json::json!({ "done": true });
+    let url = format!("{}/api/v1/tasks/{}", vikunja_url.trim_end_matches('/'), task_id);
+    vikunja_request(&url, token, "PUT", Some(body)).await
+}
+
+fn vikunja_priority_label(p: u8) -> (&'static str, &'static str) {
+    match p {
+        1 => ("🔵", "P1-Low"),
+        2 => ("🟡", "P2-Medium"),
+        3 => ("🟠", "P3-High"),
+        4 | 5 => ("🔴", "P4-Urgent"),
+        _ => ("⚪", "None"),
+    }
 }
 
 async fn download_telegram_file(bot: &Bot, file_id: &teloxide::types::FileId) -> Result<Vec<u8>> {
@@ -4462,6 +4534,213 @@ async fn fetch_news(topic: &str) -> Result<String> {
     out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("hn.algolia.com", "news"), now));
     Ok(out)
 }
+
+// === VIKUNJA-POWERED PLANNING ===
+
+async fn vikunja_todo(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return format!("{}\n\n⚠️ _Vikunja not configured. Set `VIKUNJA_URL` and `VIKUNJA_TOKEN`._\n\n{}\n\n`{}` · #todo #planning",
+            tg_header("📋", "Todo", ""), tg_footer("memogram-rs", "todo"), now);
+    }
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let title = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("New task");
+    let note = parts.get(1).unwrap_or(&"");
+    // Find or use default inbox project
+    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
+    let project_id = projects.first().and_then(|p| p["id"].as_u64()).unwrap_or(1);
+    let project_name = projects.first().and_then(|p| p["title"].as_str()).unwrap_or("inbox");
+    match vikunja_create_task(&app.vikunja_url, &app.vikunja_token, title, note, project_id, 0, "").await {
+        Ok(task) => {
+            let task_id = task["id"].as_u64().unwrap_or(0);
+            let mut out = format!("{}\n\n", tg_header("✅", "Task Created", title));
+            out.push_str(&format!("**Task:** `{}`\n**Project:** `{}`\n**Vikunja ID:** `#{}`\n\n", title, project_name, task_id));
+            out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
+            if !note.is_empty() {
+                out.push_str(&format!("**Note:** {}\n\n", note));
+            }
+            out.push_str(&format!("{}\n\n`{}` · #todo #planning #memogram-rs", tg_footer("vikunja", "todo"), now));
+            out
+        }
+        Err(e) => format!("❌ Vikunja error: {e}\n\n_Task not created._")
+    }
+}
+
+async fn vikunja_deadline(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return format!("⚠️ _Vikunja not configured._").into();
+    }
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let due = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("TBD");
+    let title = parts.get(1).unwrap_or(&"Task");
+    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
+    let project_id = projects.first().and_then(|p| p["id"].as_u64()).unwrap_or(1);
+    let due_date = if due.len() == 10 { due } else { "" };
+    match vikunja_create_task(&app.vikunja_url, &app.vikunja_token, title, "", project_id, 3, due_date).await {
+        Ok(task) => {
+            let task_id = task["id"].as_u64().unwrap_or(0);
+            let mut out = format!("{}\n\n", tg_header("⏰", "Deadline Task", title));
+            out.push_str(&format!("**Task:** `{}`\n**Due:** `{}`\n**Priority:** 🟠 P3-High\n**Vikunja ID:** `#{}`\n\n", title, due, task_id));
+            if let Ok(dt) = chrono::NaiveDate::parse_from_str(due_date, "%Y-%m-%d") {
+                let now_date = Local::now().naive_local().date();
+                let days_left = (dt - now_date).num_days();
+                out.push_str(&format!("⏳ **{} days** until deadline\n\n", days_left));
+            }
+            out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
+            out.push_str(&format!("{}\n\n`{}` · #deadline #planning #memogram-rs", tg_footer("vikunja", "deadline"), now));
+            out
+        }
+        Err(e) => format!("❌ Vikunja error: {e}")
+    }
+}
+
+async fn vikunja_priority(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return format!("⚠️ _Vikunja not configured._").into();
+    }
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let level = parts.first().and_then(|s| s.parse::<u8>().ok()).unwrap_or(2).min(5);
+    let title = parts.get(1).unwrap_or(&"Task");
+    let (emoji, label) = vikunja_priority_label(level);
+    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
+    let project_id = projects.first().and_then(|p| p["id"].as_u64()).unwrap_or(1);
+    match vikunja_create_task(&app.vikunja_url, &app.vikunja_token, title, "", project_id, level, "").await {
+        Ok(task) => {
+            let task_id = task["id"].as_u64().unwrap_or(0);
+            let mut out = format!("{}\n\n", tg_header("🔥", "Priority Task", title));
+            out.push_str(&format!("**Task:** `{}`\n**Priority:** {} `{}`\n**Vikunja ID:** `#{}`\n\n", title, emoji, label, task_id));
+            out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
+            out.push_str(&format!("{}\n\n`{}` · #priority #planning #memogram-rs", tg_footer("vikunja", "priority"), now));
+            out
+        }
+        Err(e) => format!("❌ Vikunja error: {e}")
+    }
+}
+
+async fn vikunja_goal(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let date = Local::now().format("%Y-%m-%d").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return format!("⚠️ _Vikunja not configured._").into();
+    }
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let goal = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("New Goal");
+    let details = parts.get(1).unwrap_or(&"");
+    // Create a Vikunja project for the goal
+    match vikunja_create_project(&app.vikunja_url, &app.vikunja_token, goal).await {
+        Ok(project) => {
+            let project_id = project["id"].as_u64().unwrap_or(0);
+            // Create starter tasks
+            let milestones = ["Research & plan", "First milestone", "Review & iterate"];
+            let mut task_ids = Vec::new();
+            for (i, m) in milestones.iter().enumerate() {
+                let title = format!("{}. {}", i + 1, m);
+                if let Ok(task) = vikunja_create_task(&app.vikunja_url, &app.vikunja_token, &title, "", project_id, 2, "").await {
+                    task_ids.push(task["id"].as_u64().unwrap_or(0));
+                }
+            }
+            let mut out = format!("{}\n\n", tg_header("🎯", "Goal", goal));
+            out.push_str(&format!("**Goal:** `{}`\n**Date:** `{}`\n**Vikunja Project:** `#{}`\n\n", goal, date, project_id));
+            if !details.is_empty() {
+                out.push_str(&format!("**Details:** {}\n\n", details));
+            }
+            out.push_str("## 📋 Milestones\n\n");
+            for (i, m) in milestones.iter().enumerate() {
+                let tid = task_ids.get(i).unwrap_or(&0);
+                out.push_str(&format!("- [ ] {} (task #{})\n", m, tid));
+            }
+            out.push_str(&format!("\n🔗 [Open in Vikunja]({}/projects/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id));
+            out.push_str(&format!("{}\n\n`{}` · #goal #planning #memogram-rs", tg_footer("vikunja", "goal"), now));
+            out
+        }
+        Err(e) => format!("❌ Vikunja project creation failed: {e}")
+    }
+}
+
+async fn vikunja_project(args: &str, app: &App) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        return format!("⚠️ _Vikunja not configured._").into();
+    }
+    let name = args.trim();
+    if name.is_empty() { return "usage: `/project <name>`".into(); }
+    match vikunja_create_project(&app.vikunja_url, &app.vikunja_token, name).await {
+        Ok(project) => {
+            let project_id = project["id"].as_u64().unwrap_or(0);
+            let mut out = format!("{}\n\n", tg_header("📂", "Project Created", name));
+            out.push_str(&format!("**Project:** `{}`\n**Vikunja ID:** `#{}`\n\n", name, project_id));
+            out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id));
+            out.push_str(&format!("{}\n\n`{}` · #project #planning #memogram-rs", tg_footer("vikunja", "project"), now));
+            out
+        }
+        Err(e) => format!("❌ Vikunja error: {e}")
+    }
+}
+
+async fn vikunja_weekly(app: &App) -> String {
+    let now = Local::now();
+    let today = now.format("%Y-%m-%d").to_string();
+    let week_start = (now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64)).format("%Y-%m-%d").to_string();
+    let mut out = format!("{}\n\n", tg_header("📅", "Weekly Review", &format!("{} → {}", week_start, today)));
+
+    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
+        out.push_str("_Vikunja not configured — showing template only._\n\n");
+        out.push_str("## ✅ Completed This Week\n\n- [ ] \n\n");
+        out.push_str("## ⏳ Still Open\n\n- [ ] \n\n");
+        out.push_str("## 💡 Reflection\n\n- What went well?\n- What needs adjustment?\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #weekly #planning #memogram-rs", tg_footer("memogram-rs", "weekly"), now.format("%Y-%m-%d %H:%M")));
+        return out;
+    }
+
+    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
+    let mut total_done = 0u64;
+    let mut total_open = 0u64;
+    let mut all_open: Vec<String> = Vec::new();
+    let mut all_done: Vec<String> = Vec::new();
+
+    for p in &projects {
+        let pid = p["id"].as_u64().unwrap_or(0);
+        let pname = p["title"].as_str().unwrap_or("?");
+        let done_tasks = vikunja_list_tasks(&app.vikunja_url, &app.vikunja_token, pid, Some(true)).await.unwrap_or_default();
+        let open_tasks = vikunja_list_tasks(&app.vikunja_url, &app.vikunja_token, pid, Some(false)).await.unwrap_or_default();
+        total_done += done_tasks.len() as u64;
+        total_open += open_tasks.len() as u64;
+        for t in &open_tasks {
+            let title = t["title"].as_str().unwrap_or("?");
+            let due = t["due_date"].as_str().map(|d| if d.len() >= 10 { &d[..10] } else { "?" }).unwrap_or("");
+            let (emoji, _) = vikunja_priority_label(t["priority"].as_u64().unwrap_or(0) as u8);
+            all_open.push(format!("- {} {} (due: {}, project: {})", emoji, title, if due.is_empty() { "none" } else { due }, pname));
+        }
+        for t in &done_tasks {
+            let title = t["title"].as_str().unwrap_or("?");
+            all_done.push(format!("- ~~{}~~ ✅ ({})", title, pname));
+        }
+    }
+
+    out.push_str(&format!("**{} completed** · **{} open** tasks across {} projects\n\n", total_done, total_open, projects.len()));
+
+    out.push_str("## ✅ Completed\n\n");
+    if all_done.is_empty() { out.push_str("_None this week._\n\n"); }
+    else { out.push_str(&format!("{}\n\n", all_done.join("\n"))); }
+
+    out.push_str("## ⏳ Still Open\n\n");
+    if all_open.is_empty() { out.push_str("_All clear!_\n\n"); }
+    else { out.push_str(&format!("{}\n\n", all_open.join("\n"))); }
+
+    out.push_str("## 💡 Reflection\n\n");
+    out.push_str("- What went well this week?\n");
+    out.push_str("- What needs adjustment?\n");
+    out.push_str("- Top priority for next week?\n\n");
+
+    out.push_str(&format!("🔗 [Vikunja Dashboard]({})\n\n", app.vikunja_url.trim_end_matches('/')));
+    out.push_str(&format!("{}\n\n`{}` · #weekly #planning #memogram-rs", tg_footer("vikunja", "weekly"), now.format("%Y-%m-%d %H:%M")));
+    out
+}
+
+// === OLD PLANNING (kept for reference but unreachable) ===
 
 fn create_goal(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
