@@ -19,7 +19,7 @@ enum Command {
     Start(String),
     Search(String),
     Help,
-    Daily,
+    Memos,
     Streak,
     Hn,
     Weather(String),
@@ -60,10 +60,10 @@ enum Command {
     Youtube(String),
     Learn(String),
     Workout(String),
-    Health(String),
+    Recipe(String),
     Nutrition(String),
     Meal(String),
-    Breathe(String),
+    Posture(String),
     Calories(String),
     Http(String),
     Wind(String),
@@ -196,7 +196,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "astro".into(), description: "Astro docs".into() },
         teloxide::types::BotCommand { command: "http".into(), description: "HTTP request inspector".into() },
         teloxide::types::BotCommand { command: "grep".into(), description: "grep/ripgrep patterns".into() },
-        teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
+        teloxide::types::BotCommand { command: "memos".into(), description: "daily note with weather".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
         teloxide::types::BotCommand { command: "inbox".into(), description: "untagged memos".into() },
@@ -227,10 +227,10 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "flashback".into(), description: "how your thinking evolved".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
-        teloxide::types::BotCommand { command: "health".into(), description: "health dashboard <w> <h> <age>".into() },
+        teloxide::types::BotCommand { command: "recipe".into(), description: "healthy recipe <diet>".into() },
         teloxide::types::BotCommand { command: "nutrition".into(), description: "full nutrient breakdown".into() },
         teloxide::types::BotCommand { command: "meal".into(), description: "recipe card <cuisine>".into() },
-        teloxide::types::BotCommand { command: "breathe".into(), description: "breathing exercise".into() },
+        teloxide::types::BotCommand { command: "posture".into(), description: "posture correction <issue>".into() },
         teloxide::types::BotCommand { command: "calories".into(), description: "calories burned <activity> <min>".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "PubMed papers".into() },
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
@@ -317,7 +317,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Daily => {
+        Command::Memos => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
@@ -363,10 +363,10 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Workout(q) => { let txt = fetch_workout(&q).await.unwrap_or_else(|e| format!("workout err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Health(args) => { let txt = fetch_health(&args).await.unwrap_or_else(|e| format!("health err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Recipe(args) => { let txt = fetch_recipe(&args).await.unwrap_or_else(|e| format!("recipe err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Nutrition(q) => { let txt = fetch_nutrition(&q, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("nutrition err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Meal(q) => { let txt = fetch_meal(&q).await.unwrap_or_else(|e| format!("meal err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Breathe(args) => { let txt = create_breathe(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Posture(args) => { let txt = fetch_posture(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Calories(args) => { let txt = fetch_calories(&args, &app.api_ninjas_key).await.unwrap_or_else(|e| format!("calories err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
@@ -2971,6 +2971,122 @@ fn create_breathe(args: &str) -> String {
 
     out.push_str("_Unknown technique. Available: `box`, `478`, `3min`, `physiological`, `wimhof`, `coherent`, `alternate`, `resonance`, `21`, `extended`, `ujjayi`, `711`_\n");
     out.push_str(&format!("\n{}\n\n`{}` · #breathe #wellness #memogram-rs", tg_footer("evidence-based", "breathe"), now));
+    out
+}
+
+async fn fetch_recipe(args: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let q = args.trim().to_string();
+    if q.is_empty() { return Ok("usage: `/recipe <cuisine or ingredient>` — e.g. `/recipe chicken`, `/recipe vegan`, `/recipe high protein`".into()); }
+
+    let url = format!("https://www.themealdb.com/api/json/v1/1/search.php?s={}", urlencoding::encode(&q));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+    let meals = v["meals"].as_array().ok_or_else(|| anyhow::anyhow!("no meals"))?;
+    if meals.is_empty() || meals[0].is_null() {
+        return Ok(format!("{}\n\n_No recipes found for `{}`_\n\n> Try: chicken, pasta, curry, salad, salmon, tofu\n\n{}\n\n`{}` · #recipe #wellness #memogram-rs",
+            tg_header("🍽️", "Recipe", &q), q, tg_footer("themealdb.com", "recipe"), now));
+    }
+
+    let meal = &meals[0];
+    let name = meal["strMeal"].as_str().unwrap_or("?");
+    let category = meal["strCategory"].as_str().unwrap_or("?");
+    let area = meal["strArea"].as_str().unwrap_or("?");
+    let instructions = meal["strInstructions"].as_str().unwrap_or("");
+    let tags = meal["strTags"].as_str().unwrap_or("None");
+    let youtube = meal["strYoutube"].as_str().unwrap_or("");
+
+    let mut out = format!("{}\n\n", tg_header("🍽️", name, area));
+    out.push_str(&format!("**Category:** `{}` · **Cuisine:** `{}` · **Tags:** `{}`\n\n", category, area, tags));
+
+    // Ingredients table
+    out.push_str("## 📋 Ingredients\n\n| Ingredient | Measure |\n|---|---|\n");
+    for i in 1..=20 {
+        let ingredient = meal[format!("strIngredient{}", i)].as_str().unwrap_or("").trim();
+        let measure = meal[format!("strMeasure{}", i)].as_str().unwrap_or("").trim();
+        if !ingredient.is_empty() { out.push_str(&format!("| {} | {} |\n", ingredient, measure)); }
+    }
+    out.push('\n');
+
+    // Step-by-step
+    out.push_str("## 🔪 Instructions\n\n");
+    let steps: Vec<&str> = instructions.split("\r\n").filter(|s| !s.trim().is_empty()).collect();
+    for (i, step) in steps.iter().enumerate() {
+        out.push_str(&format!("{}. {}\n\n", i + 1, step.trim()));
+    }
+
+    if !youtube.is_empty() { out.push_str(&format!("🎬 [Video Tutorial]({})\n\n", youtube)); }
+
+    out.push_str(&format!("{}\n\n`{}` · #recipe #wellness #memogram-rs", tg_footer("themealdb.com", "recipe"), now));
+    Ok(out)
+}
+
+fn fetch_posture(args: &str) -> String {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let issue = args.trim().to_lowercase();
+    if issue.is_empty() {
+        let mut out = format!("{}\n\n", tg_header("🧘", "Posture Correction", ""));
+        out.push_str("## 📋 Available Issues\n\n| Issue | Description |\n|---|---|\n");
+        out.push_str("| `back` | Lower back pain, posture-related backache |\n");
+        out.push_str("| `neck` | Neck strain, forward head posture |\n");
+        out.push_str("| `shoulder` | Rounded shoulders, impingement |\n");
+        out.push_str("| `wrist` | Carpal tunnel, desk worker wrists |\n");
+        out.push_str("| `hip` | Hip flexor tightness, sitting posture |\n");
+        out.push_str("| `knee` | Knee alignment, patella tracking |\n");
+        out.push_str("| `desk` | Full desk ergonomics setup |\n");
+        out.push_str("| `runner` | Runner's posture and form |\n\n");
+        out.push_str(&format!("{}\n\n`{}` · #posture #wellness #memogram-rs", tg_footer("physiotherapy research", "posture"), now));
+        return out;
+    }
+
+    let mut out = format!("{}\n\n", tg_header("🧘", "Posture Correction", &issue));
+
+    let issues = vec![
+        ("back", "Lower Back Pain", "Physiotherapy Journal, 2020",
+         vec!["Cat-Cow Stretch: On all fours, alternate arching and rounding spine. 10 reps, 3 sets.", "Child's Pose: Knees wide, arms forward, hold 30s. Repeat 3x.", "Bird-Dog: Extend opposite arm and leg, hold 5s, 10 each side.", "Glute Bridge: Lie flat, push hips up, squeeze glutes. 15 reps, 3 sets.", "McGill Curl-up: One knee bent, hands under lower back, lift head 2 inches. Hold 10s, 3 reps."],
+         "Prolonged sitting weakens glutes and tightens hip flexors, causing anterior pelvic tilt that strains the lumbar spine."),
+        ("neck", "Forward Head Posture", "Journal of Physical Therapy Science, 2016",
+         vec!["Chin Tucks: Pull chin back making a double chin. Hold 5s, 10 reps.", "Neck Retraction: Sit tall, draw head straight back. 15 reps.", "Levator Stretch: Tilt ear to shoulder, gently pull with hand. Hold 30s each side.", "Wall Angels: Back against wall, arms in W position, slide up/down. 10 reps.", "Thoracic Extension: Foam roller behind mid-back, extend over it. 10 reps."],
+         "For every inch of forward head posture, the head gains ~10 lbs of effective weight, straining cervical muscles."),
+        ("shoulder", "Rounded Shoulders", "British Journal of Sports Medicine, 2019",
+         vec!["Doorway Stretch: Arms on door frame, step through. Hold 30s.", "Wall Slides: Back against wall, arms in W, slide to Y position. 10 reps.", "Band Pull-Aparts: Resistance band, arms straight, pull apart. 15 reps.", "Prone Y-T-W Raises: Lie face down, raise arms in Y, T, W shapes. 10 each.", "Foam Roller Extensions: Roller along spine, arms overhead. 10 reps."],
+         "Rounded shoulders reduce lung capacity by up to 30% and compress the brachial plexus nerve."),
+        ("wrist", "Carpal Tunnel Prevention", "Hand Therapy, 2018",
+         vec!["Wrist Circles: 10 clockwise, 10 counter-clockwise.", "Prayer Stretch: Palms together, press down. Hold 20s.", "Reverse Prayer: Back of hands together, press down. Hold 20s.", "Finger Tendon Glides: Straight → hook → fist → straight. 10 reps.", "Nerve Glides: Extend arm, extend wrist, pull fingers back. Hold 5s, 10 reps."],
+         "Repetitive keyboard use increases carpal tunnel pressure by 10x. Wrist position matters more than break frequency."),
+        ("hip", "Hip Flexor Tightness", "Journal of Bodywork and Movement Therapies, 2017",
+         vec!["Half-Kneeling Hip Flexor Stretch: One knee down, push hips forward. Hold 30s each side.", "Pigeon Pose: Figure-4 on floor, lean forward. Hold 60s each side.", "Couch Stretch: Back foot on couch, lunge forward. 30s each side.", "90/90 Switch: Sit on floor, legs at 90°, switch sides. 10 reps.", "Fire Hydrants: All fours, lift knee to side. 15 each side."],
+         "Sitting 8+ hours shortens hip flexors by 40%, tilting the pelvis and causing lower back pain."),
+        ("knee", "Knee Alignment", "Journal of Orthopaedic & Sports Physical Therapy, 2019",
+         vec!["Clamshells: Side-lying, knees bent, open top knee. 15 each side.", "Wall Sit: Back against wall, knees at 90°. Hold 30-60s.", "Step-ups: Use a step, step up alternating legs. 10 each.", "Single Leg Balance: Stand on one foot, hold 30s. 3 sets.", "Terminal Knee Extensions: Band around knee, extend against resistance. 15 reps."],
+         "Knee valgus (inward collapse) during movement is the #1 predictor of ACL injury, especially in females."),
+        ("desk", "Desk Ergonomics", "Applied Ergonomics, 2021",
+         vec!["Monitor: Top of screen at eye level, arm's length away.", "Chair: Feet flat, knees at 90°, lumbar support.", "Keyboard: Elbows at 90°, wrists neutral, keyboard below elbows.", "Mouse: Close to keyboard, elbow close to body.", "Take breaks: 20-20-20 rule — every 20min, look at something 20ft away for 20s.", "Stand: Alternate sitting/standing every 30-60 minutes."],
+         "The ideal desk setup follows the 'neutral posture' principle — joints at mid-range, minimal muscle strain."),
+        ("runner", "Running Form", "Sports Medicine, 2018",
+         vec!["Cadence: Aim for 170-180 steps/min (shorter, quicker steps).", "Lean: Slight forward lean from ankles, not waist.", "Arm Swing: Arms at 90°, swing forward-back (not across body).", "Foot Strike: Land midfoot under hips, not heel ahead of body.", "Head: Eyes forward, chin level, relax jaw and shoulders."],
+         "Increasing cadence by 5-10% reduces impact forces by up to 20%, lowering injury risk significantly."),
+    ];
+
+    for (id, title, source, exercises, explanation) in &issues {
+        if issue.contains(id) || id.contains(&issue) {
+            out.push_str(&format!("## 📖 {}\n\n**Evidence:** _{}_\n\n", title, source));
+            out.push_str(&format!("> {}\n\n", explanation));
+            out.push_str("## 🔧 Exercises\n\n");
+            for (i, exercise) in exercises.iter().enumerate() {
+                out.push_str(&format!("{}. {}\n\n", i + 1, exercise));
+            }
+            out.push_str("## ⚠️ When to See a Professional\n\n");
+            out.push_str("- Pain persists beyond 2 weeks\n");
+            out.push_str("- Numbness or tingling in extremities\n");
+            out.push_str("- Pain wakes you up at night\n");
+            out.push_str("- Sharp pain during movement\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #posture #wellness #memogram-rs", tg_footer("physiotherapy research", "posture"), now));
+            return out;
+        }
+    }
+
+    out.push_str("_Issue not found. Available: back, neck, shoulder, wrist, hip, knee, desk, runner_\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #posture #wellness #memogram-rs", tg_footer("physiotherapy research", "posture"), now));
     out
 }
 
