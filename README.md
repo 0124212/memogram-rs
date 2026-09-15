@@ -10,6 +10,7 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 /inbox              Untagged memos         /tags             List all tags
 /count <tag>        Count by tag           /undo             Delete last
 /pin                Pin/unpin last         /note <text>      Quick note
+/streak             Writing streak         /daily            Daily template
 ```
 
 ### Research
@@ -114,7 +115,7 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 ```
 /morning <text>      Morning check-in       /evening <text>   Evening reflection
 /checkin <text>      Daily check-in         /log <text>       Daily log
-/summary <text>      Day summary
+/summary <text>      Day summary            /streak           Writing streak
 ```
 
 ### Life

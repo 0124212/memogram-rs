@@ -93,6 +93,7 @@ enum Command {
     Paper(String),
     Tutorial(String),
     Hustle(String),
+    Streak,
 }
 
 #[derive(Clone)]
@@ -187,6 +188,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "recent".into(), description: "last 20 memos".into() },
         teloxide::types::BotCommand { command: "count".into(), description: "count memos".into() },
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
+        teloxide::types::BotCommand { command: "streak".into(), description: "writing streak from memo history".into() },
         teloxide::types::BotCommand { command: "inbox".into(), description: "untagged memos".into() },
         teloxide::types::BotCommand { command: "undo".into(), description: "delete last memo".into() },
         teloxide::types::BotCommand { command: "pin".into(), description: "pin/unpin last memo".into() },
@@ -341,6 +343,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
             create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?;
+        }
+        Command::Streak => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_streak(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("streak err: {e}"));
+            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
         Command::Remind(args) => { let txt = set_reminder(&args, &app).await; bot.send_message(msg.chat.id, txt).parse_mode(ParseMode::MarkdownV2).await?; }
         Command::Portfolio(args) => {
@@ -1288,6 +1296,137 @@ async fn fetch_recent(memos_url: &str, token: &str) -> Result<String> {
             &time[..10.min(time.len())], content.len()));
     }
     out.push_str(&format!("> `{} total` · #recent", memos.len()));
+    Ok(out)
+}
+
+async fn fetch_streak(memos_url: &str, token: &str) -> Result<String> {
+    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
+    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
+
+    // Extract unique writing dates (YYYY-MM-DD) from memo createTime
+    let mut dates: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for m in memos {
+        if let Some(time) = m["createTime"].as_str() {
+            if time.len() >= 10 {
+                dates.insert(time[..10].to_string());
+            }
+        }
+    }
+
+    if dates.is_empty() {
+        return Ok(format!("{}\n\n_No memos yet — start writing to build a streak!_\n\n{}\n\n`{}` · #streak",
+            tg_header("🔥", "Streak", ""), tg_footer("memogram-rs", "streak"), Local::now().format("%Y-%m-%d %H:%M")));
+    }
+
+    // Sort dates descending
+    let mut sorted: Vec<String> = dates.into_iter().collect();
+    sorted.sort();
+    sorted.reverse();
+
+    let today = Local::now().format("%Y-%m-%d").to_string();
+    let yesterday = (Local::now() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+
+    // Calculate current streak (consecutive days ending today or yesterday)
+    let mut current_streak: u32 = 0;
+    let mut check_date = if sorted[0] == today {
+        today.clone()
+    } else if sorted[0] == yesterday {
+        yesterday.clone()
+    } else {
+        // Last memo was more than 1 day ago — streak is broken
+        "broken".to_string()
+    };
+
+    if check_date != "broken" {
+        for d in &sorted {
+            if *d == check_date {
+                current_streak += 1;
+                // Move to previous day
+                if let Ok(dt) = chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d") {
+                    check_date = (dt - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+                } else {
+                    break;
+                }
+            } else if *d < check_date {
+                break;
+            }
+        }
+    }
+
+    // Calculate longest streak
+    let mut all_dates: Vec<String> = sorted.iter().cloned().collect();
+    all_dates.sort();
+    let mut longest_streak: u32 = 1;
+    let mut run: u32 = 1;
+    for i in 1..all_dates.len() {
+        if let (Ok(prev), Ok(curr)) = (
+            chrono::NaiveDate::parse_from_str(&all_dates[i - 1], "%Y-%m-%d"),
+            chrono::NaiveDate::parse_from_str(&all_dates[i], "%Y-%m-%d"),
+        ) {
+            if curr - prev == chrono::Duration::days(1) {
+                run += 1;
+                if run > longest_streak { longest_streak = run; }
+            } else {
+                run = 1;
+            }
+        }
+    }
+
+    // Days active / total span
+    let total_memos = memos.len();
+    let unique_days = all_dates.len();
+    let first = all_dates.last().unwrap_or(&today);
+    let last = all_dates.first().unwrap_or(&today);
+    let span_days = if let (Ok(a), Ok(b)) = (
+        chrono::NaiveDate::parse_from_str(first, "%Y-%m-%d"),
+        chrono::NaiveDate::parse_from_str(last, "%Y-%m-%d"),
+    ) {
+        (b - a).num_days() + 1
+    } else {
+        1
+    };
+    let consistency = if span_days > 0 { unique_days as f64 / span_days as f64 * 100.0 } else { 0.0 };
+
+    // Recent 7-day activity
+    let seven_days_ago = (Local::now() - chrono::Duration::days(7)).format("%Y-%m-%d").to_string();
+    let recent_active: u32 = all_dates.iter().filter(|d| **d >= seven_days_ago).count() as u32;
+
+    let fire = if current_streak >= 30 { "🔥🔥🔥" } else if current_streak >= 7 { "🔥🔥" } else if current_streak >= 1 { "🔥" } else { "💀" };
+
+    let mut out = format!("{}\n\n", tg_header("🔥", "Streak", ""));
+    out.push_str(&format!("**Current streak:** {} {} days\n", fire, current_streak));
+    out.push_str(&format!("**Longest streak:** {} days\n\n", longest_streak));
+
+    out.push_str("## 📊 Stats\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| Total memos | {} |\n", total_memos));
+    out.push_str(&format!("| Unique days | {} |\n", unique_days));
+    out.push_str(&format!("| Day span | {} days |\n", span_days));
+    out.push_str(&format!("| Consistency | {:.0}% |\n", consistency));
+    out.push_str(&format!("| Last 7 days | {}/7 days |\n\n", recent_active));
+
+    // Activity heatmap (last 14 days)
+    out.push_str("## 📅 Last 14 Days\n\n");
+    out.push_str("```\n");
+    for i in 0..14 {
+        let d = (Local::now() - chrono::Duration::days(i)).format("%Y-%m-%d").to_string();
+        let label = (Local::now() - chrono::Duration::days(i)).format("%a %m/%d").to_string();
+        let bar = if all_dates.contains(&d) { "██" } else { "░░" };
+        let marker = if d == today { " ← today" } else { "" };
+        out.push_str(&format!("{} {}{}\n", label, bar, marker));
+    }
+    out.push_str("```\n\n");
+
+    if current_streak == 0 {
+        out.push_str("💡 **Streak broken!** Write a memo today to start a new one.\n\n");
+    } else if current_streak < 7 {
+        out.push_str(&format!("💪 **{} more days** to hit a week streak!\n\n", 7 - current_streak));
+    } else if current_streak < 30 {
+        out.push_str(&format!("🚀 **{} more days** to hit 30 days!\n\n", 30 - current_streak));
+    }
+
+    out.push_str(&format!("{}\n\n`{}` · #streak", tg_footer("memogram-rs", "streak"), Local::now().format("%Y-%m-%d %H:%M")));
     Ok(out)
 }
 
