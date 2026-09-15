@@ -1040,6 +1040,8 @@ async fn fetch_stock(ticker: &str) -> Result<String> {
     let currency = meta["currency"].as_str().unwrap_or("USD");
     let high = meta["regularMarketDayHigh"].as_f64().unwrap_or(price);
     let low = meta["regularMarketDayLow"].as_f64().unwrap_or(price);
+    let w52h = meta["fiftyTwoWeekHigh"].as_f64().unwrap_or(high);
+    let w52l = meta["fiftyTwoWeekLow"].as_f64().unwrap_or(low);
     let open = meta["regularMarketOpen"].as_f64().unwrap_or(price);
     let volume = meta["regularMarketVolume"].as_u64().unwrap_or(0);
     let now_str = Local::now().format("%Y-%m-%d %H:%M").to_string();
@@ -1058,7 +1060,7 @@ async fn fetch_stock(ticker: &str) -> Result<String> {
         }
     }
     let vol_str = if volume >= 1_000_000_000 { format!("{:.2}B", volume as f64 / 1e9) } else if volume >= 1_000_000 { format!("{:.2}M", volume as f64 / 1e6) } else { format!("{}", volume) };
-    let body = tg_code_block(&format!("{price:.2} {currency}  {sign}{change:.2} ({sign}{pct:.2}%)\nOpen: {open:.2}  High: {high:.2}  Low: {low:.2}\nVol: {vol_str}\n\n{table}"));
+    let body = tg_code_block(&format!("{price:.2} {currency}  {sign}{change:.2} ({sign}{pct:.2}%)\nOpen: {open:.2}  High: {high:.2}  Low: {low:.2}\n52w: {w52l:.2} – {w52h:.2}\nVol: {vol_str}\n\n{table}"));
     Ok(format!("{}\n\n{}\n\n`{}` · #{}", header, body, now_str, "stock"))
 }
 
@@ -1682,10 +1684,9 @@ async fn fetch_markets() -> Result<String> {
         ("^IXIC", "NASDAQ"),
         ("^DJI", "DOW"),
         ("^RUT", "Russell 2000"),
-        ("BTC-USD", "Bitcoin"),
-        ("ETH-USD", "Ethereum"),
     ];
     let mut out = format!("{}\n\n", tg_header("📈", "Markets", ""));
+    out.push_str("## 🇺🇸 US Indices\n\n");
     let mut table = String::from("Index             Price          Change\n───────────────── ────────────── ──────────\n");
     for (ticker, name) in indices {
         match fetch_stock_price(ticker).await {
@@ -1703,7 +1704,28 @@ async fn fetch_markets() -> Result<String> {
         }
     }
     out.push_str(&tg_code_block(&table));
-    out.push_str(&format!("\n`{}` · #{}", Local::now().format("%Y-%m-%d %H:%M").to_string(), "markets"));
+    // Forex via Frankfurter (ECB reference rates) — distinct from /fx's er-api + Yahoo above.
+    // Crypto lives in /crypto (CoinGecko) — not duplicated here.
+    out.push_str("\n## 💱 Forex vs USD (ECB)\n\n");
+    let fx_url = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,GBP,JPY,CNY,CHF,CAD";
+    let fx: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(6), HTTP.get(fx_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    if let Some(rates) = fx["rates"].as_object() {
+        let date = fx["date"].as_str().unwrap_or("?");
+        out.push_str(&format!("_Reference rates, {}_\n\n", date));
+        out.push_str("| Pair | Rate |\n|---|---|\n");
+        for cur in ["EUR", "GBP", "JPY", "CNY", "CHF", "CAD"] {
+            if let Some(rate) = rates.get(cur).and_then(|r| r.as_f64()) {
+                out.push_str(&format!("| USD/{} | `{:.4}` |\n", cur, rate));
+            }
+        }
+        out.push('\n');
+    } else {
+        out.push_str("_Forex unavailable — try `/fx USD EUR`._\n\n");
+    }
+    out.push_str(&format!("`{}` · #{}", Local::now().format("%Y-%m-%d %H:%M").to_string(), "markets"));
     Ok(out)
 }
 
@@ -4081,15 +4103,24 @@ async fn fetch_progress(key: &str) -> Result<String> {
     out.push_str(&format!("| Jazz (ii–V–I) | `{} - {} - {}` | Jazz standard turnaround |\n", c(1, "m7"), c(4, "7"), c(0, "maj7")));
     out.push_str(&format!("| Andalusian (vi–V–IV–III) | `{} - {} - {} - {}` | Flamenco, metal |\n", c(5, "m"), c(4, ""), c(3, ""), c(2, "")));
     out.push_str(&format!("| Doo-wop (I–vi–IV–V) | `{} - {} - {} - {}` | 50s pop |\n\n", c(0, ""), c(5, "m"), c(3, ""), c(4, "")));
-    // Wikipedia lookup: famous songs in this key
-    let key_label = format!("{}{} music", root, if is_minor { " minor" } else { " major" });
-    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&key_label));
-    if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+    // Real repertoire in this key — Gradus corpus (482 analyzed works, distinct from /wiki)
+    let gradus_key = format!("{}{}", root, if is_minor { " minor" } else { " major" });
+    let gradus_url = format!("https://gradusmusic.com/api/v1/corpus/search?key={}", urlencoding::encode(&gradus_key));
+    if let Ok(Ok(r)) = tokio::time::timeout(std::time::Duration::from_secs(6), HTTP.get(&gradus_url).header("User-Agent", "memogram-rs").send()).await {
         if let Ok(v) = r.json::<serde_json::Value>().await {
-            if let Some(extract) = v["extract"].as_str() {
-                if !extract.is_empty() && extract.len() > 30 {
-                    out.push_str("## 🎧 Key Context\n\n");
-                    out.push_str(&format!("{}\n\n", tg_truncate(extract, 500)));
+            let ks = &v["results"]["keySection"];
+            let total = ks["total"].as_u64().unwrap_or(0);
+            if total > 0 {
+                out.push_str("## 🎧 In Real Repertoire\n\n");
+                out.push_str(&format!("**{} passages** in _{}_ across the corpus\n\n", total, gradus_key));
+                if let Some(matches) = ks["matches"].as_array() {
+                    for m in matches.iter().take(5) {
+                        let title = m["title"].as_str().unwrap_or("?");
+                        let mov = m["movement"].as_u64().unwrap_or(1);
+                        let ms = m["measureStart"].as_u64().unwrap_or(0);
+                        out.push_str(&format!("- **{}** — mvt {} from m. {}\n", title, mov, ms));
+                    }
+                    out.push('\n');
                 }
             }
         }
@@ -4098,7 +4129,7 @@ async fn fetch_progress(key: &str) -> Result<String> {
     out.push_str("- Loop the pop progression with a metronome (`/tempo 90`)\n");
     out.push_str("- Learn each chord shape with `/chord <name>`\n");
     out.push_str("- Transpose: pick a new key and rebuild the same numerals\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory + wikipedia", "progress"), now));
+    out.push_str(&format!("{}\n\n`{}` · #progress #music #memogram-rs", tg_footer("music theory + gradus", "progress"), now));
     Ok(out)
 }
 
@@ -5333,34 +5364,42 @@ async fn fetch_reddit(sub: &str) -> Result<String> {
 async fn fetch_news(topic: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     if topic.trim().is_empty() {
-        return Ok("usage: `/news <topic>` — search news on any topic".into());
+        return Ok("usage: `/news <topic>` — search global press on any topic".into());
     }
-    // Use Hacker News Algolia API as a general news source
-    let url = format!("https://hn.algolia.com/api/v1/search?query={}&tags=story&hitsPerPage=10", urlencoding::encode(topic));
-    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-
-    let hits = v["hits"].as_array().ok_or_else(|| anyhow::anyhow!("no hits"))?;
+    // Google News RSS: global press corpus, distinct from /hn's Hacker News
+    let url = format!("https://news.google.com/rss/search?q={}&hl=en-US&gl=US&ceid=US:en", urlencoding::encode(topic));
+    let xml = HTTP.get(&url).header("User-Agent", "Mozilla/5.0").timeout(std::time::Duration::from_secs(10)).send().await?.text().await.unwrap_or_default();
     let mut out = format!("{}\n\n", tg_header("📰", "News", topic));
-
-    if hits.is_empty() {
+    let mut count = 0;
+    let mut items: Vec<(String, String, String, String)> = Vec::new();
+    let mut remaining = xml.as_str();
+    while let Some(s) = remaining.find("<item>") {
+        remaining = &remaining[s + 6..];
+        let Some(e) = remaining.find("</item>") else { break; };
+        let entry = &remaining[..e];
+        let title = entry.split("<title>").nth(1).and_then(|x| x.split("</title>").next()).map(|s| s.trim().to_string()).unwrap_or_default();
+        let link = entry.split("<link>").nth(1).and_then(|x| x.split("</link>").next()).map(|s| s.trim().to_string()).unwrap_or_default();
+        let pubdate = entry.split("<pubDate>").nth(1).and_then(|x| x.split("</pubDate>").next()).map(|s| s.trim().chars().take(16).collect::<String>()).unwrap_or_default();
+        let source = entry.split("<source").nth(1).and_then(|x| x.split('>').nth(1)).and_then(|x| x.split("</source>").next()).map(|s| s.trim().to_string()).unwrap_or_default();
+        if !title.is_empty() {
+            items.push((title, link, pubdate, source));
+            count += 1;
+            if count >= 10 { break; }
+        }
+        remaining = &remaining[e..];
+    }
+    if items.is_empty() {
         out.push_str("_No results found._\n\n");
     } else {
-        out.push_str(&format!("**{} results** for _{}_\n\n", v["nbHits"].as_u64().unwrap_or(0), topic));
-        out.push_str("| # | Title | Points | Comments | Date |\n|---|---|---|---|---|\n");
-        for (i, hit) in hits.iter().take(10).enumerate() {
-            let title = hit["title"].as_str().unwrap_or("?");
-            let hn_url = format!("https://news.ycombinator.com/item?id={}", hit["objectID"].as_str().unwrap_or(""));
-            let url = hit["url"].as_str().unwrap_or(&hn_url);
-            let points = hit["points"].as_u64().unwrap_or(0);
-            let comments = hit["num_comments"].as_u64().unwrap_or(0);
-            let created = hit["created_at"].as_str().unwrap_or("");
-            let date = if created.len() >= 10 { &created[..10] } else { "?" };
-            let link = format!("[{}]({})", title.chars().take(70).collect::<String>(), url);
-            out.push_str(&format!("| {} | {} | ⬆{} | 💬{} | {} |\n", i + 1, link, points, comments, date));
+        out.push_str(&format!("**{} stories** for _{}_\n\n", count, topic));
+        out.push_str("| # | Headline | Source | Date |\n|---|---|---|---|\n");
+        for (i, (title, link, pubdate, source)) in items.iter().enumerate() {
+            let link = if link.is_empty() { "#".to_string() } else { link.clone() };
+            out.push_str(&format!("| {} | [{}]({}) | {} | {} |\n", i + 1, title.chars().take(70).collect::<String>(), link, source, pubdate));
         }
     }
 
-    out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("hn.algolia.com", "news"), now));
+    out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("news.google.com", "news"), now));
     Ok(out)
 }
 
@@ -5910,20 +5949,31 @@ async fn fetch_concept(topic: &str, app: &App) -> String {
     let memos = v["memos"].as_array().cloned().unwrap_or_default();
     let count = memos.len();
 
-    // Also pull from wiki for context
-    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&topic));
-    let wiki: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+    // Field context from OpenAlex topic taxonomy (distinct from /wiki's Wikipedia + /learn's works search)
+    let oa_topic_url = format!("https://api.openalex.org/topics?search={}&per-page=1", urlencoding::encode(&topic));
+    let oa_topic: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(6), HTTP.get(&oa_topic_url).header("User-Agent", "memogram-rs (telegram bot)").send()).await {
         Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
         _ => serde_json::Value::Null,
     };
-    let summary = wiki["extract"].as_str().unwrap_or("");
+    let field = oa_topic["results"].as_array().and_then(|a| a.first()).cloned().unwrap_or(serde_json::Value::Null);
 
     let mut out = format!("{}\n\n", tg_header("🔗", "Concept Map", &topic));
     out.push_str(&format!("**Topic:** `{}` · **Your memos:** `{}`\n\n", topic, count));
 
-    if !summary.is_empty() {
-        out.push_str("## 📖 What It Is\n\n");
-        out.push_str(&format!("> {}\n\n", summary.chars().take(300).collect::<String>()));
+    if field["display_name"].as_str().map(|s| !s.is_empty()).unwrap_or(false) {
+        out.push_str("## 📖 Field Context\n\n");
+        if let Some(desc) = field["description"].as_str() {
+            if !desc.is_empty() {
+                out.push_str(&format!("> {}\n\n", desc.chars().take(300).collect::<String>()));
+            }
+        }
+        let works = field["works_count"].as_u64().unwrap_or(0);
+        let fname = field["display_name"].as_str().unwrap_or("?");
+        out.push_str(&format!("**Field:** `{}` · **Literature:** `{} works`", fname, works));
+        if let Some(ffield) = field["subfield"]["display_name"].as_str() {
+            out.push_str(&format!(" · **Subfield:** `{}`", ffield));
+        }
+        out.push_str("\n\n");
     }
 
     if memos.is_empty() {
@@ -5988,7 +6038,7 @@ async fn fetch_concept(topic: &str, app: &App) -> String {
     }
     out.push_str("```\n\n");
 
-    out.push_str(&format!("{}\n\n`{}` · #concept #inbox #memogram-rs", tg_footer("memogram-rs", "concept"), now));
+    out.push_str(&format!("{}\n\n`{}` · #concept #inbox #memogram-rs", tg_footer("memogram-rs + openalex", "concept"), now));
     out
 }
 

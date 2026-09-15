@@ -44,7 +44,7 @@ Every command pulls real data from a live API or returns evidence-based structur
 | `/ph` | Product Hunt GraphQL | Today's products: votes, tags |
 | `/scholar <q>` | Google Scholar (200M papers) | Titles, snippets, authors |
 | `/reddit <sub>` | Reddit JSON (100M+ posts) | Top 15: score, comments, flair |
-| `/news <topic>` | HN Algolia (200K+ stories) | Search results with dates |
+| `/news <topic>` | Google News RSS | Global press headlines with source + date |
 
 ## learn (7)
 | Command | Source | Data |
@@ -74,7 +74,7 @@ Every command pulls real data from a live API or returns evidence-based structur
 | `/fx <pair>` | Live exchange rates | Real-time conversions |
 | `/stock <ticker>` | Yahoo Finance | Live price, 5-day history, volume |
 | `/crypto <coin>` | CoinGecko | Price, market cap, ATH/ATL |
-| `/markets` | Yahoo Finance | S&P, NASDAQ, DOW, BTC, ETH |
+| `/markets` | Yahoo Finance + Frankfurter | S&P, NASDAQ, DOW, Russell + ECB forex (crypto lives in /crypto) |
 | `/invest <amt> <yrs>` | S&P 500 historical averages | Year-by-year projection, Rule of 72, inflation-adjusted |
 | `/hustle <skill>` | BLS + Upwork/Toptal data | Occupation growth + freelance rates + platforms |
 | `/salary <title>` | BLS OEWS (800+ occupations) | Median, top 10%, bottom 25%, growth, education |
