@@ -1,6 +1,6 @@
 # memogram-rs
 
-Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker. **60+ polished markdown commands, 11 buckets, ~10MB RSS.** — detailed document memos with tables/graphs, not text-message snippets.
+Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker. **45 polished markdown commands, 11 buckets, ~10MB RSS.**
 
 ## Cheatsheet
 
@@ -11,151 +11,103 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) �
 /count <tag>        Count by tag           /undo             Delete last
 /pin                Pin/unpin last         /save <text>      Save anything
 /streak             Writing streak         /daily            Daily template
+/digest             Today's memo summary
 ```
 
-### Research
-```
-/define <word>       Dictionary             /wiki <q>         Wikipedia
-/cheat <q>           Cheat sheet            /translate <text>  Translate
-/etymology <word>    Word origin            /synonym <word>    Synonyms
-/finance <term>      Finance explainer      /philosophy        Random quote
-```
-
-### Deep dives
-```
-/brief <topic>      Research brief           /compare <a> vs <b> Side-by-side
-/paper <query>      Paper deep-dive          /tutorial <topic> Guided how-to
-```
-
-### News
+### News & Research
 ```
 /hn                  HackerNews top 5       /arxiv <q>        arXiv papers
-/devto               dev.to top             /ph               Product Hunt
-```
-
-### Finance (learn-focused)
-```
-/fx <pair>           Exchange rate          /stock <ticker>   Stock price
-/crypto <coin>       Crypto price           /markets          Market indices
-/finance <term>      Explain term           /compound <p> <r> <y>  Interest calc
-/hustle <skill>      Side hustle ideas
-```
-
-### Science & Bio
-```
-/pubmed <q>          PubMed papers          /drug <name>      Drug info
-/genome <gene>       Gene search            /protein <id>     Protein info
-/trial <q>           Clinical trials        /food <query>     Nutrition facts
-/mood <note>         Log mood               /habit <task>     Track habit
- /mood gratitude ...  Log gratitude           /mood journal ... Journal entry
+/define <word>       Dictionary             /wiki <q>         Wikipedia
+/brief <topic>       Research brief         /compare <a> vs <b> Comparison
+/paper <query>       Paper deep-dive        /tutorial <topic> Guided how-to
+/translate <text>    Translate              /book <text>      Book note card
+/youtube <url>       Summarize video
 ```
 
 ### Dev
 ```
-/gh <q>              GitHub search          /npm <pkg>        NPM info
-/pypi <pkg>          PyPI info              /crates <pkg>     crates.io info
-/containers          Docker health          /stackoverflow <q> SO search
+/gh <q>              GitHub search/repo     /ip <addr>        IP lookup
+/containers          Service health
 ```
 
-### Weather
+### Finance & Money
 ```
-/weather <city>      Current + 3-day forecast
- /sunrise <loc>       Sunrise/sunset
-/airquality <loc>    AQI
-```
-
-### Utilities
-```
-/math <expr>         Evaluate math          /color <hex>      Color preview
- /ip <addr>           IP lookup
-/hash <text>         SHA-256                /base64 <text>    Encode/decode
-/json <text>         Pretty JSON            /uuid             Generate UUID
-/pass <len>          Password               /remind <m> <msg> Reminder
+/fx <pair>           Exchange rate          /stock <ticker>   Stock price
+/crypto <coin>       Crypto price           /markets          Market indices
+/finance <term>      Explain term           /compound <p> <r> <y>  Interest calc
+/hustle <skill>      Side hustle ideas      /income <src> <amt> Track income
+/portfolio           Track holdings         /alerts           Price alerts
 ```
 
-### Money & Hustle
+### Bio & Health
 ```
-/hustle <skill>      Side hustle ideas       /fx <pair>        Exchange rate
-/stock <ticker>      Stock price             /crypto <coin>    Crypto price
-/markets             Market indices          /finance <term>   Explain term
-/compound <p> <r> <y> Interest calc          /portfolio        Track holdings
-/alerts              Price alerts
-```
-
-### Quick Capture
-```
-/meeting <text>      Meeting notes          /project <text>   Project doc
-/recipe <text>       Recipe card            /book <text>      Book note
-/todo <text>         Checklist              /list <text>      Bulleted list
-/clip <text>         Bookmark               /proscons <t>     Pros vs cons
-/flashcard <q> | <a> Flashcard              /remind <m> <msg> Reminder
+/pubmed <q>          PubMed papers          /trial <q>        Clinical trials
+/food <query>        Nutrition facts        /exercise <a> <d> Log exercise
+/energy <1-10>       Log energy             /water <amt>      Log water
+/read <title> <a>    Log reading
 ```
 
-### Stoic
+### Wellness
 ```
-/meditation <n>      Log meditation         /affirmation <n>  Affirmation
-/reflection <n>      Reflection             /wisdom           Stoic quote
+/mood <text>         Log mood               /habit <task>     Track habit
+/mood gratitude ...  Log gratitude          /mood journal ... Journal entry
+/mood reflection ... Log reflection         /stress <n>       Log stress
+/meditation <n>      Log meditation
 ```
 
 ### Planning
 ```
-/goal <goal>         Set goal               /deadline <d> <t> Track deadline
-/plan <text>         Daily plan             /review <text>    Weekly review
+/goal <goal>         Set a goal             /deadline <d> <t> Track deadline
 /priority <l> <t>    Set priority
 ```
 
 ### Inbox
 ```
 /idea <text>         Capture idea           /braindump <t>    Thought dump
-/link <url> <desc>   Save link              /snippet <code>   Code snippet
-/save <text>         Save anything
+/summarize <url>     Summarize URL          /transcribe <t>   Voice-to-text
 ```
 
 ### Daily
 ```
 /morning <text>      Morning check-in       /evening <text>   Evening reflection
 /checkin <text>      Daily check-in         /log <text>       Daily log
-/summary <text>      Day summary            /streak           Writing streak
+/summary <text>      Day summary
 ```
 
-### Life
-```
-/sleep <hrs> <q>     Log sleep              /energy <1-10>    Log energy
-/exercise <a> <d>    Log exercise           /water <amt>      Log water
-/read <title> <a>    Log reading
-```
-
-## 11 Buckets
+## Buckets
 
 | Bucket | Purpose |
 |--------|---------|
-| `inbox` | Default capture |
-| `news` | HN, arXiv, Dev.to, PH |
-| `dev` | GitHub, npm, PyPI, crates |
-| `learn` | Wiki, definitions, research |
-| `bio` | PubMed, drugs, genomes, trials, nutrition |
-| `money` | FX, stocks, crypto, finance, hustle, compound |
-| `life` | Mood, gratitude, habits, journal |
-| `planning` | Goals, deadlines, reviews |
-| `daily` | Check-ins, logs, summaries |
-| `stoic` | Philosophy, meditation |
+| `inbox` | Default capture, ideas, links, snippets |
+| `news` | HN, arXiv |
+| `dev` | GitHub, containers, IP |
+| `learn` | Wiki, definitions, research, books, YouTube |
+| `bio` | PubMed, trials, nutrition, exercise |
+| `money` | FX, stocks, crypto, finance, hustle, income |
+| `wellness` | Mood, gratitude, journal, reflection, habits, stress |
+| `planning` | Goals, deadlines, priorities |
+| `daily` | Check-ins, logs, summaries, digest, streak |
 | `weather` | Forecasts, air quality |
 
-## Quick start
+## Setup
 
+1. Create a [Memos](https://usememos.com) PAT with `meal:memo` scope
+2. Create 10 more PATs for the 10 non-inbox buckets (optional — per-bot routing)
+3. Get a Telegram bot token from @BotFather
+4. Run:
 ```bash
-cp .env.example .env
-cargo run --release
+docker run -e BOT_TOKEN=... -e MEMOS_URL=... -e BARK_URL=... -e NTFY_URL=... ghcr.io/0124212/memogram-rs:latest
 ```
 
 ## Env
 
-`MEMOS_URL` `BOT_TOKEN` `BOT_TOKENS_JSON` `ALLOWED_USERNAMES` `DATA`
-
-## Tech
-
-teloxide · reqwest (rustls) · tokio · quick-xml
-
-## License
-
-MIT
+```
+BOT_TOKEN            Telegram bot token (required)
+MEMOS_URL            Memos instance URL (required)
+ADMIN_USERNAME       Your Memos username (default: admin)
+ALLOWED_USERNAMES    Comma-separated allowed Telegram users
+DATA                 Path to token store (default: ./data.txt)
+BOT_TOKENS_JSON      JSON map of bucket → Memos PAT
+BARK_URL             Bark push notification URL (optional)
+NTFY_URL             ntfy push notification URL (optional)
+```
