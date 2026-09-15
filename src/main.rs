@@ -30,7 +30,7 @@ enum Command {
     Css(String),
     Html(String),
     Astro(String),
-    Grep(String),
+    Cheat(String),
     Stock(String),
     Crypto(String),
     Translate(String),
@@ -195,7 +195,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "html".into(), description: "HTML element reference".into() },
         teloxide::types::BotCommand { command: "astro".into(), description: "Astro docs".into() },
         teloxide::types::BotCommand { command: "http".into(), description: "HTTP request inspector".into() },
-        teloxide::types::BotCommand { command: "grep".into(), description: "grep/ripgrep patterns".into() },
+        teloxide::types::BotCommand { command: "cheat".into(), description: "cheat sheets (cheat.sh)".into() },
         teloxide::types::BotCommand { command: "memos".into(), description: "daily note with weather".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
@@ -313,7 +313,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Css(prop) => { let txt = fetch_css(&prop).await.unwrap_or_else(|e| format!("css err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Html(elem) => { let txt = fetch_html(&elem).await.unwrap_or_else(|e| format!("html err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Astro(topic) => { let txt = fetch_astro(&topic).await.unwrap_or_else(|e| format!("astro err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Grep(pattern) => { let txt = fetch_grep(&pattern).await.unwrap_or_else(|e| format!("grep err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Cheat(pattern) => { let txt = fetch_cheat(&pattern).await.unwrap_or_else(|e| format!("cheat err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Arxiv(topic) => { let txt = fetch_arxiv(&topic).await.unwrap_or_else(|e| format!("arxiv err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
@@ -3680,7 +3680,7 @@ async fn fetch_man(cmd: &str) -> Result<String> {
     let cmd = cmd.trim().to_string();
     if cmd.is_empty() { return Ok("usage: `/man <command>` — e.g. `/man grep`, `/man ssh`, `/man docker`".into()); }
     let mut out = format!("{}\n\n", tg_header("📖", "Linux Command", &cmd));
-    // Primary: man7.org man1 page (distinct backend from /grep's cheat.sh)
+    // Primary: man7.org man1 page (distinct backend from /cheat's cheat.sh)
     let man_url = format!("https://man7.org/linux/man-pages/man1/{}.1.html", urlencoding::encode(&cmd));
     let man_html = match tokio::time::timeout(std::time::Duration::from_secs(6), HTTP.get(&man_url).header("User-Agent", "memogram-rs").send()).await {
         Ok(Ok(r)) if r.status().is_success() => r.text().await.unwrap_or_default(),
@@ -3811,10 +3811,10 @@ async fn fetch_astro(topic: &str) -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_grep(pattern: &str) -> Result<String> {
+async fn fetch_cheat(pattern: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let pattern = pattern.trim().to_string();
-    if pattern.is_empty() { return Ok("usage: `/grep <pattern>` — ripgrep/awk/sed cheat sheet\n\nExamples:\n- `/grep find files`\n- `/grep docker compose`\n- `/grep git rebase`\n- `/grep awk fields`".into()); }
+    if pattern.is_empty() { return Ok("usage: `/cheat <query>` — cheat sheets for anything\n\nExamples:\n- `/cheat find files`\n- `/cheat docker compose`\n- `/cheat git rebase`\n- `/cheat awk fields`".into()); }
     let url = format!("https://cheat.sh/{}", urlencoding::encode(&pattern));
     let body = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
     let mut out = format!("{}\n\n", tg_header("🔍", "Search Patterns", &pattern));
@@ -3833,7 +3833,7 @@ async fn fetch_grep(pattern: &str) -> Result<String> {
     } else {
         out.push_str("_No patterns found._\n\n**Common:** `grep recursive`, `grep ignore case`, `ripgrep exclude`, `awk fields`, `sed replace`, `find files`\n\n");
     }
-    out.push_str(&format!("{}\n\n`{}` · #grep #dev #memogram-rs", tg_footer("cheat.sh", "grep"), now));
+    out.push_str(&format!("{}\n\n`{}` · #cheat #dev #memogram-rs", tg_footer("cheat.sh", "cheat"), now));
     Ok(out)
 }
 

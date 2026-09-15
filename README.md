@@ -33,7 +33,7 @@ Every command pulls real data from a live API or returns evidence-based structur
 | `/css <prop>` | MDN Web Docs | CSS property docs |
 | `/html <elem>` | MDN Web Docs | HTML element docs |
 | `/astro <topic>` | Astro docs | Framework reference |
-| `/grep <pat>` | cheat.sh | ripgrep/awk/sed patterns |
+| `/cheat <query>` | cheat.sh | Cheat sheets for anything + rg/awk/sed quick table |
 
 ## news (7)
 | Command | Source | Data |
@@ -127,7 +127,7 @@ Every command pulls real data from a live API or returns evidence-based structur
 | Bucket | Commands | Purpose |
 |--------|----------|---------|
 | `bio` | 7 | PubMed, trials, molecules, pathways, amino acids, genomes, proteins |
-| `dev` | 7 | GitHub, HTTP inspector, man pages, CSS/HTML/Astro docs, grep patterns |
+| `dev` | 7 | GitHub, HTTP inspector, man pages, CSS/HTML/Astro docs, cheat sheets |
 | `news` | 7 | HN, arXiv, Lobsters, Product Hunt, Scholar, Reddit, general news |
 | `learn` | 7 | Definitions, Wikipedia, translations, books, papers, YouTube, Q&A + OpenAlex + Archive.org overviews |
 | `wellness` | 7 | Food, workout, recipe, therapy (CBT+stoic), posture, calories, stretching |
