@@ -46,7 +46,9 @@ enum Command {
     Save(String),
     Pubmed(String),
     Ip(String),
-    Finance(String),
+    Invest(String),
+    Freelance(String),
+    Flashback(String),
     Compound(String),
     Trial(String),
     Food(String),
@@ -223,6 +225,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
         teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
+        teloxide::types::BotCommand { command: "freelance".into(), description: "freelance market rates".into() },
+        teloxide::types::BotCommand { command: "invest".into(), description: "investment calculator".into() },
+        teloxide::types::BotCommand { command: "flashback".into(), description: "how your thinking evolved".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "workout".into(), description: "workout plan <muscle>".into() },
         teloxide::types::BotCommand { command: "health".into(), description: "health dashboard <w> <h> <age>".into() },
@@ -354,7 +359,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Book(args) => { let txt = fetch_book(&args).await.unwrap_or_else(|e| format!("book err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Pubmed(q) => { let txt = fetch_pubmed(&q).await.unwrap_or_else(|e| format!("pubmed err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Ip(ip) => { let txt = fetch_ip(&ip).await.unwrap_or_else(|e| format!("ip err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Finance(term) => { let txt = fetch_finance(&term).await.unwrap_or_else(|e| format!("finance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Invest(args) => { let txt = fetch_invest(&args).await.unwrap_or_else(|e| format!("invest err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
@@ -371,6 +376,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         
         Command::Paper(q) => { let txt = fetch_paper(&q).await.unwrap_or_else(|e| format!("paper err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Hustle(q) => { let txt = fetch_hustle(&q).await.unwrap_or_else(|e| format!("hustle err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
+        Command::Freelance(q) => { let txt = fetch_freelance(&q).await.unwrap_or_else(|e| format!("freelance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Digest => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -421,8 +427,14 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Snippet(args) => { let txt = create_code_snippet(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Note(args) => { let txt = create_note_smart(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Focus(args) => { let txt = set_focus(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Flashcard(args) => { let txt = create_flashcard(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Flashcard(args) => { let txt = create_flashcard(&args).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Concept(topic) => { let txt = fetch_concept(&topic, &app).await; create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Flashback(topic) => {
+            let token = { app.store.read().await.get(&tid).cloned() };
+            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
+            let txt = fetch_flashback(&topic, &app.memos_url, &tok).await.unwrap_or_else(|e| format!("flashback err: {e}"));
+            create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?;
+        }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -3328,51 +3340,70 @@ async fn fetch_philosophy_quote() -> Result<String> {
     Ok(out)
 }
 
-// === MONEY: Finance explainer (learn-focused) ===
-async fn fetch_finance(term: &str) -> Result<String> {
-    let q = term.trim();
-    if q.is_empty() { return Ok(format!("{} \n\n_Usage:_ `/finance <term>` — e.g. `inflation`, `dividend`, `etf`\n\n{}", tg_header("💰", "Finance", "learn"), tg_footer("finance", "money"))); }
-    // Try Wikipedia summary first (stable, no key)
-    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(q));
-    let wiki: serde_json::Value = HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send().await?.json().await.unwrap_or(serde_json::Value::Null);
-    let title = wiki["title"].as_str().unwrap_or(q);
-    let extract = wiki["extract"].as_str().unwrap_or("");
-    let default_url = format!("https://en.wikipedia.org/wiki/{}", urlencoding::encode(q));
-    let url = wiki["content_urls"]["desktop"]["page"].as_str().unwrap_or(&default_url);
-    let thumb = wiki["thumbnail"]["source"].as_str().unwrap_or("");
+// === MONEY: Investment Calculator (S&P 500 compound growth projections) ===
+async fn fetch_invest(args: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    // Build detailed document
-    let mut out = String::new();
-    out.push_str(&format!("# 💰 Finance: {}\n\n", title));
-    out.push_str(&format!("**Term:** `{}` · **Date:** `{}` \n", q, now));
-    if !thumb.is_empty() { out.push_str(&format!("[📷 Cover]({})\n\n", thumb)); }
-    out.push_str("## 📖 Overview\n");
-    if !extract.is_empty() {
-        out.push_str(&format!("{}\n\n", tg_truncate(extract, 600)));
-    } else {
-        out.push_str(&format!("_No summary found for `{}`. Try broader term._\n\n", q));
+    let parts: Vec<&str> = args.trim().split_whitespace().collect();
+    if parts.is_empty() {
+        return Ok(format!("{}\n\n_Usage:_ `/invest <amount> <years>` — e.g. `/invest 10000 20`\n\n{}", tg_header("📈", "Investment Calculator", "S&P 500 projections"), tg_footer("historical data", "invest")));
     }
-    // Key facts table
-    out.push_str("## 📊 Key Facts\n\n");
-    out.push_str("| Aspect | Details |\n|---|---|\n");
-    let typ = wiki["type"].as_str().unwrap_or("standard");
-    let desc = wiki["description"].as_str().unwrap_or("finance term");
-    out.push_str(&format!("| Type | {} |\n", desc));
-    out.push_str(&format!("| Source | [Wikipedia]({}) |\n", url));
-    out.push_str(&format!("| Query | `{}` |\n", q));
-    out.push_str(&format!("| Kind | {} |\n", typ));
-    // Example / how to think
-    out.push_str("\n## 💡 How to think about it\n\n");
-    out.push_str(&format!("> _Tip:_ Search `{} + investopedia` for plain-English examples. Try `/compound 1000 7% 10` to see compounding in action._\n\n", q));
-    // Fun / learn more
-    out.push_str("## 🎓 Fun & Learn More\n\n");
-    out.push_str(&format!("- [Read full article]({})\n", url));
-    out.push_str(&format!("- Related: `finance {}` → `compound` calculator\n", q));
-    out.push_str(&format!("- Tags: `#finance #money #learn`\n"));
-    out.push_str("\n---\n");
-    out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("💰", "Finance", q), now, "finance"));
-    // Also include memo footer for Telegram/md
-    out.push_str(&format!("\n\n{}", tg_footer("wikipedia.org", "finance")));
+    let amount: f64 = parts[0].parse().map_err(|_| anyhow::anyhow!("invalid amount '{}'", parts[0]))?;
+    let years: usize = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(10).min(50);
+    if amount <= 0.0 { return Ok("Amount must be positive.".into()); }
+
+    // S&P 500 historical averages (known data, no API needed)
+    const NOMINAL_RETURN: f64 = 0.1026;   // 10.26% nominal annual
+    const REAL_RETURN: f64 = 0.07;         // 7.0% inflation-adjusted
+    const INFLATION_RATE: f64 = 0.03;      // ~3% average inflation
+
+    let final_nominal = amount * (1.0 + NOMINAL_RETURN).powi(years as i32);
+    let final_real = amount * (1.0 + REAL_RETURN).powi(years as i32);
+    let total_gains_nominal = final_nominal - amount;
+    let total_gains_real = final_real - amount;
+
+    let mut out = format!("{}\n\n", tg_header("📈", "Investment Projection", &format!("${:.0} for {} years", amount, years)));
+    out.push_str(&format!("**Initial Investment:** `${:.2}` · **Duration:** `{} years` · **Date:** `{}`\n\n", amount, years, now));
+
+    // Summary table
+    out.push_str("## 📊 Projection Summary\n\n");
+    out.push_str("| Metric | Nominal (10.26%) | Inflation-Adj (7.0%) |\n|---|---|---|\n");
+    out.push_str(&format!("| Starting | `${:.2}` | `${:.2}` |\n", amount, amount));
+    out.push_str(&format!("| Ending Value | **`${:.2}`** | **`${:.2}`** |\n", final_nominal, final_real));
+    out.push_str(&format!("| Total Gains | `${:.2}` | `${:.2}` |\n", total_gains_nominal, total_gains_real));
+    out.push_str(&format!("| Multiple | `{:.2}x` | `{:.2}x` |\n\n", final_nominal / amount, final_real / amount));
+
+    // Year-by-year table
+    out.push_str("## 📅 Year-by-Year Growth\n\n");
+    out.push_str("| Year | Nominal Balance | Real Balance | Nominal Gain |\n|---:|---:|---:|---:|\n");
+    for y in 0..=years.min(30) {
+        let bal_nominal = amount * (1.0 + NOMINAL_RETURN).powi(y as i32);
+        let bal_real = amount * (1.0 + REAL_RETURN).powi(y as i32);
+        let gain = bal_nominal - amount;
+        let marker = if y == 0 { " (start)" } else if y == years { " ← end" } else { "" };
+        out.push_str(&format!("| {} | ${:.0} | ${:.0} | +${:.0}{} |\n", y, bal_nominal, bal_real, gain, marker));
+        if y == 30 && years > 30 { out.push_str(&format!("| ... | ... | ... | ... |\n")); break; }
+    }
+    out.push('\n');
+
+    // Rule of 72
+    let doubling_time = (72.0 / (NOMINAL_RETURN * 100.0)) as usize;
+    out.push_str("## 💡 Key Insights\n\n");
+    out.push_str(&format!("- 💰 **Rule of 72:** Money doubles every ~{} years at 10.26% return\n", doubling_time));
+    out.push_str(&format!("- 📊 **Inflation impact:** {}% annual inflation erodes purchasing power by ~{:.0}% over {} years\n", (INFLATION_RATE * 100.0) as u32, (1.0 - (1.0 - INFLATION_RATE).powi(years as i32)) * 100.0, years));
+    out.push_str("- 📈 **Time in market > timing the market** — dollar-cost averaging smooths volatility\n");
+    out.push_str(&format!("- 🎯 **Goal:** Aim for {}x your initial investment over {} years\n\n", format!("{:.1}", final_nominal / amount), years));
+
+    // Historical context
+    out.push_str("## 📚 Historical Context\n\n");
+    out.push_str("| Period | Avg Annual Return |\n|---|---|\n");
+    out.push_str("| S&P 500 (1957-2024) | 10.26% nominal |\n");
+    out.push_str("| S&P 500 (inflation-adj) | ~7.0% real |\n");
+    out.push_str("| US Inflation (avg) | ~3.0% |\n");
+    out.push_str("| 10-Year Treasury | ~4.5% |\n");
+    out.push_str("| High-Yield Savings | ~4.5% (2024) |\n\n");
+
+    out.push_str("⚠️ **Disclaimer:** Past performance does not guarantee future results. This projection uses historical S&P 500 averages. Actual returns vary significantly year to year. Consider consulting a financial advisor for personalized advice.\n\n");
+    out.push_str(&format!("{}\n\n`{}` · #invest #money #memogram-rs", tg_footer("historical S&P 500 data", "invest"), now));
     Ok(out)
 }
 
@@ -3430,6 +3461,184 @@ fn create_compound(args: &str) -> String {
     out.push_str(&format!("{}\n\n`{}` · #{}", tg_header("🧮", "Compound", args), now, "compound"));
     out.push_str("\n\n> #compound #money #learn");
     out
+}
+
+// === INBOX: Flashback — How Your Thinking Evolved ===
+async fn fetch_flashback(topic: &str, memos_url: &str, token: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let q = topic.trim();
+    if q.is_empty() {
+        return Ok(format!("{}\n\n_Usage:_ `/flashback <topic>` — see how your thinking on a topic evolved over time\n\n{}", tg_header("🕰️", "Flashback", "thinking evolution"), tg_footer("memos", "flashback")));
+    }
+
+    let search_url = format!("{}/api/v1/memos?filter=content.contains(\"{}\")&pageSize=50", memos_url, q.replace('\"', ""));
+    let v: serde_json::Value = HTTP.get(&search_url)
+        .header("Authorization", format!("Bearer {token}"))
+        .send().await?.json().await?;
+
+    let memos = v["memos"].as_array().cloned().unwrap_or_default();
+
+    if memos.is_empty() {
+        let mut out = format!("{}\n\n", tg_header("🕰️", "Flashback", q));
+        out.push_str(&format!("**Topic:** `{}` · **Memos found:** `0`\n\n", q));
+        out.push_str("## 📝 No memos found\n\n");
+        out.push_str("_No memos contain this topic yet._\n\n");
+        out.push_str("**Get started:**\n");
+        out.push_str(&format!("- `/learn {}` — pull Wikipedia + arXiv + YouTube\n", q));
+        out.push_str(&format!("- `/note {} [your thoughts]`\n", q));
+        out.push_str(&format!("- `/search {}` — search your existing notes\n\n", q));
+        out.push_str(&format!("{}\n\n`{}` · #flashback #inbox #memogram-rs", tg_footer("memos", "flashback"), now));
+        return Ok(out);
+    }
+
+    // Sort memos by date (oldest first)
+    let mut sorted_memos: Vec<&serde_json::Value> = memos.iter().collect();
+    sorted_memos.sort_by(|a, b| {
+        let da = a["createTime"].as_str().unwrap_or("");
+        let db = b["createTime"].as_str().unwrap_or("");
+        da.cmp(db)
+    });
+
+    let oldest = sorted_memos.first().unwrap();
+    let newest = sorted_memos.last().unwrap();
+
+    let oldest_date = oldest["createTime"].as_str().unwrap_or("?").chars().take(10).collect::<String>();
+    let newest_date = newest["createTime"].as_str().unwrap_or("?").chars().take(10).collect::<String>();
+    let oldest_content = oldest["content"].as_str().unwrap_or("");
+    let newest_content = newest["content"].as_str().unwrap_or("");
+
+    // Collect all tags used
+    let mut all_tags: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut total_words = 0usize;
+    for m in &sorted_memos {
+        if let Some(tags) = m["tags"].as_array() {
+            for t in tags { if let Some(s) = t.as_str() { all_tags.insert(s.to_string()); } }
+        }
+        total_words += m["content"].as_str().unwrap_or("").split_whitespace().count();
+    }
+
+    let mut out = format!("{}\n\n", tg_header("🕰️", "Flashback", q));
+    out.push_str(&format!("**Topic:** `{}` · **Memos found:** `{}` · **Total words:** `{}`\n\n", q, sorted_memos.len(), total_words));
+
+    // Timeline
+    out.push_str("## 📅 Timeline\n\n");
+    out.push_str("| # | Date | Preview | Words |\n|---|---|---|\n");
+    for (i, m) in sorted_memos.iter().enumerate() {
+        let date = m["createTime"].as_str().unwrap_or("?").chars().take(10).collect::<String>();
+        let content = m["content"].as_str().unwrap_or("");
+        let preview = content.chars().take(50).collect::<String>().replace('\n', " ");
+        let wc = content.split_whitespace().count();
+        out.push_str(&format!("| {} | {} | {}... | {} |\n", i + 1, date, preview, wc));
+    }
+    out.push('\n');
+
+    // Oldest vs Newest comparison
+    out.push_str("## 🔄 Evolution\n\n");
+    out.push_str("### 🕰️ Oldest Memo\n\n");
+    out.push_str(&format!("**Date:** `{}`\n\n", oldest_date));
+    out.push_str(&format!("> {}\n\n", oldest_content.chars().take(300).collect::<String>()));
+
+    out.push_str("### 🆕 Newest Memo\n\n");
+    out.push_str(&format!("**Date:** `{}`\n\n", newest_date));
+    out.push_str(&format!("> {}\n\n", newest_content.chars().take(300).collect::<String>()));
+
+    // Word count growth
+    let first_wc = oldest_content.split_whitespace().count();
+    let last_wc = newest_content.split_whitespace().count();
+    let growth_pct = if first_wc > 0 { ((last_wc as f64 - first_wc as f64) / first_wc as f64 * 100.0) as i64 } else { 0 };
+    out.push_str("## 📊 Growth\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| First memo words | `{}` |\n", first_wc));
+    out.push_str(&format!("| Latest memo words | `{}` |\n", last_wc));
+    out.push_str(&format!("| Word count change | `{:+}%` |\n", growth_pct));
+    out.push_str(&format!("| Total memos on topic | `{}` |\n", sorted_memos.len()));
+    out.push_str(&format!("| Total words on topic | `{}` |\n\n", total_words));
+
+    if !all_tags.is_empty() {
+        out.push_str("## 🏷️ Tags Used\n\n");
+        out.push_str(&all_tags.iter().map(|t| format!("`#{}`", t)).collect::<Vec<_>>().join(" · "));
+        out.push_str("\n\n");
+    }
+
+    out.push_str(&format!("{}\n\n`{}` · #flashback #inbox #memogram-rs", tg_footer("memos", "flashback"), now));
+    Ok(out)
+}
+
+// === MONEY: Freelance Market Rates ===
+async fn fetch_freelance(skill: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let q = skill.trim().to_lowercase();
+    if q.is_empty() {
+        return Ok(format!("{}\n\n_Usage:_ `/freelance <skill>` — e.g. `/freelance web development`\n\n{}", tg_header("💼", "Freelance Rates", "market data"), tg_footer("curated data", "freelance")));
+    }
+
+    // Curated freelance rate data from Upwork/Toptal/Fiverr public sources
+    let skills: Vec<(&str, &str, &str, &str, &str, &str)> = vec![
+        ("web development", "$50-150", "$75-200", "$150-400", "🔥 High", "Upwork, Toptal, Fiverr"),
+        ("frontend", "$40-120", "$70-180", "$120-350", "🔥 High", "Upwork, Toptal, Freelancer"),
+        ("backend", "$50-150", "$80-200", "$150-400", "🔥 High", "Upwork, Toptal, Arc"),
+        ("react", "$50-120", "$80-200", "$150-350", "🔥 High", "Upwork, Toptal, Gun.io"),
+        ("python", "$40-100", "$70-180", "$120-300", "🔥 High", "Upwork, Toptal, Gun.io"),
+        ("rust", "$60-150", "$100-250", "$200-500", "🔥 Very High", "Toptal, Gun.io, Arc"),
+        ("machine learning", "$80-200", "$120-300", "$250-600", "🔥 Very High", "Upwork, Toptal, A.Team"),
+        ("devops", "$60-150", "$90-220", "$180-450", "🔥 High", "Upwork, Toptal, Arc"),
+        ("mobile development", "$50-130", "$80-200", "$150-350", "🔥 High", "Upwork, Toptal, Gun.io"),
+        ("ios", "$50-130", "$80-200", "$150-350", "🔥 High", "Upwork, Toptal, Arc"),
+        ("android", "$45-120", "$70-180", "$130-300", "🔥 High", "Upwork, Toptal, Freelancer"),
+        ("ui/ux design", "$40-100", "$60-150", "$100-250", "🔥 High", "Upwork, Dribbble, Fiverr"),
+        ("graphic design", "$25-75", "$40-100", "$75-200", "🟡 Medium", "Fiverr, 99designs, Upwork"),
+        ("content writing", "$20-60", "$35-80", "$60-150", "🟡 Medium", "Upwork, Contently, Fiverr"),
+        ("copywriting", "$30-80", "$50-120", "$80-200", "🟡 Medium", "Upwork, Fiverr, Contently"),
+        ("seo", "$30-80", "$50-120", "$80-250", "🟡 Medium", "Upwork, Fiverr, Agency"),
+        ("video editing", "$25-75", "$40-100", "$75-200", "🟡 Medium", "Upwork, Fiverr, ProductionHub"),
+        ("animation", "$35-100", "$60-150", "$100-300", "🟡 Medium", "Upwork, Fiverr, ArtStation"),
+        ("data analysis", "$40-100", "$70-180", "$120-300", "🔥 High", "Upwork, Toptal, A.Team"),
+        ("copywriting marketing", "$30-80", "$50-120", "$80-200", "🟡 Medium", "Upwork, Fiverr, Contently"),
+    ];
+
+    let matched: Vec<_> = skills.iter().filter(|(name, _, _, _, _, _)| {
+        name.contains(&q) || q.contains(name) || q.split_whitespace().any(|w| name.contains(w))
+    }).collect();
+
+    let mut out = format!("{}\n\n", tg_header("💼", "Freelance Market Rates", skill));
+
+    if matched.is_empty() {
+        // Show all available skills
+        out.push_str("_No exact match found. Showing top freelance skills:_\n\n");
+        out.push_str("| Skill | Entry | Mid | Senior | Demand |\n|---|---|---|---|---|\n");
+        for (name, entry, mid, senior, demand, _) in skills.iter().take(10) {
+            out.push_str(&format!("| **{}** | {} | {} | {} | {} |\n", name, entry, mid, senior, demand));
+        }
+        out.push_str(&format!("\n💡 **Tip:** Try `/freelance python` or `/freelance web development`\n\n"));
+    } else {
+        for (name, entry, mid, senior, demand, platforms) in matched.iter().take(3) {
+            out.push_str(&format!("## 💰 {}\n\n", name.to_uppercase()));
+            out.push_str("| Rate Level | Hourly Rate |\n|---|---|\n");
+            out.push_str(&format!("| 🟢 Entry-level | `{}` |\n", entry));
+            out.push_str(&format!("| 🟡 Mid-level | `{}` |\n", mid));
+            out.push_str(&format!("| 🔴 Senior/Expert | `{}` |\n", senior));
+            out.push_str(&format!("| 📊 Demand | {} |\n", demand));
+            out.push_str(&format!("| 🌐 Platforms | {} |\n\n", platforms));
+        }
+    }
+
+    // General freelance tips
+    out.push_str("## 🎯 Getting Started\n\n");
+    out.push_str("| Step | Action |\n|---|---|\n");
+    out.push_str("| 1 | Build portfolio on GitHub/Behance/Dribbble |\n");
+    out.push_str("| 2 | Start on Upwork/Fiverr for first reviews |\n");
+    out.push_str("| 3 | Graduate to Toptal/Gun.io for premium rates |\n");
+    out.push_str("| 4 | Set up invoicing (Stripe, PayPal, Wise) |\n");
+    out.push_str("| 5 | Always get 50% upfront for fixed projects |\n\n");
+
+    out.push_str("## 📈 Rate Growth Tips\n\n");
+    out.push_str("- 💰 **Raise rates every 6 months** — existing clients grandfathered\n");
+    out.push_str("- 🎯 **Specialize** — specialists earn 2-3x generalists\n");
+    out.push_str("- 📦 **Productize** — fixed-price packages beat hourly billing\n");
+    out.push_str("- 🔗 **Build retainer** — recurring revenue > one-off gigs\n\n");
+
+    out.push_str(&format!("{}\n\n`{}` · #freelance #money #memogram-rs", tg_footer("Upwork/Toptal/Fiverr data", "freelance"), now));
+    Ok(out)
 }
 
 // === BIO: Trial + Food (beautiful docs) ===
@@ -5740,7 +5949,7 @@ async fn set_focus(args: &str, app: &App) -> String {
     out
 }
 
-fn create_flashcard(args: &str) -> String {
+async fn create_flashcard(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let date = Local::now().format("%Y-%m-%d").to_string();
     let parts: Vec<&str> = args.splitn(2, '|').collect();
@@ -5750,7 +5959,7 @@ fn create_flashcard(args: &str) -> String {
     if question.is_empty() {
         let mut out = format!("{}\n\n", tg_header("🃏", "Flashcard", ""));
         out.push_str("## 📋 Usage\n\n");
-        out.push_str("```\n/flashcard What is CRISPR? | A gene-editing tool using guide RNA and Cas9\n```\n\n");
+        out.push_str("```\n/flashcard What is CRISPR? | A gene-editing tool using guide RNA and Cas9\n/flashcard serendipity  (auto-fetches definition)\n```\n\n");
         out.push_str("## 🧠 Spaced Repetition Tips\n\n");
         out.push_str("| Interval | When to Review |\n|---|---|\n");
         out.push_str("| 1 | Same day |\n");
@@ -5764,13 +5973,34 @@ fn create_flashcard(args: &str) -> String {
         return out;
     }
 
+    // Auto-fetch definition from Wikipedia if answer is empty
+    let final_answer = if answer.is_empty() {
+        let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(question));
+        match HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(5)).send().await {
+            Ok(r) => match r.json::<serde_json::Value>().await {
+                Ok(v) => {
+                    let extract = v["extract"].as_str().unwrap_or("");
+                    if !extract.is_empty() {
+                        format!("{}\n\n📖 *From Wikipedia*", extract.chars().take(300).collect::<String>())
+                    } else {
+                        "_Add your answer with `/flashcard Q | A`_".to_string()
+                    }
+                }
+                Err(_) => "_Add your answer with `/flashcard Q | A`_".to_string()
+            }
+            Err(_) => "_Add your answer with `/flashcard Q | A`_".to_string()
+        }
+    } else {
+        answer.to_string()
+    };
+
     let mut out = format!("{}\n\n", tg_header("🃏", "Flashcard", question));
     out.push_str(&format!("**Date:** `{}`\n\n", date));
 
     out.push_str("## ❓ Question\n\n");
     out.push_str(&format!("> **{}**\n\n", question));
     out.push_str("## ✅ Answer\n\n");
-    out.push_str(&format!("> {}\n\n", if answer.is_empty() { "_Add your answer with `/flashcard Q | A`_" } else { answer }));
+    out.push_str(&format!("> {}\n\n", final_answer));
     out.push_str("## 📊 Study Schedule\n\n");
     out.push_str("| Review | Date | Status |\n|---|---|---|\n");
     out.push_str(&format!("| 1st | `{}` | ✅ Created |\n", date));
@@ -5889,6 +6119,9 @@ async fn fetch_habit(args: &str, app: &App) -> String {
     let action = parts.first().unwrap_or(&"");
     let habit = parts.get(1).unwrap_or(&"");
 
+    // Exercise keywords for ExerciseDB lookup
+    let exercise_keywords = ["gym", "run", "running", "pushup", "push-up", "squat", "deadlift", "bench", "pullup", "pull-up", "plank", "burpee", "lunge", "curl", "press", "row", "cardio", "hiit", "yoga", "stretch", "walk", "swim", "cycling", "bike", "jump", "situp", "sit-up", "crunch", "dip", "fly"];
+
     match *action {
         "add" | "done" => {
             if habit.is_empty() { return "usage: `/habit done <habit>` or `/habit add <habit>`".into(); }
@@ -5899,6 +6132,54 @@ async fn fetch_habit(args: &str, app: &App) -> String {
             }
             let mut out = format!("{}\n\n", tg_header("✅", "Habit Complete", habit));
             out.push_str(&format!("**Habit:** `{}`\n**Date:** `{}` · **Time:** `{}`\n\n", habit, date, Local::now().format("%H:%M")));
+
+            // Check if it's exercise-related and fetch ExerciseDB data
+            let habit_lower = habit.to_lowercase();
+            let is_exercise = exercise_keywords.iter().any(|kw| habit_lower.contains(kw));
+
+            if is_exercise {
+                let url = "https://v2.exercisedb.dev/exercises?limit=3&offset=0";
+                if let Ok(Ok(v)) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(url).header("User-Agent", "memogram-rs").send()).await {
+                    if let Ok(exercises) = v.json::<serde_json::Value>().await {
+                        if let Some(arr) = exercises.as_array() {
+                            let matched: Vec<&serde_json::Value> = arr.iter().filter(|e| {
+                                let name = e["name"].as_str().unwrap_or("").to_lowercase();
+                                let muscles = e["targetMuscles"].as_array().map(|a| a.iter().any(|m| m.as_str().unwrap_or("").to_lowercase().contains(&habit_lower))).unwrap_or(false);
+                                name.contains(&habit_lower) || habit_lower.contains(&name) || muscles
+                            }).collect();
+
+                            if !matched.is_empty() {
+                                out.push_str("## 💪 Exercise Details\n\n");
+                                for ex in matched.iter().take(1) {
+                                    let name = ex["name"].as_str().unwrap_or("?");
+                                    let body_parts: Vec<String> = ex["bodyParts"].as_array().map(|a| a.iter().filter_map(|b| b.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+                                    let muscles: Vec<String> = ex["targetMuscles"].as_array().map(|a| a.iter().filter_map(|m| m.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+                                    let equip = ex["equipments"].as_array().map(|a| a.iter().filter_map(|e| e.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                                    let instructions: Vec<String> = ex["instructions"].as_array().map(|a| a.iter().filter_map(|s| s.as_str()).map(|s| s.to_string()).collect()).unwrap_or_default();
+
+                                    out.push_str(&format!("**{}**\n\n", name));
+                                    out.push_str("| Detail | Value |\n|---|---|\n");
+                                    out.push_str(&format!("| Body Part | {} |\n", body_parts.join(", ")));
+                                    out.push_str(&format!("| Target Muscles | {} |\n", muscles.join(", ")));
+                                    out.push_str(&format!("| Equipment | `{}` |\n\n", equip));
+
+                                    // Estimate calories (rough: 8-12 cal/min for moderate exercise)
+                                    out.push_str("**Estimated Calories (30 min):** 200-350 kcal\n\n");
+
+                                    if !instructions.is_empty() {
+                                        out.push_str("**Steps:**\n");
+                                        for (j, step) in instructions.iter().enumerate().take(5) {
+                                            out.push_str(&format!("{}. {}\n", j + 1, step));
+                                        }
+                                        out.push('\n');
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             out.push_str("## 📊 Today's Score\n\n");
             out.push_str("```\n");
             out.push_str(&format!("  ✅ {} — DONE\n", habit));
@@ -5936,10 +6217,16 @@ async fn fetch_habit(args: &str, app: &App) -> String {
             out.push_str("## 🎯 Example Habits\n\n");
             out.push_str("| Habit | Category | Why |\n|---|---|---|\n");
             out.push_str("| 30 min reading | 📚 Learning | Knowledge compounds daily |\n");
-            out.push_str("| Morning meditation | 🧘 Mental health | Stress reduction |r\n");
+            out.push_str("| Morning meditation | 🧘 Mental health | Stress reduction |\n");
             out.push_str("| Exercise 30 min | 💪 Physical | Cardiovascular health |\n");
             out.push_str("| Drink 8 glasses water | 💧 Hydration | Cognitive function |\n");
             out.push_str("| Journal 5 min | 📝 Reflection | Self-awareness |\n\n");
+            out.push_str("## 🏋️ Exercise Habits\n\n");
+            out.push_str("_Exercise-related habits auto-fetch ExerciseDB data:_\n\n");
+            out.push_str("| Command | Fetches |\n|---|---|\n");
+            out.push_str("| `/habit done pushups` | Exercise name, muscles, equipment |\n");
+            out.push_str("| `/habit done running` | Cardio details, calories |\n");
+            out.push_str("| `/habit done squats` | Form, target muscles |\n\n");
             out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
             out
         }
@@ -6861,7 +7148,7 @@ async fn run_preview() -> Result<()> {
         ("sunrise", try_fetch("sunrise", fetch_sunrise("34.1706,-118.8376")).await.1),
         ("synonym", try_fetch("synonym", fetch_synonym("happy")).await.1),
         ("philosophy", try_fetch("philosophy", fetch_philosophy_quote()).await.1),
-        ("finance", try_fetch("finance", fetch_finance("inflation")).await.1),
+        ("invest", try_fetch("invest", fetch_invest("10000 20")).await.1),
         ("trial", try_fetch("trial", fetch_trial("diabetes")).await.1),
         ("food", try_fetch("food", fetch_food("apple")).await.1),
         ("pubmed", try_fetch("pubmed", fetch_pubmed("CRISPR")).await.1),
