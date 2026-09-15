@@ -64,7 +64,7 @@ enum Command {
     Dns(String),
     Json(String),
     Regex(String),
-    Uuid,
+    Http(String),
     Wind(String),
     Uv(String),
     Moon,
@@ -190,7 +190,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
         teloxide::types::BotCommand { command: "json".into(), description: "pretty-print JSON".into() },
         teloxide::types::BotCommand { command: "regex".into(), description: "regex tester".into() },
-        teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
+        teloxide::types::BotCommand { command: "http".into(), description: "HTTP request inspector".into() },
         teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup".into() },
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
@@ -309,7 +309,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
             let txt = fetch_daily(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("daily err: {e}"));
-            create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?;
+            bot.send_message(msg.chat.id, txt).await?;
         }
         Command::Streak => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -376,7 +376,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Dns(domain) => { let txt = fetch_dns(&domain).await.unwrap_or_else(|e| format!("dns err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Json(text) => { let txt = create_json(&text); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Regex(args) => { let txt = create_regex(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Uuid => { let txt = create_uuid(); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
+        Command::Http(url) => { let txt = fetch_http(&url).await.unwrap_or_else(|e| format!("http err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Wind(loc) => { let txt = fetch_wind(&loc).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Uv(loc) => { let txt = fetch_uv(&loc).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Moon => { let txt = fetch_moon("").await.unwrap_or_else(|e| format!("moon err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
@@ -1514,22 +1514,58 @@ async fn fetch_count(memos_url: &str, token: &str, tag: &str) -> Result<String> 
 }
 
 async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
-    let title = Local::now().format("%A, %B %d").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
+    let now = Local::now();
+    let title = now.format("%A, %B %d").to_string();
+    let date = now.format("%Y-%m-%d").to_string();
+    let time = now.format("%H:%M").to_string();
+
+    // Pull weather
+    let weather = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("http://wttr.in/?format=j1").header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json::<serde_json::Value>().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let temp = weather["current_condition"][0]["temp_C"].as_str().unwrap_or("?");
+    let desc = weather["current_condition"][0]["weatherDesc"][0]["value"].as_str().unwrap_or("?");
+    let humidity = weather["current_condition"][0]["humidity"].as_str().unwrap_or("?");
+
+    // Pull today's memos count
+    let today_memos = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=50"))
+        .header("Authorization", format!("Bearer {token}")).send().await?.json::<serde_json::Value>().await.unwrap_or(serde_json::Value::Null);
+    let memo_count = today_memos["memos"].as_array().map(|a| a.iter().filter(|m| m["createTime"].as_str().map(|t| t.starts_with(&date)).unwrap_or(false)).count()).unwrap_or(0);
+
     let content = format!(
-        "# {title}\n\n\
-         ## 🎯 Today's Goals\n\n\
+        "# 📓 {title}\n\n\
+         **Date:** `{date}` · **Started:** `{time}`\n\n\
+         ---\n\n\
+         ## 🌤️ Weather\n\n\
+         | Metric | Value |\n|---|---|\n\
+         | Temperature | `{temp}°C` |\n\
+         | Conditions | {desc} |\n\
+         | Humidity | `{humidity}%` |\n\n\
+         ---\n\n\
+         ## 📊 Today's Activity\n\n\
+         | Metric | Value |\n|---|---|\n\
+         | Memos today | `{memo_count}` |\n\
+         | Started at | `{time}` |\n\n\
+         ---\n\n\
+         ## 🎯 Top 3 Priorities\n\n\
+         - [ ] \n\
+         - [ ] \n\
          - [ ] \n\n\
+         ---\n\n\
          ## 📝 Notes\n\n\
          - \n\n\
+         ---\n\n\
          ## ✅ Completed\n\n\
          - \n\n\
+         ---\n\n\
          ## 💡 Ideas\n\n\
          - \n\n\
+         ---\n\n\
          ## 🌙 Evening Reflection\n\n\
-         - What went well?\n\
-         - What could improve?\n\
-         - What did I learn?\n\n\
+         - **What went well?**\n\
+         - **What could improve?**\n\
+         - **What did I learn?**\n\n\
          ---\n\
          #daily #journal {date}"
     );
@@ -1538,7 +1574,22 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
         .json(&serde_json::json!({"content": content, "visibility": "PRIVATE"}))
         .send().await?.json::<serde_json::Value>().await?;
     let name = resp["name"].as_str().unwrap_or("?");
-    Ok(format!("📓 **Daily note created**\n\n`{name}`\n\n> Open in Memos to edit · #daily"))
+
+    let mut out = format!("{}\n\n", tg_header("📓", "Daily Note Created", &title));
+    out.push_str(&format!("**Date:** `{}` · **Memos today:** `{}`\n\n", date, memo_count));
+    out.push_str(&format!("**Weather:** {}°C — {} · 💧 {}%\n\n", temp, desc, humidity));
+    out.push_str("## 📋 What's Inside\n\n");
+    out.push_str("| Section | Status |\n|---|---|\n");
+    out.push_str("| 🌤️ Weather | ✅ Auto-filled |\n");
+    out.push_str("| 📊 Activity | ✅ Auto-filled |\n");
+    out.push_str("| 🎯 Top 3 Priorities | ⬜ Fill in |\n");
+    out.push_str("| 📝 Notes | ⬜ Fill in |\n");
+    out.push_str("| ✅ Completed | ⬜ Fill in |\n");
+    out.push_str("| 💡 Ideas | ⬜ Fill in |\n");
+    out.push_str("| 🌙 Evening Reflection | ⬜ Fill in at end of day |\n\n");
+    out.push_str(&format!("> Open in Memos to edit\n\n"));
+    out.push_str(&format!("{}\n\n`{}` · #daily #memogram-rs", tg_footer("memogram-rs", "daily"), now.format("%Y-%m-%d %H:%M")));
+    Ok(out)
 }
 
 // --- number trivia ---
@@ -4334,33 +4385,64 @@ fn create_regex(args: &str) -> String {
     out
 }
 
-fn create_uuid() -> String {
-    use rand::Rng;
+async fn fetch_http(url: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let uuid = {
-        let mut bytes = [0u8; 16];
-        rand::rng().fill(&mut bytes);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        format!("{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-            bytes[0], bytes[1], bytes[2], bytes[3],
-            bytes[4], bytes[5], bytes[6], bytes[7],
-            bytes[8], bytes[9], bytes[10], bytes[11],
-            bytes[12], bytes[13], bytes[14], bytes[15])
+    let url = url.trim();
+    if url.is_empty() { return Ok("usage: `/http <url>` — inspect any HTTP endpoint".into()); }
+    let start = std::time::Instant::now();
+    let resp = match tokio::time::timeout(std::time::Duration::from_secs(15), HTTP.get(url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r,
+        Ok(Err(e)) => return Ok(format!("{}\n\n❌ **Request failed:** `{}`\n\n{}\n\n`{}` · #http #dev #memogram-rs",
+            tg_header("🌐", "HTTP Inspector", url), e, tg_footer("memogram-rs", "http"), now)),
+        Err(_) => return Ok(format!("{}\n\n⏰ **Timeout** (15s)\n\n{}\n\n`{}` · #http #dev #memogram-rs",
+            tg_header("🌐", "HTTP Inspector", url), tg_footer("memogram-rs", "http"), now)),
     };
-    let mut out = format!("{}\n\n", tg_header("🆔", "UUID v4", &uuid));
-    out.push_str(&format!("**UUID:** `{}`\n\n", uuid));
-    out.push_str("## 📋 Format\n\n");
-    out.push_str("```\n");
-    out.push_str(&uuid);
-    out.push_str("\n```\n\n");
-    out.push_str("## ℹ️ Info\n\n");
-    out.push_str(&format!("| Field | Value |\n|---|---|\n"));
-    out.push_str("| Version | `4` (random) |\n");
-    out.push_str("| Variant | `RFC 4122` |\n");
-    out.push_str(&format!("| Generated | `{}` |\n\n", now));
-    out.push_str(&format!("{}\n\n`{}` · #uuid #dev #memogram-rs", tg_footer("memogram-rs", "uuid"), now));
-    out
+    let elapsed = start.elapsed();
+    let status = resp.status().as_u16().to_string();
+    let status_emoji = match resp.status().as_u16() {
+        200..=299 => "✅",
+        300..=399 => "🔄",
+        400..=499 => "⚠️",
+        500..=599 => "❌",
+        _ => "❓",
+    };
+    let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("unknown").to_string();
+    let content_length = resp.headers().get("content-length").and_then(|v| v.to_str().ok()).unwrap_or("?").to_string();
+    let server = resp.headers().get("server").and_then(|v| v.to_str().ok()).unwrap_or("?").to_string();
+    let cache_control = resp.headers().get("cache-control").and_then(|v| v.to_str().ok()).unwrap_or("none").to_string();
+    let cors = resp.headers().get("access-control-allow-origin").and_then(|v| v.to_str().ok()).unwrap_or("none").to_string();
+    let hsts = resp.headers().get("strict-transport-security").is_some();
+    let body = resp.text().await.unwrap_or_default();
+    let body_preview = body.chars().take(1000).collect::<String>();
+    let word_count = body.split_whitespace().count();
+
+    let mut out = format!("{}\n\n", tg_header("🌐", "HTTP Inspector", url));
+    out.push_str(&format!("**URL:** `{}`\n\n", url));
+
+    out.push_str("## 📊 Response Summary\n\n");
+    out.push_str("| Metric | Value |\n|---|---|\n");
+    out.push_str(&format!("| Status | {} `{}` |\n", status_emoji, status));
+    out.push_str(&format!("| Response Time | `{:?}` |\n", elapsed));
+    out.push_str(&format!("| Content-Type | `{}` |\n", content_type));
+    out.push_str(&format!("| Content-Length | `{}` bytes |\n", content_length));
+    out.push_str(&format!("| Server | `{}` |\n", server));
+    out.push_str(&format!("| Body Size | `{}` bytes, ~{} words |\n\n", body.len(), word_count));
+
+    out.push_str("## 🔒 Security\n\n");
+    out.push_str("| Header | Value |\n|---|---|\n");
+    out.push_str(&format!("| HSTS | {} |\n", if hsts { "✅ Enabled" } else { "❌ Missing" }));
+    out.push_str(&format!("| CORS | `{}` |\n", cors));
+    out.push_str(&format!("| Cache-Control | `{}` |\n\n", cache_control));
+
+    out.push_str("## 📄 Body Preview\n\n");
+    if body.len() > 1500 {
+        out.push_str(&format!("```\n{}...\n```\n\n_Truncated — {} bytes total_\n", body_preview, body.len()));
+    } else {
+        out.push_str(&format!("```\n{}\n```\n", body));
+    }
+
+    out.push_str(&format!("{}\n\n`{}` · #http #dev #memogram-rs", tg_footer("memogram-rs", "http"), now));
+    Ok(out)
 }
 
 // === NEWS: LOBSTERS + PRODUCT HUNT ===
@@ -5356,15 +5438,38 @@ async fn fetch_news(topic: &str) -> Result<String> {
 
 async fn fetch_quote_wellness() -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let v: serde_json::Value = HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-    let quote = v[0]["q"].as_str().unwrap_or("The only way to do great work is to love what you do.");
-    let author = v[0]["a"].as_str().unwrap_or("Unknown");
+    // Fetch 3 quotes to make a rich doc
+    let mut quotes: Vec<(String, String)> = Vec::new();
+    for _ in 0..3 {
+        if let Ok(v) = tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get("https://zenquotes.io/api/random").header("User-Agent", "memogram-rs").send()).await {
+            if let Ok(Ok(r)) = v { if let Ok(arr) = r.json::<serde_json::Value>().await { if let Some(q) = arr.as_array().and_then(|a| a.first()) {
+                quotes.push((q["q"].as_str().unwrap_or("").to_string(), q["a"].as_str().unwrap_or("Unknown").to_string()));
+            }}}
+        }
+    }
+    if quotes.is_empty() {
+        quotes.push(("The impediment to action advances action. What stands in the way becomes the way.".into(), "Marcus Aurelius".into()));
+        quotes.push(("We suffer more in imagination than in reality.".into(), "Seneca".into()));
+        quotes.push(("It is not death that a man should fear, but he should fear never beginning to live.".into(), "Marcus Aurelius".into()));
+    }
+
+    let (quote, author) = &quotes[0];
     let mut out = format!("{}\n\n", tg_header("💬", "Daily Quote", author));
-    out.push_str(&format!("## 💬 Quote\n\n> _\"{}\"_\n\n", quote));
+    out.push_str("## 💬 Quote\n\n");
+    out.push_str(&format!("> _\"{}_\"\n\n", quote));
     out.push_str(&format!("— **{}**\n\n", author));
-    out.push_str("## 📝 Reflection\n\n");
-    out.push_str("- How does this apply to your current situation?\n");
-    out.push_str("- What's one thing you can do today based on this?\n\n");
+
+    if quotes.len() > 1 {
+        out.push_str("## 📚 More to Reflect On\n\n");
+        for (q, a) in &quotes[1..] {
+            out.push_str(&format!("> _\"{}_\"\n> — **{}**\n\n", q, a));
+        }
+    }
+
+    out.push_str("## 📝 Reflection Prompts\n\n");
+    out.push_str("1. How does this apply to your current situation?\n");
+    out.push_str("2. What's one action inspired by this today?\n");
+    out.push_str("3. Who in your life embodies this principle?\n\n");
     out.push_str(&format!("{}\n\n`{}` · #quote #daily #memogram-rs", tg_footer("zenquotes.io", "quote"), now));
     Ok(out)
 }
@@ -5521,22 +5626,47 @@ fn create_code_snippet(args: &str) -> String {
 fn create_note_smart(args: &str) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let date = Local::now().format("%Y-%m-%d").to_string();
-    if args.trim().is_empty() { return "usage: `/note <text>` — quick capture".into(); }
+    let time = Local::now().format("%H:%M").to_string();
+    if args.trim().is_empty() { return "usage: `/note <text>` — quick capture with auto-detection".into(); }
     let url_regex = regex::Regex::new(r"https?://[^\s]+").unwrap();
-    let has_url = url_regex.is_match(args);
+    let urls: Vec<String> = url_regex.find_iter(args).map(|m| m.as_str().to_string()).collect();
     let email_regex = regex::Regex::new(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}").unwrap();
-    let has_email = email_regex.is_match(args);
+    let emails: Vec<String> = email_regex.find_iter(args).map(|m| m.as_str().to_string()).collect();
+    let code_regex = regex::Regex::new(r"```[\s\S]*?```|`[^`]+`").unwrap();
+    let has_code = code_regex.is_match(args);
     let word_count = args.split_whitespace().count();
-    let mut out = format!("{}\n\n", tg_header("📝", "Note", &date));
-    out.push_str(&format!("**Date:** `{}`\n**Words:** `{}`\n\n", now, word_count));
+    let char_count = args.len();
+    let sentence_count = args.split([ '.', '!', '?' ]).filter(|s| !s.trim().is_empty()).count();
+    let read_time = (word_count as f64 / 200.0).ceil() as u32;
+
+    let mut out = format!("{}\n\n", tg_header("📝", "Note", &format!("{} · {}", date, time)));
+    out.push_str(&format!("**Date:** `{}` · **Time:** `{}`\n\n", date, time));
+
+    out.push_str("## 📋 Content\n\n");
     out.push_str(&format!("{}\n\n", args));
-    // Auto-detect and tag
+
+    out.push_str("## 📊 Metadata\n\n");
+    out.push_str("| Stat | Value |\n|---|---|\n");
+    out.push_str(&format!("| Words | `{}` |\n", word_count));
+    out.push_str(&format!("| Characters | `{}` |\n", char_count));
+    out.push_str(&format!("| Sentences | `{}` |\n", sentence_count));
+    out.push_str(&format!("| Read time | `~{} min` |\n\n", read_time));
+
     out.push_str("## 🏷️ Auto-detected\n\n");
-    out.push_str(&format!("- 📅 Date: `{}`\n", date));
-    if has_url { out.push_str("- 🔗 Contains URL\n"); }
-    if has_email { out.push_str("- 📧 Contains email\n"); }
+    out.push_str(&format!("- 📅 {} at `{}`\n", date, time));
+    if !urls.is_empty() {
+        out.push_str(&format!("- 🔗 {} URL(s) found:\n", urls.len()));
+        for u in &urls { out.push_str(&format!("  - `{}`\n", u)); }
+    }
+    if !emails.is_empty() {
+        out.push_str(&format!("- 📧 {} email(s) found:\n", emails.len()));
+        for e in &emails { out.push_str(&format!("  - `{}`\n", e)); }
+    }
+    if has_code { out.push_str("- 💻 Contains code\n"); }
     if word_count < 10 { out.push_str("- 💡 Quick thought\n"); }
-    else if word_count > 50 { out.push_str("- 📖 Longer note\n"); }
+    else if word_count > 50 && word_count < 200 { out.push_str("- 📖 Short note\n"); }
+    else if word_count >= 200 { out.push_str("- 📚 Long-form note\n"); }
+
     out.push_str(&format!("\n{}\n\n`{}` · #note #inbox #memogram-rs", tg_footer("memogram-rs", "note"), now));
     out
 }
@@ -5556,17 +5686,51 @@ async fn fetch_habit(args: &str, app: &App) -> String {
                 let content = format!("✅ Habit completed: `{}`", habit);
                 let _ = create_memo(&app.memos_url, &token, &content).await;
             }
-            format!("{}\n\n✅ **{}** — done!\n\n📅 `{}`\n\n{}\n\n`{}` · #habit #planning #memogram-rs",
-                tg_header("✅", "Habit Done", habit), habit, date, tg_footer("memogram-rs", "habit"), now)
+            let mut out = format!("{}\n\n", tg_header("✅", "Habit Complete", habit));
+            out.push_str(&format!("**Habit:** `{}`\n**Date:** `{}` · **Time:** `{}`\n\n", habit, date, Local::now().format("%H:%M")));
+            out.push_str("## 📊 Today's Score\n\n");
+            out.push_str("```\n");
+            out.push_str(&format!("  ✅ {} — DONE\n", habit));
+            out.push_str("  ⬜ other habits — pending\n");
+            out.push_str("```\n\n");
+            out.push_str("## 💡 Keep Going\n\n");
+            out.push_str(&format!("- 🔥 **{}** — every rep counts\n", habit));
+            out.push_str("- 💪 Consistency > intensity\n");
+            out.push_str("- 📈 Track with `/digest` to see your memo count grow\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
+            out
         }
         "miss" => {
             if habit.is_empty() { return "usage: `/habit miss <habit>`".into(); }
-            format!("{}\n\n❌ **{}** — missed today\n\n📅 `{}` · _That's okay. Tomorrow is a new day._\n\n{}\n\n`{}` · #habit #planning #memogram-rs",
-                tg_header("❌", "Habit Missed", habit), habit, date, tg_footer("memogram-rs", "habit"), now)
+            let mut out = format!("{}\n\n", tg_header("❌", "Habit Missed", habit));
+            out.push_str(&format!("**Habit:** `{}`\n**Date:** `{}`\n\n", habit, date));
+            out.push_str("## 📊 Today's Score\n\n");
+            out.push_str("```\n");
+            out.push_str(&format!("  ❌ {} — missed\n", habit));
+            out.push_str("```\n\n");
+            out.push_str("## 💡 Don't Break the Chain\n\n");
+            out.push_str("> _\"We are what we repeatedly do. Excellence, then, is not an act, but a habit.\"_ — Aristotle\n\n");
+            out.push_str("- 🔄 Missed one day? Double up tomorrow\n");
+            out.push_str("- 🎯 Focus on getting back on track, not perfection\n");
+            out.push_str("- 📊 Check `/streak` to see your overall consistency\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
+            out
         }
         _ => {
-            format!("{}\n\n**Usage:**\n- `/habit done <habit>` — mark habit complete\n- `/habit miss <habit>` — mark habit missed\n\n**Examples:**\n- `/habit done 30 min reading`\n- `/habit done morning meditation`\n- `/habit miss gym`\n\n{}\n\n`{}` · #habit #planning #memogram-rs",
-                tg_header("📋", "Habit Tracker", ""), tg_footer("memogram-rs", "habit"), now)
+            let mut out = format!("{}\n\n", tg_header("📋", "Habit Tracker", ""));
+            out.push_str("## 📋 How to Use\n\n");
+            out.push_str("| Command | What it does |\n|---|---|\n");
+            out.push_str("| `/habit done <habit>` | Mark habit complete |\n");
+            out.push_str("| `/habit miss <habit>` | Mark habit missed |\n\n");
+            out.push_str("## 🎯 Example Habits\n\n");
+            out.push_str("| Habit | Category | Why |\n|---|---|---|\n");
+            out.push_str("| 30 min reading | 📚 Learning | Knowledge compounds daily |\n");
+            out.push_str("| Morning meditation | 🧘 Mental health | Stress reduction |r\n");
+            out.push_str("| Exercise 30 min | 💪 Physical | Cardiovascular health |\n");
+            out.push_str("| Drink 8 glasses water | 💧 Hydration | Cognitive function |\n");
+            out.push_str("| Journal 5 min | 📝 Reflection | Self-awareness |\n\n");
+            out.push_str(&format!("{}\n\n`{}` · #habit #planning #memogram-rs", tg_footer("memogram-rs", "habit"), now));
+            out
         }
     }
 }
