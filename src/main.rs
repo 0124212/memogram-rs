@@ -19,9 +19,6 @@ enum Command {
     Start(String),
     Search(String),
     Help,
-    Tags,
-    Recent,
-    Count(String),
     Daily,
     Streak,
     Hn,
@@ -43,10 +40,8 @@ enum Command {
     Undo,
     Pin,
     Book(String),
-    Meditation(String),
     Goal(String),
     Deadline(String),
-    Priority(String),
     Idea(String),
     Braindump(String),
     Summarize(String),
@@ -59,7 +54,6 @@ enum Command {
     Ip(String),
     Mood(String),
     Habit(String),
-    Stress(String),
     Finance(String),
     Compound(String),
     Trial(String),
@@ -67,7 +61,6 @@ enum Command {
     Paper(String),
     Hustle(String),
     Digest,
-    Income(String),
     Youtube(String),
     Transcribe(String),
     Learn(String),
@@ -78,6 +71,7 @@ enum Command {
     Dns(String),
     Json(String),
     Regex(String),
+    Uuid,
     Wind(String),
     Uv(String),
     Moon,
@@ -92,15 +86,8 @@ enum Command {
     Ph,
     Weekly,
     Retro(String),
-    Patent(String),
     Species(String),
     Lab(String),
-    Prereqs(String),
-    Mcat(String),
-    Ethics(String),
-    Scholar(String),
-    Reddit(String),
-    News(String),
 }
 
 #[derive(Clone)]
@@ -197,10 +184,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
         teloxide::types::BotCommand { command: "json".into(), description: "pretty-print JSON".into() },
         teloxide::types::BotCommand { command: "regex".into(), description: "regex tester".into() },
+        teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
         teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup <domain>".into() },
-        teloxide::types::BotCommand { command: "tags".into(), description: "list all tags".into() },
-        teloxide::types::BotCommand { command: "recent".into(), description: "last 20 memos".into() },
-        teloxide::types::BotCommand { command: "count".into(), description: "count memos".into() },
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
@@ -212,10 +197,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "undo".into(), description: "delete last memo".into() },
         teloxide::types::BotCommand { command: "pin".into(), description: "pin/unpin last memo".into() },
         teloxide::types::BotCommand { command: "book".into(), description: "book card".into() },
-        teloxide::types::BotCommand { command: "meditation".into(), description: "log meditation".into() },
-        teloxide::types::BotCommand { command: "goal".into(), description: "set a goal".into() },
-        teloxide::types::BotCommand { command: "deadline".into(), description: "track deadline".into() },
-        teloxide::types::BotCommand { command: "priority".into(), description: "set priority".into() },
+        teloxide::types::BotCommand { command: "goal".into(), description: "set a goal (Vikunja)".into() },
+        teloxide::types::BotCommand { command: "deadline".into(), description: "track deadline (Vikunja)".into() },
         teloxide::types::BotCommand { command: "idea".into(), description: "capture idea".into() },
         teloxide::types::BotCommand { command: "braindump".into(), description: "quick thought dump".into() },
         teloxide::types::BotCommand { command: "save".into(), description: "save anything".into() },
@@ -223,11 +206,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "help".into(), description: "help".into() },
         teloxide::types::BotCommand { command: "mood".into(), description: "mood/gratitude/journal/reflection".into() },
         teloxide::types::BotCommand { command: "habit".into(), description: "track habit".into() },
-        teloxide::types::BotCommand { command: "stress".into(), description: "log stress".into() },
         teloxide::types::BotCommand { command: "finance".into(), description: "finance term explainer".into() },
         teloxide::types::BotCommand { command: "compound".into(), description: "compound interest calc".into() },
         teloxide::types::BotCommand { command: "hustle".into(), description: "side hustle ideas".into() },
-        teloxide::types::BotCommand { command: "income".into(), description: "log income <source> <amt>".into() },
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "search PubMed papers".into() },
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
@@ -242,8 +223,8 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "snow".into(), description: "snow report".into() },
         teloxide::types::BotCommand { command: "tide".into(), description: "tide schedule".into() },
         teloxide::types::BotCommand { command: "sleep".into(), description: "log sleep <hrs> <quality>".into() },
-        teloxide::types::BotCommand { command: "project".into(), description: "project doc".into() },
-        teloxide::types::BotCommand { command: "todo".into(), description: "checklist".into() },
+        teloxide::types::BotCommand { command: "project".into(), description: "create Vikunja project".into() },
+        teloxide::types::BotCommand { command: "todo".into(), description: "create Vikunja task".into() },
         teloxide::types::BotCommand { command: "list".into(), description: "bulleted list".into() },
         teloxide::types::BotCommand { command: "lobsters".into(), description: "lobste.rs top stories".into() },
         teloxide::types::BotCommand { command: "ph".into(), description: "Product Hunt top products".into() },
@@ -316,24 +297,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Stock(ticker) => { let txt = fetch_stock(&ticker).await.unwrap_or_else(|e| format!("stock err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Crypto(coin) => { let txt = fetch_crypto(&coin).await.unwrap_or_else(|e| format!("crypto err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Translate(args) => { let txt = fetch_translate(&args).await.unwrap_or_else(|e| format!("translate err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Tags => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_tags(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("tags err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
-        }
-        Command::Recent => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_recent(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("recent err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
-        }
-        Command::Count(tag) => {
-            let token = { app.store.read().await.get(&tid).cloned() };
-            let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
-            let txt = fetch_count(&app.memos_url, &tok, &tag).await.unwrap_or_else(|e| format!("count err: {e}"));
-            create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
-        }
         Command::Daily => {
             let token = { app.store.read().await.get(&tid).cloned() };
             let Some(tok) = token else { bot.send_message(msg.chat.id, "run /start <token> first").await?; return Ok(()); };
@@ -379,15 +342,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Ip(ip) => { let txt = fetch_ip(&ip).await.unwrap_or_else(|e| format!("ip err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Mood(note) => { let txt = create_mood_entry(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Habit(args) => { let txt = create_habit_entry(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Stress(args) => { let txt = create_stress(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Finance(term) => { let txt = fetch_finance(&term).await.unwrap_or_else(|e| format!("finance err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Compound(args) => { let txt = create_compound(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Trial(q) => { let txt = fetch_trial(&q).await.unwrap_or_else(|e| format!("trial err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Food(q) => { let txt = fetch_food(&q).await.unwrap_or_else(|e| format!("food err: {e}")); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
-        Command::Meditation(note) => { let txt = create_meditation(&note); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Goal(args) => { let txt = vikunja_goal(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Deadline(args) => { let txt = vikunja_deadline(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Priority(args) => { let txt = vikunja_priority(&args, &app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Idea(args) => { let txt = create_idea(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -405,7 +365,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
             let txt = fetch_digest(&app.memos_url, &tok).await.unwrap_or_else(|e| format!("digest err: {e}"));
             create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?;
         }
-        Command::Income(args) => { let txt = create_income(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Youtube(url) => { let txt = fetch_youtube(&url).await.unwrap_or_else(|e| format!("youtube err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Learn(topic) => { let txt = fetch_learn(&topic).await.unwrap_or_else(|e| format!("learn err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Transcribe(text) => { let txt = create_transcribe(&text); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -430,7 +389,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Ph => { let txt = fetch_ph().await.unwrap_or_else(|e| format!("ph err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Weekly => { let txt = vikunja_weekly(&app).await; create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Retro(args) => { let txt = create_retro(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
-        Command::Patent(q) => { let txt = fetch_patent(&q).await.unwrap_or_else(|e| format!("patent err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Species(q) => { let txt = fetch_species(&q).await.unwrap_or_else(|e| format!("species err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Lab(args) => { let txt = create_lab(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Prereqs(track) => { let txt = create_prereqs(&track); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
@@ -3541,6 +3499,125 @@ async fn fetch_youtube(url: &str) -> Result<String> {
     }
     out.push_str(&format!("🔗 [Watch](https://youtube.com/watch?v={})\n\n", video_id));
     out.push_str(&format!("{}\n\n`{}` · #youtube #learn #memogram-rs", tg_footer("invidious", "youtube"), now));
+    Ok(out)
+}
+
+async fn fetch_learn(topic: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let topic = topic.trim().to_string();
+    if topic.is_empty() {
+        return Ok("usage: `/learn <topic>` — get a structured learning overview".into());
+    }
+    let mut out = format!("{}\n\n", tg_header("🎓", "Learn", &topic));
+    out.push_str(&format!("**Topic:** `{}` · **Started:** `{}`\n\n", topic, now));
+
+    // 1. Wikipedia summary
+    let wiki_url = format!("https://en.wikipedia.org/api/rest_v1/page/summary/{}", urlencoding::encode(&topic));
+    let wiki: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&wiki_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    let extract = wiki["extract"].as_str().unwrap_or("");
+    if !extract.is_empty() {
+        out.push_str("## 📖 Overview\n\n");
+        let summary = extract.chars().take(500).collect::<String>();
+        out.push_str(&format!("> {}\n\n", summary));
+        if let Some(url) = wiki["content_urls"]["desktop"]["page"].as_str() {
+            out.push_str(&format!("🔗 [Wikipedia]({})\n\n", url));
+        }
+    }
+
+    // 2. Prerequisites — search Wikipedia for related concepts
+    let search_url = format!("https://en.wikipedia.org/api/rest_v1/page/related/{}", urlencoding::encode(&topic));
+    let related: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&search_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    if let Some(pages) = related["pages"].as_array() {
+        if !pages.is_empty() {
+            out.push_str("## 🔗 Related Topics\n\n");
+            for p in pages.iter().take(5) {
+                let title = p["title"].as_str().unwrap_or("?");
+                let desc = p["description"].as_str().unwrap_or("");
+                let page_url = p["content_urls"]["desktop"]["page"].as_str().unwrap_or("#");
+                out.push_str(&format!("- [**{}**]({}) — {}\n", title, page_url, desc));
+            }
+            out.push('\n');
+        }
+    }
+
+    // 3. arXiv papers
+    let arxiv_url = format!("http://export.arxiv.org/api/query?search_query=all:{}&max_results=3&sortBy=relevance", urlencoding::encode(&topic));
+    let arxiv_xml = HTTP.get(&arxiv_url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.text().await.unwrap_or_default();
+    // Simple XML parsing for title and link
+    let mut arxiv_entries = Vec::new();
+    let mut remaining = arxiv_xml.as_str();
+    while let Some(entry_start) = remaining.find("<entry>") {
+        remaining = &remaining[entry_start + 7..];
+        if let Some(entry_end) = remaining.find("</entry>") {
+            let entry = &remaining[..entry_end];
+            let title = entry.split("<title>").nth(1).and_then(|s| s.split("</title>").next()).map(|s| s.trim().replace('\n', " ")).unwrap_or_default();
+            let id = entry.split("<id>").nth(1).and_then(|s| s.split("</id>").next()).map(|s| s.trim()).unwrap_or("");
+            let summary = entry.split("<summary>").nth(1).and_then(|s| s.split("</summary>").next()).map(|s| s.trim().chars().take(120).collect::<String>()).unwrap_or_default();
+            if !title.is_empty() {
+                arxiv_entries.push((title, id.to_string(), summary));
+            }
+            remaining = &remaining[entry_end..];
+        } else { break; }
+    }
+    if !arxiv_entries.is_empty() {
+        out.push_str("## 📄 Related Papers (arXiv)\n\n");
+        for (i, (title, id, summary)) in arxiv_entries.iter().enumerate() {
+            let arxiv_id = id.split("/abs/").last().unwrap_or(id);
+            out.push_str(&format!("{}. [{}]({})\n", i + 1, title, id));
+            if !summary.is_empty() {
+                out.push_str(&format!("   _{}_\n\n", summary));
+            }
+        }
+    }
+
+    // 4. YouTube tutorials
+    let yt_search = format!("{} {} tutorial", topic, topic);
+    let yt_url = format!("https://vid.puffyan.us/api/v1/search?q={}&type=video&sort_by=relevance&page=1", urlencoding::encode(&yt_search));
+    let yt: serde_json::Value = match tokio::time::timeout(std::time::Duration::from_secs(5), HTTP.get(&yt_url).header("User-Agent", "memogram-rs").send()).await {
+        Ok(Ok(r)) => r.json().await.unwrap_or(serde_json::Value::Null),
+        _ => serde_json::Value::Null,
+    };
+    if let Some(videos) = yt.as_array() {
+        if !videos.is_empty() {
+            out.push_str("## 🎬 Video Tutorials\n\n");
+            for v in videos.iter().take(3) {
+                let title = v["title"].as_str().unwrap_or("?");
+                let author = v["author"].as_str().unwrap_or("?");
+                let vid_id = v["videoId"].as_str().unwrap_or("");
+                let length = v["lengthSeconds"].as_u64().unwrap_or(0);
+                let mins = length / 60;
+                let secs = length % 60;
+                out.push_str(&format!("- [**{}**](https://youtube.com/watch?v={}) by {} · {}:{:02}\n", title, vid_id, author, mins, secs));
+            }
+            out.push('\n');
+        }
+    }
+
+    // 5. Suggested learning path
+    out.push_str("## 🗺️ Suggested Path\n\n");
+    out.push_str("| Phase | Focus | Time |\n|---|---|---|\n");
+    out.push_str(&format!("| 1 | Read the overview & related topics | 30 min |\n"));
+    out.push_str(&format!("| 2 | Watch top video tutorial | 20 min |\n"));
+    out.push_str(&format!("| 3 | Read 1-2 papers for depth | 1 hr |\n"));
+    out.push_str(&format!("| 4 | Build something / take notes | 2 hr |\n"));
+    out.push_str(&format!("| 5 | Review with `/search {}` (your own notes) | 15 min |\n\n", topic));
+
+    // 6. Progress tracker
+    out.push_str("## 📊 Progress\n\n");
+    out.push_str("| Step | Status | Notes |\n|---|---|---|\n");
+    out.push_str("| Overview read | ⬜ | |\n");
+    out.push_str("| Videos watched | ⬜ | |\n");
+    out.push_str("| Papers read | ⬜ | |\n");
+    out.push_str("| Practice done | ⬜ | |\n");
+    out.push_str("| Reviewed | ⬜ | |\n\n");
+
+    out.push_str(&format!("{}\n\n`{}` · #learn #memogram-rs", tg_footer("wikipedia + arxiv + invidious", "learn"), now));
     Ok(out)
 }
 
