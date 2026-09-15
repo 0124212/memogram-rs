@@ -64,10 +64,7 @@ enum Command {
     Compound(String),
     Trial(String),
     Food(String),
-    Brief(String),
-    Compare(String),
     Paper(String),
-    Tutorial(String),
     Hustle(String),
     Digest,
     Income(String),
@@ -77,12 +74,9 @@ enum Command {
     Evening(String),
     Log(String),
     Summary(String),
-    Timestamp(String),
     Dns(String),
-    Ports,
     Json(String),
     Regex(String),
-    Uuid,
     Wind(String),
     Uv(String),
     Moon,
@@ -102,8 +96,6 @@ enum Command {
     Lab(String),
     Prereqs(String),
     Mcat(String),
-    Clinical(String),
-    Shadow(String),
     Ethics(String),
     Scholar(String),
     Reddit(String),
@@ -198,12 +190,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "markets".into(), description: "market indices".into() },
         teloxide::types::BotCommand { command: "translate".into(), description: "translate text".into() },
         teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
-        teloxide::types::BotCommand { command: "ports".into(), description: "common port reference".into() },
         teloxide::types::BotCommand { command: "json".into(), description: "pretty-print JSON".into() },
         teloxide::types::BotCommand { command: "regex".into(), description: "regex tester".into() },
-        teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
         teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup <domain>".into() },
-        teloxide::types::BotCommand { command: "timestamp".into(), description: "epoch ↔ time converter".into() },
         teloxide::types::BotCommand { command: "tags".into(), description: "list all tags".into() },
         teloxide::types::BotCommand { command: "recent".into(), description: "last 20 memos".into() },
         teloxide::types::BotCommand { command: "count".into(), description: "count memos".into() },
@@ -237,10 +226,7 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "food".into(), description: "nutrition lookup".into() },
         teloxide::types::BotCommand { command: "pubmed".into(), description: "search PubMed papers".into() },
         teloxide::types::BotCommand { command: "trial".into(), description: "clinical trial search".into() },
-        teloxide::types::BotCommand { command: "brief".into(), description: "research brief".into() },
-        teloxide::types::BotCommand { command: "compare".into(), description: "compare A vs B".into() },
         teloxide::types::BotCommand { command: "paper".into(), description: "paper deep-dive".into() },
-        teloxide::types::BotCommand { command: "tutorial".into(), description: "guided how-to".into() },
         teloxide::types::BotCommand { command: "youtube".into(), description: "summarize youtube video".into() },
         teloxide::types::BotCommand { command: "transcribe".into(), description: "voice-to-text memo".into() },
         teloxide::types::BotCommand { command: "wind".into(), description: "wind forecast".into() },
@@ -262,8 +248,6 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "lab".into(), description: "lab protocol template".into() },
         teloxide::types::BotCommand { command: "prereqs".into(), description: "health prof prerequisites".into() },
         teloxide::types::BotCommand { command: "mcat".into(), description: "MCAT study resources".into() },
-        teloxide::types::BotCommand { command: "clinical".into(), description: "log clinical hours".into() },
-        teloxide::types::BotCommand { command: "shadow".into(), description: "log shadowing hours".into() },
         teloxide::types::BotCommand { command: "ethics".into(), description: "medical ethics scenario".into() },
         teloxide::types::BotCommand { command: "scholar".into(), description: "Google Scholar search".into() },
         teloxide::types::BotCommand { command: "reddit".into(), description: "subreddit top posts".into() },
@@ -407,10 +391,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Read(args) => { let txt = fetch_read(&args).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         
-        Command::Brief(q) => { let txt = fetch_brief(&q).await.unwrap_or_else(|e| format!("brief err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Compare(q) => { let txt = fetch_compare(&q).await.unwrap_or_else(|e| format!("compare err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Paper(q) => { let txt = fetch_paper(&q).await.unwrap_or_else(|e| format!("paper err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
-        Command::Tutorial(q) => { let txt = fetch_tutorial(&q).await.unwrap_or_else(|e| format!("tutorial err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Hustle(q) => { let txt = fetch_hustle(&q).await.unwrap_or_else(|e| format!("hustle err: {e}")); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Digest => {
             let token = { app.store.read().await.get(&tid).cloned() };
@@ -425,12 +406,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
-        Command::Timestamp(args) => { let txt = create_timestamp(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Dns(domain) => { let txt = fetch_dns(&domain).await.unwrap_or_else(|e| format!("dns err: {e}")); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Ports => { let txt = create_ports(); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Json(text) => { let txt = create_json(&text); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Regex(args) => { let txt = create_regex(&args); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
-        Command::Uuid => { let txt = create_uuid(); create_as_bot(&bot, &msg, &app, "dev", &txt, tid).await?; }
         Command::Wind(loc) => { let txt = fetch_wind(&loc).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Uv(loc) => { let txt = fetch_uv(&loc).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Moon => { let txt = fetch_moon("").await.unwrap_or_else(|e| format!("moon err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
@@ -455,8 +433,6 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Lab(args) => { let txt = create_lab(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Prereqs(track) => { let txt = create_prereqs(&track); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Mcat(topic) => { let txt = fetch_mcat(&topic).await.unwrap_or_else(|e| format!("mcat err: {e}")); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Clinical(args) => { let txt = create_clinical(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Shadow(args) => { let txt = create_shadow(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Ethics(args) => { let txt = create_ethics(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
