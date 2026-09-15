@@ -81,9 +81,15 @@ enum Command {
     Timestamp(String),
     Dns(String),
     Ports,
+    Json(String),
+    Regex(String),
+    Uuid,
     Wind(String),
     Uv(String),
     Moon,
+    Pollen(String),
+    Snow(String),
+    Tide(String),
     Project(String),
     Todo(String),
     List(String),
@@ -194,6 +200,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "translate".into(), description: "translate text".into() },
         teloxide::types::BotCommand { command: "containers".into(), description: "service health".into() },
         teloxide::types::BotCommand { command: "ports".into(), description: "common port reference".into() },
+        teloxide::types::BotCommand { command: "json".into(), description: "pretty-print JSON".into() },
+        teloxide::types::BotCommand { command: "regex".into(), description: "regex tester".into() },
+        teloxide::types::BotCommand { command: "uuid".into(), description: "generate UUID".into() },
         teloxide::types::BotCommand { command: "dns".into(), description: "DNS lookup <domain>".into() },
         teloxide::types::BotCommand { command: "timestamp".into(), description: "epoch ↔ time converter".into() },
         teloxide::types::BotCommand { command: "tags".into(), description: "list all tags".into() },
@@ -239,6 +248,9 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "wind".into(), description: "wind forecast".into() },
         teloxide::types::BotCommand { command: "uv".into(), description: "UV index".into() },
         teloxide::types::BotCommand { command: "moon".into(), description: "moon phase".into() },
+        teloxide::types::BotCommand { command: "pollen".into(), description: "pollen forecast".into() },
+        teloxide::types::BotCommand { command: "snow".into(), description: "snow report".into() },
+        teloxide::types::BotCommand { command: "tide".into(), description: "tide schedule".into() },
         teloxide::types::BotCommand { command: "sleep".into(), description: "log sleep <hrs> <quality>".into() },
         teloxide::types::BotCommand { command: "project".into(), description: "project doc".into() },
         teloxide::types::BotCommand { command: "todo".into(), description: "checklist".into() },
@@ -392,9 +404,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Braindump(args) => { let txt = create_braindump(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Summarize(url) => { let txt = fetch_summarize(&url).await.unwrap_or_else(|e| format!("summarize err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         Command::Save(args) => { let txt = fetch_save(&args).await.unwrap_or_else(|e| format!("save err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
-        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
-        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Energy(args) => { let txt = create_energy(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Exercise(args) => { let txt = create_exercise(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
+        Command::Water(args) => { let txt = create_water(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Read(args) => { let txt = fetch_read(&args).await.unwrap_or_else(|e| format!("read err: {e}")); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
         
         Command::Brief(q) => { let txt = fetch_brief(&q).await.unwrap_or_else(|e| format!("brief err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
@@ -422,7 +434,10 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Wind(loc) => { let txt = fetch_wind(&loc).await.unwrap_or_else(|e| format!("wind err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Uv(loc) => { let txt = fetch_uv(&loc).await.unwrap_or_else(|e| format!("uv err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
         Command::Moon => { let txt = fetch_moon("").await.unwrap_or_else(|e| format!("moon err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
-        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Pollen(loc) => { let txt = fetch_pollen(&loc).await.unwrap_or_else(|e| format!("pollen err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Snow(loc) => { let txt = fetch_snow(&loc).await.unwrap_or_else(|e| format!("snow err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Tide(loc) => { let txt = fetch_tide(&loc).await.unwrap_or_else(|e| format!("tide err: {e}")); create_as_bot(&bot, &msg, &app, "weather", &txt, tid).await?; }
+        Command::Sleep(args) => { let txt = create_sleep(&args); create_as_bot(&bot, &msg, &app, "wellness", &txt, tid).await?; }
         Command::Project(args) => { let txt = create_project(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::Todo(args) => { let txt = create_todo(&args); create_as_bot(&bot, &msg, &app, "planning", &txt, tid).await?; }
         Command::List(args) => { let txt = create_list(&args); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
@@ -443,6 +458,9 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Clinical(args) => { let txt = create_clinical(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Shadow(args) => { let txt = create_shadow(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
         Command::Ethics(args) => { let txt = create_ethics(&args); create_as_bot(&bot, &msg, &app, "bio", &txt, tid).await?; }
+        Command::Scholar(q) => { let txt = fetch_scholar(&q).await.unwrap_or_else(|e| format!("scholar err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::Reddit(sub) => { let txt = fetch_reddit(&sub).await.unwrap_or_else(|e| format!("reddit err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
+        Command::News(topic) => { let txt = fetch_news(&topic).await.unwrap_or_else(|e| format!("news err: {e}")); create_as_bot(&bot, &msg, &app, "news", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
@@ -4174,6 +4192,165 @@ fn create_ethics(args: &str) -> String {
     }
     out.push_str(&format!("\n{}\n\n`{}` · #ethics #bio #memogram-rs", tg_footer("memogram-rs", "ethics"), now));
     out
+}
+
+// === NEWS: SCHOLAR + REDDIT + NEWS ===
+
+async fn fetch_scholar(query: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if query.trim().is_empty() {
+        return Ok("usage: `/scholar <query>` — search Google Scholar".into());
+    }
+    let url = format!("https://scholar.google.com/scholar?q={}&hl=en&as_sdt=0,5", urlencoding::encode(query));
+    let html = HTTP.get(&url).header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36").timeout(std::time::Duration::from_secs(8)).send().await?.text().await?;
+
+    let mut out = format!("{}\n\n", tg_header("🎓", "Google Scholar", query));
+
+    // Simple HTML parsing for search results
+    let mut results = Vec::new();
+    let mut remaining = html.as_str();
+    while let Some(start) = remaining.find("<div class=\"gs_ri\">") {
+        remaining = &remaining[start + 19..];
+        if let Some(end) = remaining.find("<div class=\"gs_r gs_or gs_scl") {
+            let block = &remaining[..end];
+            // Extract title
+            let title = block.split("class=\"gs_rt\">").nth(1)
+                .and_then(|s| s.split("</h3>").next())
+                .and_then(|s| {
+                    let clean = s.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "");
+                    // Strip remaining HTML tags
+                    let mut result = String::new();
+                    let mut in_tag = false;
+                    for c in clean.chars() {
+                        if c == '<' { in_tag = true; } else if c == '>' { in_tag = false; } else if !in_tag { result.push(c); }
+                    }
+                    Some(result.trim().to_string())
+                })
+                .unwrap_or_else(|| "Untitled".to_string());
+            // Extract snippet
+            let snippet = block.split("class=\"gs_rs\">").nth(1)
+                .and_then(|s| s.split("</div>").next())
+                .map(|s| {
+                    let clean = s.replace("<b>", "**").replace("</b>", "**");
+                    let mut result = String::new();
+                    let mut in_tag = false;
+                    for c in clean.chars() {
+                        if c == '<' { in_tag = true; } else if c == '>' { in_tag = false; } else if !in_tag { result.push(c); }
+                    }
+                    result.trim().chars().take(200).collect::<String>()
+                })
+                .unwrap_or_default();
+            // Extract info line (authors, year, source)
+            let info = block.split("class=\"gs_a\">").nth(1)
+                .and_then(|s| s.split("</div>").next())
+                .map(|s| {
+                    let mut result = String::new();
+                    let mut in_tag = false;
+                    for c in s.chars() {
+                        if c == '<' { in_tag = true; } else if c == '>' { in_tag = false; } else if !in_tag { result.push(c); }
+                    }
+                    result.trim().replace(" - ", " · ").chars().take(100).collect::<String>()
+                })
+                .unwrap_or_default();
+            // Extract link
+            let link = block.split("href=\"").nth(1)
+                .and_then(|s| s.split("\"").next())
+                .unwrap_or("#")
+                .to_string();
+
+            results.push((title, info, snippet, link));
+            if results.len() >= 5 { break; }
+            remaining = &remaining[end..];
+        } else {
+            break;
+        }
+    }
+
+    if results.is_empty() {
+        out.push_str("_No results found or Scholar blocked the request._\n\n");
+    } else {
+        for (i, (title, info, snippet, link)) in results.iter().enumerate() {
+            out.push_str(&format!("### {}. [{}]({})\n\n", i + 1, title, link));
+            out.push_str(&format!("**{}**\n\n", info));
+            if !snippet.is_empty() {
+                out.push_str(&format!("> {}\n\n", snippet));
+            }
+        }
+    }
+
+    out.push_str(&format!("🔗 [Search on Scholar](https://scholar.google.com/scholar?q={})\n\n", urlencoding::encode(query)));
+    out.push_str(&format!("{}\n\n`{}` · #scholar #news #memogram-rs", tg_footer("scholar.google.com", "scholar"), now));
+    Ok(out)
+}
+
+async fn fetch_reddit(sub: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    let sub = sub.trim().trim_start_matches("r/").to_string();
+    if sub.is_empty() {
+        return Ok("usage: `/reddit <subreddit>` — e.g. `/reddit bioengineering`".into());
+    }
+    let url = format!("https://www.reddit.com/r/{}/hot.json?limit=15", urlencoding::encode(&sub));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs/1.0").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+
+    let posts = v["data"]["children"].as_array().ok_or_else(|| anyhow::anyhow!("no posts"))?;
+    let mut out = format!("{}\n\n", tg_header("📱", "r/", &sub));
+
+    if posts.is_empty() {
+        out.push_str("_No posts found._\n\n");
+    } else {
+        out.push_str("| # | Title | Score | Comments | Flair |\n|---|---|---|---|---|\n");
+        for (i, post) in posts.iter().take(15).enumerate() {
+            let d = &post["data"];
+            let title = d["title"].as_str().unwrap_or("?");
+            let score = d["score"].as_u64().unwrap_or(0);
+            let comments = d["num_comments"].as_u64().unwrap_or(0);
+            let permalink = d["permalink"].as_str().unwrap_or("#");
+            let flair = d["link_flair_text"].as_str().unwrap_or("");
+            let stickied = d["stickied"].as_bool().unwrap_or(false);
+            let prefix = if stickied { "📌 " } else { "" };
+            let reddit_url = format!("https://reddit.com{}", permalink);
+            let link = format!("[{}{}]({})", prefix, title.chars().take(80).collect::<String>(), reddit_url);
+            out.push_str(&format!("| {} | {} | ⬆{} | 💬{} | {} |\n", i + 1, link, score, comments, flair));
+        }
+    }
+
+    out.push_str(&format!("\n🔗 [r/{}](https://reddit.com/r/{})\n\n", sub, urlencoding::encode(&sub)));
+    out.push_str(&format!("{}\n\n`{}` · #reddit #news #memogram-rs", tg_footer("reddit.com", "reddit"), now));
+    Ok(out)
+}
+
+async fn fetch_news(topic: &str) -> Result<String> {
+    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
+    if topic.trim().is_empty() {
+        return Ok("usage: `/news <topic>` — search news on any topic".into());
+    }
+    // Use Hacker News Algolia API as a general news source
+    let url = format!("https://hn.algolia.com/api/v1/search?query={}&tags=story&hitsPerPage=10", urlencoding::encode(topic));
+    let v: serde_json::Value = HTTP.get(&url).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
+
+    let hits = v["hits"].as_array().ok_or_else(|| anyhow::anyhow!("no hits"))?;
+    let mut out = format!("{}\n\n", tg_header("📰", "News", topic));
+
+    if hits.is_empty() {
+        out.push_str("_No results found._\n\n");
+    } else {
+        out.push_str(&format!("**{} results** for _{}_\n\n", v["nbHits"].as_u64().unwrap_or(0), topic));
+        out.push_str("| # | Title | Points | Comments | Date |\n|---|---|---|---|---|\n");
+        for (i, hit) in hits.iter().take(10).enumerate() {
+            let title = hit["title"].as_str().unwrap_or("?");
+            let hn_url = format!("https://news.ycombinator.com/item?id={}", hit["objectID"].as_str().unwrap_or(""));
+            let url = hit["url"].as_str().unwrap_or(&hn_url);
+            let points = hit["points"].as_u64().unwrap_or(0);
+            let comments = hit["num_comments"].as_u64().unwrap_or(0);
+            let created = hit["created_at"].as_str().unwrap_or("");
+            let date = if created.len() >= 10 { &created[..10] } else { "?" };
+            let link = format!("[{}]({})", title.chars().take(70).collect::<String>(), url);
+            out.push_str(&format!("| {} | {} | ⬆{} | 💬{} | {} |\n", i + 1, link, points, comments, date));
+        }
+    }
+
+    out.push_str(&format!("\n{}\n\n`{}` · #news #memogram-rs", tg_footer("hn.algolia.com", "news"), now));
+    Ok(out)
 }
 
 fn create_goal(args: &str) -> String {
