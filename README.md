@@ -69,9 +69,10 @@ Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) â
 
 ### Daily
 ```
-/morning <text>      Morning check-in       /evening <text>   Evening reflection
-/checkin <text>      Daily check-in         /log <text>       Daily log
-/summary <text>      Day summary
+/daily               Daily template          /digest            Today's memo summary
+/streak              Writing streak          /morning <text>    Morning check-in
+/evening <text>      Evening reflection      /checkin <m> <e>   Quick check-in
+/log <text>          Daily log               /summary <text>    Day summary
 ```
 
 ## Buckets

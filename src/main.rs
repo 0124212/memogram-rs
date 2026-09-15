@@ -73,6 +73,11 @@ enum Command {
     Income(String),
     Youtube(String),
     Transcribe(String),
+    Morning(String),
+    Evening(String),
+    Checkin(String),
+    Log(String),
+    Summary(String),
 }
 
 #[derive(Clone)]
@@ -169,6 +174,11 @@ async fn main() -> Result<()> {
         teloxide::types::BotCommand { command: "daily".into(), description: "create daily note".into() },
         teloxide::types::BotCommand { command: "streak".into(), description: "writing streak".into() },
         teloxide::types::BotCommand { command: "digest".into(), description: "today's memo summary".into() },
+        teloxide::types::BotCommand { command: "morning".into(), description: "morning check-in".into() },
+        teloxide::types::BotCommand { command: "evening".into(), description: "evening reflection".into() },
+        teloxide::types::BotCommand { command: "checkin".into(), description: "quick check-in".into() },
+        teloxide::types::BotCommand { command: "log".into(), description: "daily log".into() },
+        teloxide::types::BotCommand { command: "summary".into(), description: "day summary".into() },
         teloxide::types::BotCommand { command: "inbox".into(), description: "untagged memos".into() },
         teloxide::types::BotCommand { command: "undo".into(), description: "delete last memo".into() },
         teloxide::types::BotCommand { command: "pin".into(), description: "pin/unpin last memo".into() },
@@ -351,6 +361,11 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, app: App) -> Resul
         Command::Income(args) => { let txt = create_income(&args); create_as_bot(&bot, &msg, &app, "money", &txt, tid).await?; }
         Command::Youtube(url) => { let txt = fetch_youtube(&url).await.unwrap_or_else(|e| format!("youtube err: {e}")); create_as_bot(&bot, &msg, &app, "learn", &txt, tid).await?; }
         Command::Transcribe(text) => { let txt = create_transcribe(&text); create_as_bot(&bot, &msg, &app, "inbox", &txt, tid).await?; }
+        Command::Morning(args) => { let txt = create_morning(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Evening(args) => { let txt = create_evening(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Checkin(args) => { let txt = create_checkin(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Log(args) => { let txt = create_log(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
+        Command::Summary(args) => { let txt = create_summary(&args); create_as_bot(&bot, &msg, &app, "daily", &txt, tid).await?; }
         Command::Help => { bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?; }
     }
     Ok(())
