@@ -5,7 +5,6 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use rand::prelude::*;
 use std::{collections::HashMap, env, sync::Arc};
 use teloxide::{prelude::*, types::ParseMode, net::Download, utils::command::BotCommands};
 use tokio::sync::RwLock;
@@ -108,7 +107,6 @@ struct App {
     vikunja_url: String,
     vikunja_token: String,
     api_ninjas_key: String,
-    firecrawl_key: String,
 }
 
 impl App {
@@ -168,9 +166,8 @@ async fn main() -> Result<()> {
     let vikunja_url = env::var("VIKUNJA_URL").ok().unwrap_or_default();
     let vikunja_token = env::var("VIKUNJA_TOKEN").ok().unwrap_or_default();
     let api_ninjas_key = env::var("API_NINJAS_KEY").ok().unwrap_or_default();
-    let firecrawl_key = env::var("FIRECRAWL_KEY").ok().unwrap_or_default();
     let store = Arc::new(RwLock::new(load_store(&store_path).await));
-    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token, api_ninjas_key, firecrawl_key };
+    let app = App { memos_url, admin_username, allowed, store: store.clone(), store_path, bot_tokens, bark_url, ntfy_url, vikunja_url, vikunja_token, api_ninjas_key };
 
     info!("memogram-rs starting url={} store={} bots={:?}", app.memos_url, app.store_path, app.bot_tokens.keys().collect::<Vec<_>>());
 
@@ -574,7 +571,7 @@ async fn upload_attachment(url: &str, tok: &str, filename: &str, mime: &str, dat
 // === VIKUNJA API ===
 
 async fn vikunja_request(url: &str, token: &str, method: &str, body: Option<serde_json::Value>) -> Result<serde_json::Value> {
-    let mut req = match method {
+    let req = match method {
         "POST" => HTTP.post(url),
         "PUT" => HTTP.put(url),
         "GET" => HTTP.get(url),
@@ -623,12 +620,6 @@ async fn vikunja_list_tasks(vikunja_url: &str, token: &str, project_id: u64, don
     }
     let v = vikunja_request(&url, token, "GET", None).await?;
     Ok(v.as_array().cloned().unwrap_or_default())
-}
-
-async fn vikunja_complete_task(vikunja_url: &str, token: &str, task_id: u64) -> Result<serde_json::Value> {
-    let body = serde_json::json!({ "done": true });
-    let url = format!("{}/api/v1/tasks/{}", vikunja_url.trim_end_matches('/'), task_id);
-    vikunja_request(&url, token, "PUT", Some(body)).await
 }
 
 fn vikunja_priority_label(p: u8) -> (&'static str, &'static str) {
@@ -957,7 +948,7 @@ async fn fetch_fx(pair: &str) -> Result<String> {
         ("CNY", "China", 105.0, "Big Mac ¥24, coffee ¥20, metro ¥3"),
     ];
     let ppp_match = ppp_data.iter().find(|(c, _, _, _)| *c == quote);
-    if let Some((_, country, power, examples)) = ppp_match {
+    if let Some((_, country, power, _examples)) = ppp_match {
         out.push_str(&format!("## 🛒 Purchasing Power Parity\n\n"));
         out.push_str(&format!("**What $100 USD buys in {}:**\n\n", country));
         out.push_str(&format!("| Currency | Country | PPP Index | Examples |\n|---|---|---|---|\n"));
@@ -1237,49 +1228,6 @@ fn minf(r: u8, g: u8, b: u8) -> f64 { r.min(g).min(b) as f64 }
 
 // --- knowledge management functions ---
 
-async fn fetch_tags(memos_url: &str, token: &str) -> Result<String> {
-    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
-        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
-    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
-    let mut tags: HashMap<String, u32> = HashMap::new();
-    for m in memos {
-        if let Some(t) = m["tags"].as_array() {
-            for tag in t {
-                if let Some(s) = tag.as_str() {
-                    *tags.entry(s.to_string()).or_insert(0) += 1;
-                }
-            }
-        }
-    }
-    let mut sorted: Vec<_> = tags.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.cmp(&a.1));
-    let mut out = format!("*🏷️ Tags* — {} unique\n\n", sorted.len());
-    for (tag, count) in sorted.iter().take(20) {
-        out.push_str(&format!("  `#{tag}` — {count}\n"));
-    }
-    out.push_str(&format!("\n`{}` · #tags", Local::now().format("%Y-%m-%d")));
-    Ok(out)
-}
-
-async fn fetch_recent(memos_url: &str, token: &str) -> Result<String> {
-    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=20"))
-        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
-    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
-    let mut out = format!("*📋 Recent Memos* — last 20\n\n");
-    for m in memos.iter().take(15) {
-        let name = m["name"].as_str().unwrap_or("?");
-        let content = m["content"].as_str().unwrap_or("");
-        let time = m["createTime"].as_str().unwrap_or("");
-        let pin = if m["pinned"].as_bool().unwrap_or(false) { "📌 " } else { "" };
-        let tags: Vec<&str> = m["tags"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect()).unwrap_or_default();
-        let tag_str = if tags.is_empty() { String::new() } else { format!(" `{}`", tags.join(" `")) };
-        out.push_str(&format!("*{pin}{name}*{tag_str}\n   {} · `{} chars`\n\n",
-            &time[..10.min(time.len())], content.len()));
-    }
-    out.push_str(&format!("> `{} total` · #recent", memos.len()));
-    Ok(out)
-}
-
 async fn fetch_streak(memos_url: &str, token: &str) -> Result<String> {
     let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=200"))
         .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
@@ -1471,7 +1419,7 @@ async fn fetch_daily(memos_url: &str, token: &str) -> Result<String> {
         .header("Authorization", format!("Bearer {token}"))
         .json(&serde_json::json!({"content": content, "visibility": "PRIVATE"}))
         .send().await?.json::<serde_json::Value>().await?;
-    let name = resp["name"].as_str().unwrap_or("?");
+    let _name = resp["name"].as_str().unwrap_or("?");
 
     let mut out = format!("{}\n\n", tg_header("📓", "Daily Note Created", &title));
     out.push_str(&format!("**Date:** `{}` · **Memos today:** `{}`\n\n", date, memo_count));
@@ -2301,70 +2249,6 @@ async fn fetch_workout(query: &str) -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_nutrition(query: &str, api_key: &str) -> Result<String> {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let query = query.trim();
-    if query.is_empty() { return Ok("usage: `/nutrition <food>` — e.g. `/nutrition 2 eggs and toast`".into()); }
-    if api_key.is_empty() { return Ok("⚠️ `API_NINJAS_KEY` not set. Get free key at api.api-ninjas.com".into()); }
-
-    let url = format!("https://api.api-ninjas.com/v1/nutrition?query={}", urlencoding::encode(query));
-    let v: serde_json::Value = HTTP.get(&url).header("X-Api-Key", api_key).header("User-Agent", "memogram-rs").timeout(std::time::Duration::from_secs(8)).send().await?.json().await?;
-
-    let items = v.as_array().ok_or_else(|| anyhow::anyhow!("no results"))?;
-    if items.is_empty() {
-        return Ok(format!("{}\n\n_No food found for `{}`_\n\n{}", tg_header("🥗", "Nutrition", query), query, tg_footer("api-ninjas.com", "nutrition")));
-    }
-
-    let mut out = format!("{}\n\n", tg_header("🥗", "Nutrition Breakdown", query));
-    let mut total_cal = 0.0_f64;
-    let mut total_protein = 0.0_f64;
-    let mut total_carbs = 0.0_f64;
-    let mut total_fat = 0.0_f64;
-    let mut total_fiber = 0.0_f64;
-
-    for item in items {
-        let name = item["name"].as_str().unwrap_or("?");
-        let cal = item["calories"].as_f64().unwrap_or(0.0);
-        let serving = item["serving_size_g"].as_f64().unwrap_or(0.0);
-        let protein = item["protein_g"].as_f64().unwrap_or(0.0);
-        let carbs = item["carbohydrates_total_g"].as_f64().unwrap_or(0.0);
-        let fat = item["fat_total_g"].as_f64().unwrap_or(0.0);
-        let fiber = item["fiber_g"].as_f64().unwrap_or(0.0);
-        let sugar = item["sugar_g"].as_f64().unwrap_or(0.0);
-        let sat_fat = item["fat_saturated_g"].as_f64().unwrap_or(0.0);
-        let sodium = item["sodium_mg"].as_f64().unwrap_or(0.0);
-        let cholesterol = item["cholesterol_mg"].as_f64().unwrap_or(0.0);
-        let potassium = item["potassium_mg"].as_f64().unwrap_or(0.0);
-
-        total_cal += cal; total_protein += protein; total_carbs += carbs; total_fat += fat; total_fiber += fiber;
-
-        out.push_str(&format!("### 🍽️ {} ({:.0}g)\n\n", name, serving));
-        out.push_str("| Nutrient | Amount |\n|---|---|\n");
-        out.push_str(&format!("| Calories | `{:.0}` kcal |\n", cal));
-        out.push_str(&format!("| Protein | `{:.1}g` |\n", protein));
-        out.push_str(&format!("| Carbs | `{:.1}g` |\n", carbs));
-        out.push_str(&format!("| Fat | `{:.1}g` (saturated: {:.1}g) |\n", fat, sat_fat));
-        out.push_str(&format!("| Fiber | `{:.1}g` |\n", fiber));
-        out.push_str(&format!("| Sugar | `{:.1}g` |\n", sugar));
-        out.push_str(&format!("| Sodium | `{:.0}mg` |\n", sodium));
-        out.push_str(&format!("| Cholesterol | `{:.0}mg` |\n", cholesterol));
-        out.push_str(&format!("| Potassium | `{:.0}mg` |\n\n", potassium));
-    }
-
-    if items.len() > 1 {
-        out.push_str("## 📊 Totals\n\n");
-        out.push_str("| Nutrient | Total |\n|---|---|\n");
-        out.push_str(&format!("| Calories | `{:.0}` kcal |\n", total_cal));
-        out.push_str(&format!("| Protein | `{:.1}g` |\n", total_protein));
-        out.push_str(&format!("| Carbs | `{:.1}g` |\n", total_carbs));
-        out.push_str(&format!("| Fat | `{:.1}g` |\n", total_fat));
-        out.push_str(&format!("| Fiber | `{:.1}g` |\n\n", total_fiber));
-    }
-
-    out.push_str(&format!("{}\n\n`{}` · #nutrition #wellness #memogram-rs", tg_footer("api-ninjas.com", "nutrition"), now));
-    Ok(out)
-}
-
 async fn fetch_recipe(args: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let q = args.trim().to_string();
@@ -3139,25 +3023,6 @@ async fn fetch_digest(memos_url: &str, token: &str) -> Result<String> {
     Ok(out)
 }
 
-fn create_income(args: &str) -> String {
-    let parts: Vec<&str> = args.splitn(3, ' ').collect();
-    let source = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("unknown");
-    let amount = parts.get(1).unwrap_or(&"0");
-    let note = parts.get(2).unwrap_or(&"");
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let mut out = format!("# 💰 Income — `{}`\n\n**Date:** `{}` · **Source:** `{}` · **Amount:** `${}`\n\n", date, date, source, amount);
-    if !note.is_empty() {
-        out.push_str(&format!("**Note:** {}\n\n", note));
-    }
-    out.push_str("## 📊 Income Log\n\n");
-    out.push_str("| Date | Source | Amount | Note |\n|---|---|---|---|\n");
-    out.push_str(&format!("| {} | {} | ${} | {} |\n", date, source, amount, note));
-    out.push_str("\n> _Tip: Use `/hustle <skill>` to find new income sources._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #income #money #memogram-rs", tg_header("💰", "Income", source), now));
-    out
-}
-
 async fn fetch_youtube(url: &str) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     if url.trim().is_empty() {
@@ -3314,325 +3179,6 @@ async fn fetch_learn(topic: &str) -> Result<String> {
 
     out.push_str(&format!("{}\n\n`{}` · #learn #memogram-rs", tg_footer("stackexchange + openalex + archive.org", "learn"), now));
     Ok(out)
-}
-
-fn create_transcribe(text: &str) -> String {
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    if text.trim().is_empty() {
-        return "usage: `/transcribe <text>` — paste voice-to-text output here".into();
-    }
-    let mut out = format!("# 🎤 Transcription — `{}`\n\n**Date:** `{}`\n\n## ✍️ Text\n\n{}\n\n", date, now, text);
-    out.push_str("## 📊 Stats\n\n");
-    let words = text.split_whitespace().count();
-    let chars = text.len();
-    let sentences = text.split([ '.', '!', '?' ]).filter(|s| !s.trim().is_empty()).count().max(1);
-
-    // Count syllables (rough: count vowel groups)
-    fn count_syllables(word: &str) -> usize {
-        let vowels = "aeiouy";
-        let word_lower = word.to_lowercase();
-        let chars: Vec<char> = word_lower.chars().collect();
-        if chars.is_empty() { return 0; }
-        let mut count: usize = 0;
-        let mut prev_vowel = false;
-        for &c in &chars {
-            let is_vowel = vowels.contains(c);
-            if is_vowel && !prev_vowel { count += 1; }
-            prev_vowel = is_vowel;
-        }
-        // Adjust: silent e at end
-        if chars.len() > 2 && chars[chars.len()-1] == 'e' && !vowels.contains(chars[chars.len()-2]) {
-            if count > 1 { count -= 1; }
-        }
-        count.max(1)
-    }
-
-    let total_syllables: usize = text.split_whitespace().map(|w| count_syllables(w)).sum();
-    let complex_words: usize = text.split_whitespace().filter(|w| count_syllables(w) >= 3).count();
-
-    // Flesch-Kincaid Reading Level
-    let fk_grade = if words > 0 && sentences > 0 {
-        0.39 * (words as f64 / sentences as f64) + 11.8 * (total_syllables as f64 / words as f64) - 15.59
-    } else {
-        0.0
-    };
-
-    // Flesch Reading Ease
-    let flesch_ease = if words > 0 && sentences > 0 {
-        206.835 - 1.015 * (words as f64 / sentences as f64) - 84.6 * (total_syllables as f64 / words as f64)
-    } else {
-        0.0
-    };
-
-    let reading_level = if fk_grade < 5.0 { "Elementary (Easy)" }
-        else if fk_grade < 8.0 { "Middle School" }
-        else if fk_grade < 12.0 { "High School" }
-        else if fk_grade < 16.0 { "College" }
-        else { "Graduate/Professional" };
-
-    let complexity = if flesch_ease > 80.0 { "Easy" }
-        else if flesch_ease > 60.0 { "Standard" }
-        else if flesch_ease > 40.0 { "Difficult" }
-        else { "Very Difficult" };
-
-    let vocab_pct = if words > 0 { (complex_words as f64 / words as f64 * 100.0) } else { 0.0 };
-
-    out.push_str(&format!("| Metric | Value |\n|---|---|\n"));
-    out.push_str(&format!("| Words | `{}` |\n", words));
-    out.push_str(&format!("| Characters | `{}` |\n", chars));
-    out.push_str(&format!("| Sentences | `{}` |\n", sentences));
-    out.push_str(&format!("| Syllables | `{}` |\n", total_syllables));
-    out.push_str(&format!("| Complex words (3+ syllables) | `{}` |\n", complex_words));
-    out.push_str(&format!("| Reading time | `~{} min` |\n", (words as f64 / 200.0).ceil() as u32));
-    out.push_str(&format!("| Flesch-Kincaid Grade | **`{:.1}`** |\n", fk_grade));
-    out.push_str(&format!("| Flesch Reading Ease | **`{:.1}`** |\n", flesch_ease));
-    out.push_str(&format!("| Reading level | {} |\n", reading_level));
-    out.push_str(&format!("| Vocabulary complexity | {} ({:.1}%) |\n\n", complexity, vocab_pct));
-
-    // Suggest simpler alternatives for complex words
-    let complex_examples: Vec<&str> = text.split_whitespace().filter(|w| count_syllables(w) >= 3).take(5).collect();
-    if !complex_examples.is_empty() {
-        out.push_str("## 🔧 Complex Words Found\n\n");
-        out.push_str("| Word | Syllables | Suggestion |\n|---|---|---|\n");
-        for word in complex_examples {
-            let syllables = count_syllables(word);
-            // Simple suggestions
-            let suggestion = match word.to_lowercase().as_str() {
-                w if w.starts_with("un") && w.len() > 8 => format!("remove 'un-' prefix if redundant"),
-                w if w.ends_with("tion") && w.len() > 8 => format!("try 'ment' or rephrase"),
-                w if w.ends_with("ness") && w.len() > 8 => format!("try 'state' or rephrase"),
-                w if w.ends_with("ment") && w.len() > 8 => format!("simplify"),
-                _ => format!("keep if essential"),
-            };
-            out.push_str(&format!("| `{}` | {} | {} |\n", word, syllables, suggestion));
-        }
-        out.push('\n');
-    }
-
-    out.push_str("> _Edit this memo in Memos to clean up the transcription._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #transcribe #inbox #memogram-rs", tg_header("🎤", "Transcription", &date), now));
-    out
-}
-
-fn create_timestamp(args: &str) -> String {
-    let now = Local::now();
-    let args = args.trim();
-    let mut out = format!("{}\n\n", tg_header("⏱️", "Timestamp", ""));
-
-    if args.is_empty() {
-        // No args: show current time conversions
-        let epoch = now.timestamp();
-        let utc = now.format("%Y-%m-%d %H:%M:%S UTC").to_string();
-        let iso = now.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-        let unix_ms = epoch * 1000;
-        let weekday = now.format("%A").to_string();
-        let year_day = now.format("%j").to_string();
-        out.push_str("## 🕐 Current Time\n\n");
-        out.push_str("| Format | Value |\n|---|---|\n");
-        out.push_str(&format!("| Unix | `{}` |\n", epoch));
-        out.push_str(&format!("| Unix (ms) | `{}` |\n", unix_ms));
-        out.push_str(&format!("| ISO 8601 | `{}` |\n", iso));
-        out.push_str(&format!("| UTC | `{}` |\n", utc));
-        out.push_str(&format!("| Day | {} |\n", weekday));
-        out.push_str(&format!("| Day of Year | `{}` |\n\n", year_day));
-        out.push_str("**Tip:** Pass a unix timestamp to convert it: `/timestamp 1700000000`\n\n");
-    } else if let Ok(ts) = args.parse::<i64>() {
-        // It's a unix timestamp — convert to human
-        let ts = if ts > 1_000_000_000_000 { ts / 1000 } else { ts };
-        let dt = chrono::DateTime::from_timestamp(ts, 0).unwrap_or_default();
-        let local_dt = dt.with_timezone(&Local);
-        let naive = dt.naive_utc();
-        let now_naive = now.naive_utc();
-        let diff = now_naive - naive;
-        let days = diff.num_days();
-        let hours = diff.num_hours();
-        let abs_days = days.abs();
-        let relative = if days > 0 {
-            format!("{} days ago", abs_days)
-        } else if days < 0 {
-            format!("{} days from now", abs_days)
-        } else {
-            "now".to_string()
-        };
-        out.push_str(&format!("## 📅 Converted from `{}`\n\n", args));
-        out.push_str("| Format | Value |\n|---|---|\n");
-        out.push_str(&format!("| Unix | `{}` |\n", ts));
-        out.push_str(&format!("| UTC | `{}` |\n", dt.format("%Y-%m-%d %H:%M:%S UTC")));
-        out.push_str(&format!("| Local | `{}` |\n", local_dt.format("%Y-%m-%d %H:%M:%S %Z")));
-        out.push_str(&format!("| ISO 8601 | `{}` |\n", dt.format("%Y-%m-%dT%H:%M:%SZ")));
-        out.push_str(&format!("| Day | {} |\n", dt.format("%A")));
-        out.push_str(&format!("| Relative | **{}** |\n\n", relative));
-    } else if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(args, "%Y-%m-%d %H:%M:%S") {
-        // It's a datetime string — convert to epoch
-        let epoch = dt.and_utc().timestamp();
-        out.push_str(&format!("## 🔢 Converted from `{}`\n\n", args));
-        out.push_str("| Format | Value |\n|---|---|\n");
-        out.push_str(&format!("| Unix | `{}` |\n", epoch));
-        out.push_str(&format!("| Unix (ms) | `{}` |\n", epoch * 1000));
-        out.push_str(&format!("| ISO 8601 | `{}` |\n", dt.format("%Y-%m-%dT%H:%M:%SZ")));
-    } else if let Ok(dt) = chrono::NaiveDate::parse_from_str(args, "%Y-%m-%d") {
-        let epoch = dt.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc().timestamp();
-        out.push_str(&format!("## 📅 Converted from `{}`\n\n", args));
-        out.push_str("| Format | Value |\n|---|---|\n");
-        out.push_str(&format!("| Unix | `{}` |\n", epoch));
-        out.push_str(&format!("| Unix (ms) | `{}` |\n", epoch * 1000));
-        out.push_str(&format!("| ISO 8601 | `{}` |\n", dt.format("%Y-%m-%dT00:00:00Z")));
-    } else {
-        out.push_str(&format!("⚠️ Unrecognized format: `{}`\n\n", args));
-        out.push_str("**Supported inputs:**\n");
-        out.push_str("- No args → show current time\n");
-        out.push_str("- `1700000000` → unix timestamp to date\n");
-        out.push_str("- `2024-01-15 10:30:00` → date to unix\n");
-        out.push_str("- `2024-01-15` → date to unix (midnight UTC)\n");
-    }
-
-    out.push_str(&format!("{}\n\n`{}` · #timestamp #dev #memogram-rs", tg_footer("memogram-rs", "timestamp"), now.format("%Y-%m-%d %H:%M")));
-    out
-}
-
-fn create_ports() -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let mut out = format!("{}\n\n", tg_header("🔌", "Common Ports", ""));
-    out.push_str("| Port | Protocol | Service | Notes |\n|---|---|---|---|\n");
-
-    let ports = [
-        ("20/21", "TCP", "FTP", "File Transfer (data/control)"),
-        ("22", "TCP", "SSH", "Secure Shell"),
-        ("23", "TCP", "Telnet", "Unencrypted shell (avoid)"),
-        ("25", "TCP", "SMTP", "Email sending"),
-        ("53", "TCP/UDP", "DNS", "Domain resolution"),
-        ("80", "TCP", "HTTP", "Web traffic"),
-        ("110", "TCP", "POP3", "Email retrieval"),
-        ("143", "TCP", "IMAP", "Email access"),
-        ("443", "TCP", "HTTPS", "Encrypted web traffic"),
-        ("445", "TCP", "SMB", "Windows file sharing"),
-        ("993", "TCP", "IMAPS", "IMAP over TLS"),
-        ("995", "TCP", "POP3S", "POP3 over TLS"),
-        ("3306", "TCP", "MySQL", "Database"),
-        ("3389", "TCP", "RDP", "Remote Desktop"),
-        ("5432", "TCP", "PostgreSQL", "Database"),
-        ("5672", "TCP", "AMQP", "RabbitMQ"),
-        ("5900", "TCP", "VNC", "Remote desktop"),
-        ("6379", "TCP", "Redis", "Cache / message broker"),
-        ("8080", "TCP", "HTTP Alt", "Dev servers, proxies"),
-        ("8443", "TCP", "HTTPS Alt", "Alt encrypted web"),
-        ("9090", "TCP", "Prometheus", "Metrics UI"),
-        ("27017", "TCP", "MongoDB", "Document database"),
-    ];
-
-    for (port, proto, svc, note) in ports {
-        out.push_str(&format!("| `{}` | {} | **{}** | {} |\n", port, proto, svc, note));
-    }
-
-    out.push_str(&format!("\n> 💡 **Tip:** Use `/containers` to check your own services\n\n"));
-    out.push_str(&format!("{}\n\n`{}` · #ports #dev #memogram-rs", tg_footer("memogram-rs", "ports"), now));
-    out
-}
-
-fn create_json(text: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return "usage: `/json <text>` — pretty-print or validate JSON".into();
-    }
-    let mut out = format!("{}\n\n", tg_header("🔧", "JSON", ""));
-    match serde_json::from_str::<serde_json::Value>(trimmed) {
-        Ok(v) => {
-            let pretty = serde_json::to_string_pretty(&v).unwrap_or_else(|_| trimmed.to_string());
-            let keys = v.as_object().map(|o| o.len()).unwrap_or(0);
-            let chars = pretty.len();
-            let obj_type = if v.is_object() { "Object" } else if v.is_array() { "Array" } else { "Primitive" };
-            let arr_len = v.as_array().map(|a| a.len()).unwrap_or(0);
-            out.push_str("## ✅ Valid JSON\n\n");
-            out.push_str("| Metric | Value |\n|---|---|\n");
-            out.push_str(&format!("| Type | `{}` |\n", obj_type));
-            if keys > 0 { out.push_str(&format!("| Keys | `{}` |\n", keys)); }
-            if arr_len > 0 { out.push_str(&format!("| Items | `{}` |\n", arr_len)); }
-            out.push_str(&format!("| Size | `{} bytes`\n\n", chars));
-            if pretty.len() <= 3000 {
-                out.push_str(&format!("```\n{}\n```\n", pretty));
-            } else {
-                out.push_str(&format!("```\n{}...\n```\n\n_Truncated — {} bytes total._\n", &pretty[..3000], chars));
-            }
-        }
-        Err(e) => {
-            out.push_str("## ❌ Invalid JSON\n\n");
-            out.push_str(&format!("**Error:** `{}`\n\n", e));
-            out.push_str(&format!("**Line:** `{}` · **Column:** `{}`\n\n", e.line(), e.column()));
-        }
-    }
-    out.push_str(&format!("{}\n\n`{}` · #json #dev #memogram-rs", tg_footer("memogram-rs", "json"), now));
-    out
-}
-
-fn create_regex(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let pattern = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("");
-    let test = parts.get(1).unwrap_or(&"");
-    let mut out = format!("{}\n\n", tg_header("🔍", "Regex Test", pattern));
-
-    if pattern.is_empty() {
-        out.push_str("usage: `/regex <pattern> <test string>`\n\n");
-        out.push_str("**Examples:**\n");
-        out.push_str("- `/regex \\d+ there are 3 apples`\n");
-        out.push_str("- `/regex [a-z]+@example\\.com test@email.com`\n");
-        out.push_str("- `/regex ^\\d{4}-\\d{2}-\\d{2}$ 2024-01-15`\n");
-        out.push_str(&format!("\n{}\n\n`{}` · #regex #dev #memogram-rs", tg_footer("memogram-rs", "regex"), now));
-        return out;
-    }
-
-    match regex::Regex::new(pattern) {
-        Ok(re) => {
-            out.push_str("## ✅ Valid Pattern\n\n");
-            out.push_str(&format!("**Pattern:** `{}`\n\n", pattern));
-            if test.is_empty() {
-                out.push_str("_Pass a test string to see matches._\n");
-            } else {
-                let matches: Vec<(usize, usize, &str)> = re.find_iter(test).map(|m| (m.start(), m.end(), m.as_str())).collect();
-                out.push_str(&format!("**Test:** `{}`\n\n", test));
-                out.push_str(&format!("**Matches:** `{}`\n\n", matches.len()));
-                if !matches.is_empty() {
-                    out.push_str("| # | Match | Start | End |\n|---|---|---|---|\n");
-                    for (i, (start, end, m)) in matches.iter().enumerate() {
-                        out.push_str(&format!("| {} | `{}` | {} | {} |\n", i + 1, m, start, end));
-                    }
-                    // Highlight matches in test string
-                    let mut highlighted = test.to_string();
-                    let mut offset = 0;
-                    for (_, end, m) in &matches {
-                        let insert_at = end + offset;
-                        highlighted.insert_str(insert_at, "**");
-                        offset += 2;
-                        let insert_at = end + offset;
-                        highlighted.insert_str(insert_at, "**");
-                        offset += 2;
-                    }
-                    out.push_str(&format!("\n**Highlighted:** {}\n", highlighted));
-                } else {
-                    out.push_str("_No matches found._\n");
-                }
-                // Named groups
-                let group_names: Vec<String> = re.capture_names().flatten().map(|s| s.to_string()).collect();
-                if !group_names.is_empty() {
-                    out.push_str(&format!("\n**Named groups:** `{}`\n", group_names.join("`, `")));
-                }
-            }
-        }
-        Err(e) => {
-            out.push_str("## ❌ Invalid Pattern\n\n");
-            out.push_str(&format!("**Error:** `{}`\n\n", e));
-            out.push_str("**Common patterns:**\n");
-            out.push_str("- `\\d+` — one or more digits\n");
-            out.push_str("- `[a-zA-Z]+` — one or more letters\n");
-            out.push_str("- `.*` — any characters\n");
-            out.push_str("- `^...$` — start/end anchors\n");
-            out.push_str("- `(group)` — capture groups\n");
-        }
-    }
-    out.push_str(&format!("\n{}\n\n`{}` · #regex #dev #memogram-rs", tg_footer("memogram-rs", "regex"), now));
-    out
 }
 
 async fn fetch_http(url: &str) -> Result<String> {
@@ -3825,7 +3371,7 @@ async fn fetch_astro(topic: &str) -> Result<String> {
         out.push_str(&format!("## 📚 {}\n\n> {}\n\n🔗 [Read the docs]({}/{})\n\n", path, desc, docs_base, path));
     }
     out.push_str("## 🗂️ All Topics\n\n| Topic | Description |\n|---|---|\n");
-    for (t, (path, desc)) in &topic_map {
+    for (t, (_path, desc)) in &topic_map {
         out.push_str(&format!("| `{}` | {} |\n", t, desc));
     }
     out.push_str(&format!("\n🔗 [Astro Docs Home]({})\n\n", docs_base));
@@ -4448,86 +3994,6 @@ async fn fetch_ph() -> Result<String> {
     Ok(out)
 }
 
-// === PLANNING: WEEKLY + RETRO ===
-
-async fn fetch_weekly(memos_url: &str, token: &str) -> Result<String> {
-    let now = Local::now();
-    let week_start = (now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64)).format("%Y-%m-%d").to_string();
-    let today = now.format("%Y-%m-%d").to_string();
-    let v: serde_json::Value = HTTP.get(format!("{memos_url}/api/v1/memos?pageSize=100"))
-        .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
-    let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
-    let week_memos: Vec<&serde_json::Value> = memos.iter().filter(|m| {
-        m["createTime"].as_str().map(|t| t >= week_start.as_str() && t <= format!("{}T23:59", today).as_str()).unwrap_or(false)
-    }).collect();
-    let count = week_memos.len();
-    let total_chars: usize = week_memos.iter().filter_map(|m| m["content"].as_str()).map(|c| c.len()).sum();
-
-    // Count tags
-    let mut tag_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-    for m in &week_memos {
-        if let Some(tags) = m["tags"].as_array() {
-            for t in tags {
-                if let Some(s) = t.as_str() {
-                    *tag_counts.entry(s.to_string()).or_insert(0) += 1;
-                }
-            }
-        }
-    }
-
-    let mut out = format!("{}\n\n", tg_header("📅", "Weekly Review", &format!("{} → {}", week_start, today)));
-    out.push_str(&format!("**{} memos** · **~{} words** written this week\n\n", count, total_chars / 5));
-
-    out.push_str("## 📊 Activity\n\n");
-    out.push_str("| Day | Memos |\n|---|---|\n");
-    for i in 0..7u32 {
-        let d = (now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64) + chrono::Duration::days(i as i64)).format("%a %m/%d").to_string();
-        let day_prefix = (now - chrono::Duration::days(now.weekday().num_days_from_monday() as i64) + chrono::Duration::days(i as i64)).format("%Y-%m-%d").to_string();
-        let day_count = week_memos.iter().filter(|m| m["createTime"].as_str().map(|t| t.starts_with(&day_prefix)).unwrap_or(false)).count();
-        let bar = "█".repeat(day_count.min(15));
-        out.push_str(&format!("| {} | {} {} |\n", d, bar, day_count));
-    }
-
-    if !tag_counts.is_empty() {
-        out.push_str("\n## 🏷️ Top Tags\n\n");
-        let mut sorted_tags: Vec<_> = tag_counts.into_iter().collect();
-        sorted_tags.sort_by(|a, b| b.1.cmp(&a.1));
-        for (tag, count) in sorted_tags.iter().take(8) {
-            out.push_str(&format!("- `#{}` — {} memos\n", tag, count));
-        }
-    }
-
-    out.push_str("\n## 💡 Reflection Prompts\n\n");
-    out.push_str("- What was my biggest win this week?\n");
-    out.push_str("- What took longer than expected?\n");
-    out.push_str("- What should I stop doing?\n");
-    out.push_str("- What should I start doing next week?\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #weekly #tasks #memogram-rs", tg_footer("memogram-rs", "weekly"), now.format("%Y-%m-%d %H:%M")));
-    Ok(out)
-}
-
-fn create_retro(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let sprint = if args.trim().is_empty() { "Current Sprint" } else { args };
-    let mut out = format!("{}\n\n", tg_header("🔄", "Retrospective", sprint));
-    out.push_str(&format!("**Date:** `{}` · **Sprint:** `{}`\n\n", date, sprint));
-    out.push_str("## ✅ What Went Well\n\n- \n- \n- \n\n");
-    out.push_str("## ⚠️ What Could Improve\n\n- \n- \n- \n\n");
-    out.push_str("## 🔧 Action Items\n\n");
-    out.push_str("| Action | Owner | Due | Priority |\n|---|---|---|---|\n");
-    out.push_str("|  |  |  | P1 |\n");
-    out.push_str("|  |  |  | P2 |\n\n");
-    out.push_str("## 📊 Sprint Stats\n\n");
-    out.push_str("| Metric | Value |\n|---|---|\n");
-    out.push_str("| Planned |  |\n");
-    out.push_str("| Completed |  |\n");
-    out.push_str("| Carry-over |  |\n");
-    out.push_str("| Velocity |  |\n\n");
-    out.push_str("> _Tip: Be honest. What will we actually change?_\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #retro #tasks #memogram-rs", tg_footer("memogram-rs", "retro"), now));
-    out
-}
 
 // === BIO: PATENT + SPECIES + LAB ===
 
@@ -4934,307 +4400,6 @@ async fn fetch_genome(gene: &str) -> Result<String> {
     Ok(out)
 }
 
-fn create_lab(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let protocol = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Protocol");
-    let notes = parts.get(1).unwrap_or(&"");
-    let mut out = format!("{}\n\n", tg_header("🧪", "Lab Protocol", protocol));
-    out.push_str(&format!("**Date:** `{}` · **Protocol:** `{}`\n\n", date, protocol));
-    if !notes.is_empty() {
-        out.push_str(&format!("**Notes:** {}\n\n", notes));
-    }
-    out.push_str("## 📋 Materials\n\n- [ ] \n- [ ] \n- [ ] \n\n");
-    out.push_str("## 🔬 Procedure\n\n");
-    out.push_str("1. **Prep:** \n");
-    out.push_str("2. **Step 1:** \n");
-    out.push_str("3. **Step 2:** \n");
-    out.push_str("4. **Step 3:** \n");
-    out.push_str("5. **Cleanup:** \n\n");
-    out.push_str("## 📊 Results\n\n");
-    out.push_str("| Parameter | Value | Notes |\n|---|---|---|\n|  |  |  |\n\n");
-    out.push_str("## ⚠️ Safety\n\n");
-    out.push_str("- PPE required: \n");
-    out.push_str("- Waste disposal: \n");
-    out.push_str("- Emergency: \n\n");
-    out.push_str("## 📝 Observations\n\n- \n\n");
-    out.push_str(&format!("{}\n\n`{}` · #lab #bio #memogram-rs", tg_footer("memogram-rs", "lab"), now));
-    out
-}
-
-// === BIO: PRE-HEALTH TRACKING ===
-
-fn create_prereqs(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let track = args.trim().to_lowercase();
-
-    // GPA calculation sub-command
-    if track.starts_with("gpa ") {
-        let grades_str = track.strip_prefix("gpa ").unwrap_or("");
-        let grade_points: Vec<f64> = grades_str.split_whitespace()
-            .filter_map(|g| g.parse::<f64>().ok())
-            .collect();
-
-        if grade_points.is_empty() {
-            return format!("{}\n\n_Usage:_ `/prereqs gpa 3.5 3.8 4.0 3.2 3.7`\n\nEnter your GPA for each course (4.0 scale).\n\n`{}` · #prereqs #bio #memogram-rs",
-                tg_header("🎓", "GPA Calculator", "help"), now);
-        }
-
-        let total: f64 = grade_points.iter().sum();
-        let gpa = total / grade_points.len() as f64;
-        let gpa_letter = if gpa >= 3.9 { "A" } else if gpa >= 3.7 { "A-" } else if gpa >= 3.3 { "B+" } else if gpa >= 3.0 { "B" } else if gpa >= 2.7 { "B-" } else if gpa >= 2.3 { "C+" } else if gpa >= 2.0 { "C" } else { "C-" };
-        let gpa_emoji = if gpa >= 3.7 { "🟢" } else if gpa >= 3.5 { "🟡" } else if gpa >= 3.0 { "🟠" } else { "🔴" };
-
-        let mut out = format!("{}\n\n", tg_header("🎓", "GPA Calculator", &format!("{:.2}", gpa)));
-        out.push_str(&format!("**Your GPA:** {} `{:.2}` ({})\n**Courses:** `{}` · **Total points:** `{:.1}`\n\n", gpa_emoji, gpa, gpa_letter, grade_points.len(), total));
-
-        out.push_str("## 📊 Grade Breakdown\n\n");
-        out.push_str("| # | Grade | Points |\n|---|---|---|\n");
-        for (i, gp) in grade_points.iter().enumerate() {
-            let letter = if *gp >= 3.9 { "A" } else if *gp >= 3.7 { "A-" } else if *gp >= 3.3 { "B+" } else if *gp >= 3.0 { "B" } else if *gp >= 2.7 { "B-" } else if *gp >= 2.3 { "C+" } else { "C" };
-            out.push_str(&format!("| {} | {} | `{:.1}` |\n", i + 1, letter, gp));
-        }
-        out.push_str(&format!("| **Total** | | **{:.1}** |\n\n", total));
-
-        out.push_str("## 🎯 How You Compare\n\n");
-        out.push_str("| Program | Avg GPA | Your GPA | Status |\n|---|---|---|---|\n");
-        out.push_str(&format!("| MD (Allopathic) | 3.75 | `{:.2}` | {} |\n", gpa, if gpa >= 3.75 { "✅ Above avg" } else { "⚠️ Below avg" }));
-        out.push_str(&format!("| DO (Osteopathic) | 3.54 | `{:.2}` | {} |\n", gpa, if gpa >= 3.54 { "✅ Above avg" } else { "⚠️ Below avg" }));
-        out.push_str(&format!("| Dental (DDS/DMD) | 3.56 | `{:.2}` | {} |\n", gpa, if gpa >= 3.56 { "✅ Above avg" } else { "⚠️ Below avg" }));
-        out.push_str(&format!("| PA School | 3.60 | `{:.2}` | {} |\n", gpa, if gpa >= 3.60 { "✅ Above avg" } else { "⚠️ Below avg" }));
-        out.push_str(&format!("| Vet School (DVM) | 3.54 | `{:.2}` | {} |\n\n", gpa, if gpa >= 3.54 { "✅ Above avg" } else { "⚠️ Below avg" }));
-
-        if gpa >= 3.75 {
-            out.push_str("🟢 **Strong GPA!** You're competitive for most programs. Focus on MCAT/experience.\n\n");
-        } else if gpa >= 3.5 {
-            out.push_str("🟡 **Good GPA.** Consider post-bacc or strong MCAT to boost your profile.\n\n");
-        } else {
-            out.push_str("🟠 **Needs improvement.** Consider post-bacc courses, grade replacement, or DO programs.\n\n");
-        }
-
-        out.push_str(&format!("{}\n\n`{}` · #prereqs #gpa #bio #memogram-rs", tg_footer("AAMC/public data", "prereqs"), now));
-        return out;
-    }
-
-    let mut out = format!("{}\n\n", tg_header("🎓", "Prerequisites", if track.is_empty() { "all tracks" } else { &track }));
-    out.push_str("**Tracks:** med, dental, vet, pharmacy, pa, optometry\n\n");
-
-    let tracks = [
-        ("med (MD/DO)", vec![
-            ("Biology I + II w/ lab", "4 cr", "Bio 101/102"),
-            ("General Chemistry I + II w/ lab", "4 cr", "Chem 101/102"),
-            ("Organic Chemistry I + II w/ lab", "4 cr", "OChem 101/102"),
-            ("Physics I + II w/ lab", "4 cr", "Phys 101/102"),
-            ("Biochemistry", "3 cr", "Bchem 301"),
-            ("English / Writing", "6 cr", "Lit/Writing"),
-            ("Math (Calc or Stats)", "3-6 cr", "Math 101+"),
-            ("Psychology", "3 cr", "Psych 101"),
-            ("Sociology", "3 cr", "Soc 101"),
-        ]),
-        ("dental (DDS/DMD)", vec![
-            ("Biology I + II w/ lab", "4 cr", "Bio 101/102"),
-            ("General Chemistry I + II w/ lab", "4 cr", "Chem 101/102"),
-            ("Organic Chemistry I + II w/ lab", "4 cr", "OChem 101/102"),
-            ("Physics I + II w/ lab", "4 cr", "Phys 101/102"),
-            ("Biochemistry", "3 cr", "Bchem 301"),
-            ("English / Writing", "6 cr", "Lit/Writing"),
-            ("Math (Calc or Stats)", "3-6 cr", "Math 101+"),
-        ]),
-        ("pharmacy (PharmD)", vec![
-            ("Biology I + II w/ lab", "4 cr", "Bio 101/102"),
-            ("General Chemistry I + II w/ lab", "4 cr", "Chem 101/102"),
-            ("Organic Chemistry I + II w/ lab", "4 cr", "OChem 101/102"),
-            ("Physics I + II w/ lab", "4 cr", "Phys 101/102"),
-            ("Biochemistry", "3 cr", "Bchem 301"),
-            ("Anatomy & Physiology", "4 cr", "A&P 101/102"),
-            ("Microbiology", "4 cr", "Micro 201"),
-            ("Math (Calc/Stats)", "3-6 cr", "Math 101+"),
-            ("English / Writing", "6 cr", "Lit/Writing"),
-        ]),
-        ("pa (PA school)", vec![
-            ("Biology I + II w/ lab", "4 cr", "Bio 101/102"),
-            ("General Chemistry I + II w/ lab", "4 cr", "Chem 101/102"),
-            ("Organic Chemistry or Biochem", "3-4 cr", "OChem/Bchem"),
-            ("Anatomy & Physiology I + II", "4 cr", "A&P 101/102"),
-            ("Microbiology", "4 cr", "Micro 201"),
-            ("Genetics", "3 cr", "Genetics 301"),
-            ("Psychology", "3 cr", "Psych 101"),
-            ("Statistics", "3 cr", "Stats 201"),
-            ("English / Writing", "6 cr", "Lit/Writing"),
-        ]),
-        ("vet (DVM)", vec![
-            ("Biology I + II w/ lab", "4 cr", "Bio 101/102"),
-            ("General Chemistry I + II w/ lab", "4 cr", "Chem 101/102"),
-            ("Organic Chemistry I + II w/ lab", "4 cr", "OChem 101/102"),
-            ("Physics I + II w/ lab", "4 cr", "Phys 101/102"),
-            ("Biochemistry", "3 cr", "Bchem 301"),
-            ("Anatomy & Physiology", "4 cr", "A&P 101/102"),
-            ("Microbiology", "4 cr", "Micro 201"),
-            ("Genetics", "3 cr", "Genetics 301"),
-            ("English / Writing", "6 cr", "Lit/Writing"),
-        ]),
-        ("optometry (OD)", vec![
-            ("Biology I + II w/ lab", "4 cr", "Bio 101/102"),
-            ("General Chemistry I + II w/ lab", "4 cr", "Chem 101/102"),
-            ("Organic Chemistry I + II w/ lab", "4 cr", "OChem 101/102"),
-            ("Physics I + II w/ lab", "4 cr", "Phys 101/102"),
-            ("Biochemistry", "3 cr", "Bchem 301"),
-            ("Anatomy & Physiology", "4 cr", "A&P 101/102"),
-            ("Microbiology", "4 cr", "Micro 201"),
-            ("Math (Calc/Stats)", "3-6 cr", "Math 101+"),
-            ("English / Writing", "6 cr", "Lit/Writing"),
-        ]),
-    ];
-
-    let selected: Vec<_> = if track.is_empty() {
-        tracks.iter().collect()
-    } else {
-        tracks.iter().filter(|(name, _)| name.to_lowercase().contains(&track)).collect()
-    };
-
-    if selected.is_empty() {
-        out.push_str("_No matching track. Try: med, dental, vet, pharmacy, pa, optometry_\n\n");
-    } else {
-        for (name, courses) in &selected {
-            out.push_str(&format!("## 📚 {}\n\n", name));
-            out.push_str("| Course | Credits | Example |\n|---|---|---|\n");
-            for (course, credits, example) in courses {
-                out.push_str(&format!("| {} | {} | {} |\n", course, credits, example));
-            }
-            let total: i32 = courses.iter().filter_map(|(_, c, _)| c.split(' ').next()?.parse::<i32>().ok()).sum();
-            out.push_str(&format!("\n> **Total: ~{} credits** of prereqs\n\n", total));
-        }
-    }
-
-    out.push_str("## 📝 Notes\n\n");
-    out.push_str("- Check specific schools — requirements vary\n");
-    out.push_str("- AP/IB credit may satisfy some prerequisites\n");
-    out.push_str("- Shadowing + clinical hours are separate from coursework\n\n");
-
-    // GPA Calculator section
-    out.push_str("## 📊 GPA Calculator\n\n");
-    out.push_str("_Enter your grades to calculate GPA:_\n\n");
-    out.push_str("```\n/prereqs gpa 3.5 3.8 4.0 3.2 3.7\n```\n\n");
-
-    // Acceptance stats
-    out.push_str("## 📈 Average Acceptance Stats (AAMC/Public Data)\n\n");
-    out.push_str("| Program | Avg GPA | Avg MCAT | Acceptance Rate |\n|---|---|---|---|\n");
-    out.push_str("| MD (Allopathic) | 3.75 | 511.9 | 41% |\n");
-    out.push_str("| DO (Osteopathic) | 3.54 | 504.1 | 37% |\n");
-    out.push_str("| Dental (DDS/DMD) | 3.56 | 20.0 (DAT) | 56% |\n");
-    out.push_str("| Pharmacy (PharmD) | 3.30 | — | 83% |\n");
-    out.push_str("| PA School | 3.60 | — | 20% |\n");
-    out.push_str("| Vet School (DVM) | 3.54 | — | 50% |\n");
-    out.push_str("| Optometry (OD) | 3.35 | 340 (OAT) | 70% |\n\n");
-
-    out.push_str("## 🎯 How You Compare\n\n");
-    out.push_str("| Metric | You | Average Admit | Target |\n|---|---|---|---|\n");
-    out.push_str("| GPA | _enter below_ | 3.75 (MD) | ≥3.7 |\n");
-    out.push_str("| MCAT | — | 511.9 (MD) | ≥510 |\n");
-    out.push_str("| Clinical hrs | — | 200+ (MD) | 300+ |\n");
-    out.push_str("| Research | — | 1+ years | 2+ years |\n");
-    out.push_str("| Shadowing | — | 40+ hrs | 100+ hrs |\n\n");
-
-    out.push_str("> _Tip: Use `/prereqs gpa <grades>` to calculate your GPA. Compare against averages above._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #prereqs #bio #memogram-rs", tg_footer("memogram-rs", "prereqs"), now));
-    out
-}
-
-fn create_clinical(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let parts: Vec<&str> = args.splitn(3, ' ').collect();
-    let activity = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("activity");
-    let hours = parts.get(1).unwrap_or(&"0");
-    let note = parts.get(2).unwrap_or(&"");
-    let mut out = format!("{}\n\n", tg_header("🏥", "Clinical Hours", activity));
-    out.push_str(&format!("**Date:** `{}` · **Activity:** `{}` · **Hours:** `{}`\n\n", date, activity, hours));
-    if !note.is_empty() {
-        out.push_str(&format!("**Note:** {}\n\n", note));
-    }
-    out.push_str("## 📊 Clinical Log\n\n");
-    out.push_str("| Date | Activity | Hours | Note |\n|---|---|---|---|\n");
-    out.push_str(&format!("| {} | {} | {} | {} |\n\n", date, activity, hours, note));
-    out.push_str("## 🎯 Typical Requirements\n\n");
-    out.push_str("| Program | Clinical Hours | Shadowing |\n|---|---|---|\n");
-    out.push_str("| MD (allopathic) | 100-400+ | 40-100+ |\n");
-    out.push_str("| DO (osteopathic) | 100-400+ | 40-100+ |\n");
-    out.push_str("| PA | 500-2000+ | 100+ |\n");
-    out.push_str("| Dental | 100-300+ | 50-100+ |\n");
-    out.push_str("| Pharmacy | 200-1000+ (paid preferred) | 40+ |\n");
-    out.push_str("| Vet | 200-500+ | 100+ |\n\n");
-    out.push_str("> _Tip: Quality > quantity. Reflect on each experience._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #clinical #bio #memogram-rs", tg_footer("memogram-rs", "clinical"), now));
-    out
-}
-
-fn create_shadow(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let parts: Vec<&str> = args.splitn(3, ' ').collect();
-    let doctor = parts.first().filter(|s| !s.is_empty()).copied().unwrap_or("Dr.");
-    let hours = parts.get(1).unwrap_or(&"0");
-    let specialty = parts.get(2).unwrap_or(&"");
-    let mut out = format!("{}\n\n", tg_header("👁️", "Shadowing", doctor));
-    out.push_str(&format!("**Date:** `{}` · **Doctor:** `{}` · **Hours:** `{}`\n\n", date, doctor, hours));
-    if !specialty.is_empty() {
-        out.push_str(&format!("**Specialty:** {}\n\n", specialty));
-    }
-    out.push_str("## 📝 Key Observations\n\n");
-    out.push_str("- What did the doctor do well?\n");
-    out.push_str("- What was the patient interaction like?\n");
-    out.push_str("- What surprised you?\n");
-    out.push_str("- Would you consider this specialty? Why?\n\n");
-    out.push_str("## 📊 Shadowing Log\n\n");
-    out.push_str("| Date | Doctor | Specialty | Hours | Notes |\n|---|---|---|---|---|\n");
-    out.push_str(&format!("| {} | {} | {} | {} |  |\n\n", date, doctor, specialty, hours));
-    out.push_str("> _Tip: Ask for a letter of recommendation after 40+ hours._\n\n");
-    out.push_str(&format!("{}\n\n`{}` · #shadow #bio #memogram-rs", tg_footer("memogram-rs", "shadow"), now));
-    out
-}
-
-fn create_ethics(args: &str) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
-    let scenario = if args.trim().is_empty() { "A 45-year-old patient refuses a life-saving blood transfusion on religious grounds. The surgery is scheduled for tomorrow." } else { args };
-
-    let scenarios = [
-        ("Informed Consent", "A 17-year-old asks you not to tell their parents about a positive STI test. State law requires parental notification for minors."),
-        ("Resource Allocation", "You have one dose of a rare drug. Patient A is a 30-year-old with two children. Patient B is a 70-year-old Nobel laureate. Both will die without it."),
-        ("Confidentiality", "A patient tells you they plan to harm their spouse. They ask you to keep it confidential."),
-        ("End of Life", "A family demands continued aggressive treatment for a brain-dead patient. The advance directive says no extraordinary measures."),
-        ("Research Ethics", "A clinical trial shows promising results but has severe side effects in 5% of subjects. The control group is getting worse. Do you unblind early?"),
-    ];
-
-    let (active_scenario, _) = if !args.trim().is_empty() {
-        (args, "")
-    } else {
-        let idx = (chrono::Utc::now().timestamp() as usize) % scenarios.len();
-        scenarios[idx]
-    };
-
-    let mut out = format!("{}\n\n", tg_header("⚖️", "Medical Ethics", ""));
-    out.push_str(&format!("**Date:** `{}`\n\n", date));
-    out.push_str("## 📋 Scenario\n\n");
-    out.push_str(&format!("> {}\n\n", active_scenario));
-    out.push_str("## 🧠 Framework\n\n");
-    out.push_str("| Principle | Application |\n|---|---|\n");
-    out.push_str("| **Autonomy** | Patient's right to self-determination |\n");
-    out.push_str("| **Beneficence** | Act in the patient's best interest |\n");
-    out.push_str("| **Non-maleficence** | First, do no harm |\n");
-    out.push_str("| **Justice** | Fair distribution of resources |\n\n");
-    out.push_str("## 📝 Your Analysis\n\n");
-    out.push_str("### Arguments For\n\n- \n\n");
-    out.push_str("### Arguments Against\n\n- \n\n");
-    out.push_str("### Decision\n\n- \n\n");
-    out.push_str("## 📚 More Scenarios\n\n");
-    for (title, desc) in &scenarios {
-        out.push_str(&format!("- **{}:** _{}_\n", title, desc.chars().take(80).collect::<String>()));
-    }
-    out.push_str(&format!("\n{}\n\n`{}` · #ethics #bio #memogram-rs", tg_footer("memogram-rs", "ethics"), now));
-    out
-}
 
 // === NEWS: SCHOLAR + REDDIT + NEWS ===
 
@@ -5588,7 +4753,7 @@ async fn fetch_standup(app: &App) -> Result<String> {
     Ok(out)
 }
 
-async fn fetch_therapy(args: &str, app: &App) -> Result<String> {
+async fn fetch_therapy(args: &str, _app: &App) -> Result<String> {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
     let date = Local::now().format("%Y-%m-%d").to_string();
     let topic = args.trim();
@@ -5751,7 +4916,7 @@ async fn fetch_queue(memos_url: &str, token: &str) -> Result<String> {
         .header("Authorization", format!("Bearer {token}")).send().await?.json().await?;
     let memos = v["memos"].as_array().ok_or_else(|| anyhow::anyhow!("no memos"))?;
     // Find memos that look like bookmarks (contain URLs)
-    let url_regex = regex::Regex::new(r"https?://[^\s\)]+").unwrap();
+    let _url_regex = regex::Regex::new(r"https?://[^\s\)]+").unwrap();
     let bookmarks: Vec<_> = memos.iter().filter(|m| {
         let content = m["content"].as_str().unwrap_or("");
         content.contains("#clip") || content.contains("#bookmark") || content.contains("#read")
@@ -6044,7 +5209,7 @@ async fn fetch_concept(topic: &str, app: &App) -> String {
 
 async fn vikunja_todo(args: &str, app: &App) -> String {
     let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    let date = Local::now().format("%Y-%m-%d").to_string();
+    let _date = Local::now().format("%Y-%m-%d").to_string();
     if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
         return format!("{}\n\n⚠️ _Vikunja not configured. Set `VIKUNJA_URL` and `VIKUNJA_TOKEN`._\n\n{}\n\n`{}` · #todo #tasks",
             tg_header("📋", "Todo", ""), tg_footer("memogram-rs", "todo"), now);
@@ -6095,30 +5260,6 @@ async fn vikunja_deadline(args: &str, app: &App) -> String {
             }
             out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
             out.push_str(&format!("{}\n\n`{}` · #deadline #tasks #memogram-rs", tg_footer("vikunja", "deadline"), now));
-            out
-        }
-        Err(e) => format!("❌ Vikunja error: {e}")
-    }
-}
-
-async fn vikunja_priority(args: &str, app: &App) -> String {
-    let now = Local::now().format("%Y-%m-%d %H:%M").to_string();
-    if app.vikunja_url.is_empty() || app.vikunja_token.is_empty() {
-        return format!("⚠️ _Vikunja not configured._").into();
-    }
-    let parts: Vec<&str> = args.splitn(2, ' ').collect();
-    let level = parts.first().and_then(|s| s.parse::<u8>().ok()).unwrap_or(2).min(5);
-    let title = parts.get(1).unwrap_or(&"Task");
-    let (emoji, label) = vikunja_priority_label(level);
-    let projects = vikunja_list_projects(&app.vikunja_url, &app.vikunja_token).await.unwrap_or_default();
-    let project_id = projects.first().and_then(|p| p["id"].as_u64()).unwrap_or(1);
-    match vikunja_create_task(&app.vikunja_url, &app.vikunja_token, title, "", project_id, level, "").await {
-        Ok(task) => {
-            let task_id = task["id"].as_u64().unwrap_or(0);
-            let mut out = format!("{}\n\n", tg_header("🔥", "Priority Task", title));
-            out.push_str(&format!("**Task:** `{}`\n**Priority:** {} `{}`\n**Vikunja ID:** `#{}`\n\n", title, emoji, label, task_id));
-            out.push_str(&format!("🔗 [Open in Vikunja]({}/projects/{}/tasks/{})\n\n", app.vikunja_url.trim_end_matches('/'), project_id, task_id));
-            out.push_str(&format!("{}\n\n`{}` · #priority #tasks #memogram-rs", tg_footer("vikunja", "priority"), now));
             out
         }
         Err(e) => format!("❌ Vikunja error: {e}")
