@@ -12,3 +12,10 @@
 {"level":30,"time":1789744392991,"pid":3949247,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","agentCount":8,"msg":"Weave agents injected into OpenCode config"}
 {"level":30,"time":1789744392991,"pid":3949247,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","msg":"Set default_agent to 'loom'"}
 {"level":30,"time":1789744392991,"pid":3949247,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","commands":["start-work","weave:start"],"msg":"Weave slash commands registered"}
+{"level":30,"time":1789830541062,"pid":2945648,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","directory":"/root/repos/0124212/memogram-rs","msg":"Weave plugin starting"}
+{"level":30,"time":1789830541065,"pid":2945648,"hostname":"ak","name":"weave:config","module":"loader","msg":"Config loaded successfully"}
+{"level":30,"time":1789830541066,"pid":2945648,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","agentCount":8,"msg":"Agents translated for config hook injection"}
+{"level":30,"time":1789830541067,"pid":2945648,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","msg":"Weave plugin hooks ready — returning immediately"}
+{"level":30,"time":1789830541079,"pid":2945648,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","agentCount":8,"msg":"Weave agents injected into OpenCode config"}
+{"level":30,"time":1789830541079,"pid":2945648,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","msg":"Set default_agent to 'loom'"}
+{"level":30,"time":1789830541079,"pid":2945648,"hostname":"ak","name":"weave","module":"adapter-opencode/plugin","commands":["start-work","weave:start"],"msg":"Weave slash commands registered"}
