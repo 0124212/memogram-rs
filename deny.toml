@@ -22,8 +22,15 @@ allow = [
 # below double-blocks GPL/AGPL/LGPL families explicitly.
 # Anything not in `allow` is rejected, which already blocks all copyleft.
 # (cargo-deny 0.20 schema: no copyleft/deny keys under [licenses].)
-# Build/dev-only deps still count: a GPL build-dep can taint release tooling.
-include-dev = true
+# Verified 2026-09-19: both exceptions below are permissive, no copyleft in tree.
+[[licenses.exceptions]]
+allow = ["Apache-2.0 WITH LLVM-exception"]
+name = "ar_archive_writer"
+
+[[licenses.exceptions]]
+allow = ["CDLA-Permissive-2.0"]
+name = "webpki-roots"
+# Build/dev deps are in the tree by default, so they count too.
 
 [bans]
 multiple-versions = "warn"
