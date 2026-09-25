@@ -1,5 +1,7 @@
 # memogram-rs
 
+[![Rust](https://img.shields.io/badge/rust-2021-orange?style=flat-square&logo=rust)](https://www.rust-lang.org) [![Telegram](https://img.shields.io/badge/telegram-teloxide_0.17-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://github.com/teloxide/teloxide) [![Memos](https://img.shields.io/badge/memos-bridge-blue?style=flat-square)](https://github.com/usememos/memos) [![Build](https://img.shields.io/github/actions/workflow/status/0124212/memogram-rs/build.yml?style=flat-square&label=ghcr)](https://github.com/0124212/memogram-rs/actions) [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](Dockerfile) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
+
 Low-footprint Rust rewrite of [memogram](https://github.com/usememos/memogram) — Telegram → Memos bridge, single binary + Docker. **79 commands (70 routed across 10 buckets × 7 + 9 core), 16MB binary.**
 
 Every command pulls real data from a live API or returns evidence-based structured content. Every memo tagged `#memogram-rs`. Two-way sync with Vikunja for tasks.
